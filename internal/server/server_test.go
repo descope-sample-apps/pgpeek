@@ -29,6 +29,7 @@ type fakeQuerier struct {
 	lastSQL   string
 	tables    []db.TableInfo
 	cols      []db.ColumnInfo
+	fks       []db.ForeignKey
 	catErr    error
 	lastQuery db.TableQuery
 	lastArgs  struct {
@@ -50,6 +51,10 @@ func (f *fakeQuerier) Tables(context.Context) ([]db.TableInfo, error) {
 func (f *fakeQuerier) Columns(_ context.Context, schema, table string) ([]db.ColumnInfo, error) {
 	f.lastArgs.schema, f.lastArgs.table = schema, table
 	return f.cols, f.catErr
+}
+
+func (f *fakeQuerier) ForeignKeys(_ context.Context, _, _ string) ([]db.ForeignKey, error) {
+	return f.fks, f.catErr
 }
 
 func (f *fakeQuerier) TableRows(_ context.Context, q db.TableQuery) (*db.Result, error) {
@@ -507,6 +512,34 @@ func TestColumns_EmptyReturnsArray(t *testing.T) {
 func TestColumns_Error(t *testing.T) {
 	ts, _ := newTestServer(t, &fakeQuerier{catErr: errors.New("boom")})
 	resp := mustGet(t, ts, "/api/tables/public/users/columns")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", resp.StatusCode)
+	}
+}
+
+func TestForeignKeys_OK(t *testing.T) {
+	q := &fakeQuerier{fks: []db.ForeignKey{{Column: "company_id", RefSchema: "public", RefTable: "companies", RefColumn: "id"}}}
+	ts, _ := newTestServer(t, q)
+	resp := mustGet(t, ts, "/api/tables/public/users/fks")
+	got := decode[[]db.ForeignKey](t, resp)
+	if len(got) != 1 || got[0].RefTable != "companies" {
+		t.Errorf("fks = %+v", got)
+	}
+}
+
+func TestForeignKeys_EmptyReturnsArray(t *testing.T) {
+	srv := serverWithStore(t, &fakeQuerier{}, &fakeStore{})
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/tables/public/users/fks", nil))
+	if strings.TrimSpace(rec.Body.String()) != "[]" {
+		t.Errorf("body = %q, want []", rec.Body.String())
+	}
+}
+
+func TestForeignKeys_Error(t *testing.T) {
+	ts, _ := newTestServer(t, &fakeQuerier{catErr: errors.New("boom")})
+	resp := mustGet(t, ts, "/api/tables/public/users/fks")
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", resp.StatusCode)

@@ -49,6 +49,7 @@ function setRoute(key, resp) { routes[key] = resp; }
 function routeKey(method, path) {
   if (path.endsWith("/data")) return `${method} /api/tables/*/data`;
   if (path.endsWith("/columns")) return `${method} /api/tables/*/columns`;
+  if (path.endsWith("/fks")) return `${method} /api/tables/*/fks`;
   if (path.startsWith("/api/queries/")) return `${method} /api/queries/:id`;
   return `${method} ${path}`;
 }
@@ -81,6 +82,7 @@ beforeEach(() => {
   routes = {
     "GET /api/meta": makeResp({ json: { rowCap: 1000 } }),
     "GET /api/tables": makeResp({ json: [] }),
+    "GET /api/tables/*/fks": makeResp({ json: [] }),
     "GET /api/queries": makeResp({ json: [] }),
   };
   installFetch();
@@ -520,6 +522,68 @@ describe("request sequencing", () => {
   });
 });
 
+// ===================== foreign keys =====================
+
+describe("foreign keys", () => {
+  const TABLES = [
+    { schema: "public", name: "companies", type: "table", estRows: 4 },
+    { schema: "public", name: "users", type: "table", estRows: 6 },
+  ];
+  const USERS_FK = [{ column: "company_id", refSchema: "public", refTable: "companies", refColumn: "id" }];
+  const usersData = () => makeResp({ json: { columns: ["id", "company_id"], rows: [[1, 7], [2, 8]], rowCount: 2, truncated: false, elapsedMs: 1 } });
+
+  async function openUsers() {
+    routes["GET /api/tables"] = makeResp({ json: TABLES });
+    routes["GET /api/tables/*/fks"] = makeResp({ json: USERS_FK });
+    routes["GET /api/tables/*/data"] = usersData();
+    await loadApp();
+    $("tables").querySelectorAll(".tbl")[1].dispatchEvent(new Event("click")); // users
+    await flush();
+  }
+
+  it("renders FK columns as links", async () => {
+    await openUsers();
+    const links = $("data-results").querySelectorAll("button.fk");
+    expect(links.length).toBe(2); // company_id column, 2 rows; id column is not an FK
+    expect(links[0].textContent).toBe("7");
+    expect(links[0].title).toContain("public.companies.id");
+  });
+
+  it("navigates to the referenced row on click", async () => {
+    await openUsers();
+    routes["GET /api/tables/*/data"] = makeResp({ json: { columns: ["id", "name"], rows: [[7, "Acme"]], rowCount: 1, truncated: false, elapsedMs: 1 } });
+    $("data-results").querySelector("button.fk").dispatchEvent(new Event("click"));
+    await flush();
+    expect($("tab-title").textContent).toBe("public.companies");
+    expect(lastDataParams().getAll("f")).toContain("id:eq:7");
+    // The sidebar highlight follows the navigation.
+    expect($("tables").querySelector(".tbl.active").textContent).toBe("companies");
+  });
+
+  it("reports when the referenced table is not browsable", async () => {
+    routes["GET /api/tables"] = makeResp({ json: [TABLES[1]] }); // users only, no companies
+    routes["GET /api/tables/*/fks"] = makeResp({ json: USERS_FK });
+    routes["GET /api/tables/*/data"] = usersData();
+    await loadApp();
+    $("tables").querySelector(".tbl").dispatchEvent(new Event("click"));
+    await flush();
+    $("data-results").querySelector("button.fk").dispatchEvent(new Event("click"));
+    await flush();
+    expect($("status").textContent).toContain("not browsable");
+  });
+
+  it("loads without FK links when introspection fails", async () => {
+    routes["GET /api/tables"] = makeResp({ json: TABLES });
+    routes["GET /api/tables/*/fks"] = new Error("fk fail");
+    routes["GET /api/tables/*/data"] = makeResp({ json: { columns: ["id"], rows: [[1]], rowCount: 1, truncated: false, elapsedMs: 1 } });
+    await loadApp();
+    $("tables").querySelectorAll(".tbl")[1].dispatchEvent(new Event("click"));
+    await flush();
+    expect($("data-results").querySelectorAll("button.fk").length).toBe(0);
+    expect($("data-results").querySelectorAll("tbody tr").length).toBe(1); // data still loads
+  });
+});
+
 // ===================== structure =====================
 
 describe("structure tab", () => {
@@ -865,16 +929,18 @@ describe("saved queries", () => {
 
 describe("CodeMirror mode", () => {
   function installCM() {
-    const cm = { _v: "", getValue() { return this._v; }, setValue(v) { this._v = v; }, setOption: vi.fn() };
+    const cm = { _v: "", getValue() { return this._v; }, setValue(v) { this._v = v; }, setOption: vi.fn(), refresh: vi.fn() };
     const CM = function () {};
     CM.fromTextArea = (ta) => { cm._v = ta.value; return cm; };
     globalThis.CodeMirror = CM;
     return cm;
   }
 
-  it("uses the editor for get/set and runs", async () => {
+  it("uses the editor for get/set, refreshes on tab switch, and runs", async () => {
     const cm = installCM();
     await loadApp();
+    click("tab-sql"); // must refresh the editor (created while hidden)
+    expect(cm.refresh).toHaveBeenCalled();
     cm.setValue("SELECT 42");
     setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[42]], rowCount: 1, truncated: false, elapsedMs: 1 } }));
     click("run-btn");

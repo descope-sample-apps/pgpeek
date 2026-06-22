@@ -19,6 +19,7 @@
   let filters = {}; // column -> {op, value}
   let sortCol = null;
   let sortDir = "asc";
+  let currentFKs = {}; // column -> {schema, table, column} for the open table
 
   // Allowlisted filter operators (key sent to the server, label shown in the UI).
   const OPS = [
@@ -32,18 +33,29 @@
   function setStatusHTML(html, cls) { statusEl.className = "status " + cls; statusEl.innerHTML = html; }
   function empty(text) { const d = document.createElement("div"); d.className = "empty"; d.textContent = text; return d; }
 
-  function cellEl(cell) {
+  function cellEl(cell, ref) {
     const td = document.createElement("td");
-    if (cell === null || cell === undefined) { td.className = "null"; td.textContent = "NULL"; }
-    else td.textContent = typeof cell === "object" ? JSON.stringify(cell) : String(cell);
+    if (cell === null || cell === undefined) { td.className = "null"; td.textContent = "NULL"; return td; }
+    const text = typeof cell === "object" ? JSON.stringify(cell) : String(cell);
+    if (ref) {
+      const link = document.createElement("button");
+      link.className = "fk";
+      link.textContent = text;
+      link.title = "→ " + ref.schema + "." + ref.table + "." + ref.column;
+      link.addEventListener("click", () => openRef(ref, cell));
+      td.append(link);
+    } else {
+      td.textContent = text;
+    }
     return td;
   }
 
-  function bodyRows(res) {
+  // fkByCol maps a column index to its FK ref (or null) so cells become links.
+  function bodyRows(res, fkByCol) {
     const tbody = document.createElement("tbody");
     for (const row of res.rows) {
       const tr = document.createElement("tr");
-      for (const cell of row) tr.append(cellEl(cell));
+      row.forEach((cell, i) => tr.append(cellEl(cell, fkByCol && fkByCol[i])));
       tbody.append(tr);
     }
     return tbody;
@@ -103,7 +115,8 @@
     }
     thead.append(ftr);
 
-    table.append(thead, bodyRows(res));
+    const fkByCol = res.columns.map((c) => currentFKs[c] || null);
+    table.append(thead, bodyRows(res, fkByCol));
     el.append(table);
     if (!res.rows.length) el.append(empty("0 rows."));
   }
@@ -147,7 +160,12 @@
   }
   $("tab-data").addEventListener("click", () => switchTab("data"));
   $("tab-structure").addEventListener("click", () => { switchTab("structure"); loadStructure(); });
-  $("tab-sql").addEventListener("click", () => switchTab("sql"));
+  $("tab-sql").addEventListener("click", () => {
+    switchTab("sql");
+    // CodeMirror was created while this panel was hidden (zero size); it must be
+    // refreshed once visible or it renders blank.
+    if (editor) editor.refresh();
+  });
 
   // ---- sidebar ----
   async function loadTables() {
@@ -172,23 +190,53 @@
       const item = document.createElement("button");
       item.className = "tbl" + (t.type === "view" ? " view" : "");
       item.textContent = t.name;
+      item.dataset.key = label;
       item.title = label + (t.estRows >= 0 ? " (~" + t.estRows + " rows)" : "");
-      item.addEventListener("click", () => selectTable(t, item));
+      item.addEventListener("click", () => activateTable(t));
       list.append(item);
     }
     if (!list.children.length) list.append(empty("No tables match."));
   }
   $("tbl-filter").addEventListener("input", renderSidebar);
 
-  function selectTable(t, el) {
+  function highlightSidebar(t) {
+    for (const b of document.querySelectorAll(".tbl.active")) b.classList.remove("active");
+    const key = t.schema + "." + t.name;
+    for (const b of document.querySelectorAll("#tables .tbl")) {
+      if (b.dataset.key === key) b.classList.add("active");
+    }
+  }
+
+  // activateTable opens a table in the Data tab, optionally with preset filters
+  // (used by FK click-through to land on a specific referenced row).
+  async function activateTable(t, initialFilters) {
     current = t; offset = 0;
-    searchTerm = ""; filters = {}; sortCol = null; sortDir = "asc";
+    searchTerm = ""; sortCol = null; sortDir = "asc";
+    filters = initialFilters || {};
     $("data-search").value = "";
     $("tab-title").textContent = t.schema + "." + t.name;
-    for (const b of document.querySelectorAll(".tbl.active")) b.classList.remove("active");
-    if (el) el.classList.add("active");
+    highlightSidebar(t);
     switchTab("data");
+    await loadFKs(t);
     loadData();
+  }
+
+  // openRef navigates to the row referenced by a foreign-key cell.
+  function openRef(ref, value) {
+    const target = tables.find((x) => x.schema === ref.schema && x.name === ref.table);
+    if (!target) { setStatus("✗ referenced table " + ref.schema + "." + ref.table + " is not browsable", "error"); return; }
+    activateTable(target, { [ref.column]: { op: "eq", value: String(value) } });
+  }
+
+  async function loadFKs(t) {
+    currentFKs = {};
+    try {
+      const r = await fetch(tablePath(t) + "/fks");
+      const list = await r.json();
+      if (r.ok) for (const f of list) currentFKs[f.column] = { schema: f.refSchema, table: f.refTable, column: f.refColumn };
+    } catch {
+      /* no FK links if introspection fails */
+    }
   }
 
   function tablePath(t) {

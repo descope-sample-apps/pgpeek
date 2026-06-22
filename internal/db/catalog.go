@@ -46,6 +46,17 @@ FROM information_schema.columns
 WHERE table_schema = $1 AND table_name = $2
 ORDER BY ordinal_position`
 
+// Single-column foreign keys for a relation, with their referenced target.
+const fksSQL = `
+SELECT kcu.column_name, ccu.table_schema, ccu.table_name, ccu.column_name
+FROM information_schema.table_constraints tc
+JOIN information_schema.key_column_usage kcu
+  ON tc.constraint_name = kcu.constraint_name AND tc.constraint_schema = kcu.constraint_schema
+JOIN information_schema.constraint_column_usage ccu
+  ON tc.constraint_name = ccu.constraint_name AND tc.constraint_schema = ccu.constraint_schema
+WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = $1 AND tc.table_name = $2
+ORDER BY kcu.column_name`
+
 // Tables lists all browsable tables and views.
 func (p *Pool) Tables(ctx context.Context) ([]TableInfo, error) {
 	rows, err := p.pool.Query(ctx, tablesSQL)
@@ -80,6 +91,34 @@ func (p *Pool) Columns(ctx context.Context, schema, table string) ([]ColumnInfo,
 			return nil, err
 		}
 		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// ForeignKey describes a single-column foreign key and the row it points to.
+type ForeignKey struct {
+	Column    string `json:"column"`
+	RefSchema string `json:"refSchema"`
+	RefTable  string `json:"refTable"`
+	RefColumn string `json:"refColumn"`
+}
+
+// ForeignKeys returns the single-column foreign keys of a relation, so the UI
+// can turn FK cells into click-through links.
+func (p *Pool) ForeignKeys(ctx context.Context, schema, table string) ([]ForeignKey, error) {
+	rows, err := p.pool.Query(ctx, fksSQL, schema, table)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]ForeignKey, 0, 8)
+	for rows.Next() {
+		var fk ForeignKey
+		if err := rows.Scan(&fk.Column, &fk.RefSchema, &fk.RefTable, &fk.RefColumn); err != nil {
+			return nil, err
+		}
+		out = append(out, fk)
 	}
 	return out, rows.Err()
 }

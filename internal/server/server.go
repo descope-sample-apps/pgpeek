@@ -30,6 +30,7 @@ type Querier interface {
 	Query(ctx context.Context, sql string) (*db.Result, error)
 	Tables(ctx context.Context) ([]db.TableInfo, error)
 	Columns(ctx context.Context, schema, table string) ([]db.ColumnInfo, error)
+	ForeignKeys(ctx context.Context, schema, table string) ([]db.ForeignKey, error)
 	TableRows(ctx context.Context, q db.TableQuery) (*db.Result, error)
 	RowCap() int
 	Ping(ctx context.Context) error
@@ -75,6 +76,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/export", s.handleExport)
 	mux.HandleFunc("GET /api/tables", s.handleTables)
 	mux.HandleFunc("GET /api/tables/{schema}/{table}/columns", s.handleColumns)
+	mux.HandleFunc("GET /api/tables/{schema}/{table}/fks", s.handleForeignKeys)
 	mux.HandleFunc("GET /api/tables/{schema}/{table}/data", s.handleTableData)
 	mux.HandleFunc("GET /api/queries", s.handleListQueries)
 	mux.HandleFunc("POST /api/queries", s.handleCreateQuery)
@@ -189,6 +191,20 @@ func (s *Server) handleColumns(w http.ResponseWriter, r *http.Request) {
 		cols = []db.ColumnInfo{}
 	}
 	writeJSON(w, http.StatusOK, cols)
+}
+
+func (s *Server) handleForeignKeys(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
+	defer cancel()
+	fks, err := s.pool.ForeignKeys(ctx, r.PathValue("schema"), r.PathValue("table"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read foreign keys: "+err.Error())
+		return
+	}
+	if fks == nil {
+		fks = []db.ForeignKey{}
+	}
+	writeJSON(w, http.StatusOK, fks)
 }
 
 func (s *Server) handleTableData(w http.ResponseWriter, r *http.Request) {

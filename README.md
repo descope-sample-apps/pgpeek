@@ -21,8 +21,9 @@ everywhere. Read-only by design: no row editing, schema management, or migration
 
 - **Data** tab — click a table → paged rows (Prev/Next). A global search box
   (matches any column), per-column filters with operators (`=`, `≠`, `<`, `>`,
-  `ILIKE`, `IS NULL`, …), and click-to-sort headers. CSV export respects the
-  active search/filters/sort.
+  `ILIKE`, `IS NULL`, …), and click-to-sort headers. Foreign-key cells are
+  **click-through links** that jump to the referenced row. CSV export respects
+  the active search/filters/sort.
 - **Structure** tab — column name, type, nullable, default.
 - **SQL** tab — CodeMirror editor, saved/preset queries, CSV export.
 
@@ -222,6 +223,7 @@ Two ways:
 | `GET /api/meta`                               | Server limits the UI needs (`{rowCap}`).       |
 | `GET /api/tables`                             | List browsable tables/views (+ row estimate).  |
 | `GET /api/tables/{schema}/{table}/columns`    | Column structure (name, type, nullable, default). |
+| `GET /api/tables/{schema}/{table}/fks`        | Single-column foreign keys (for click-through).   |
 | `GET /api/tables/{schema}/{table}/data`       | Paged rows; `?limit=&offset=&search=&sort=&dir=&f=col:op:val` (`&format=csv`). |
 | `GET /api/queries`                            | List saved/preset queries.                     |
 | `POST /api/queries`         | Create a saved query.                     |

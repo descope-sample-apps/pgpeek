@@ -73,6 +73,7 @@ func (r *fakeRows) Close()     { r.closed = true }
 type fakePool struct {
 	rows     pgx.Rows // data rows
 	colRows  pgx.Rows // rows for the information_schema.columns validation query
+	fkRows   pgx.Rows // rows for the foreign-key introspection query
 	queryErr error
 	pingErr  error
 	closed   bool
@@ -87,6 +88,9 @@ func (p *fakePool) Query(_ context.Context, sql string, args ...any) (pgx.Rows, 
 	// catalog.Columns runs the information_schema query first (for validation).
 	if p.colRows != nil && strings.Contains(sql, "information_schema.columns") {
 		return p.colRows, nil
+	}
+	if p.fkRows != nil && strings.Contains(sql, "table_constraints") {
+		return p.fkRows, nil
 	}
 	p.lastSQL = sql
 	p.lastArgs = args

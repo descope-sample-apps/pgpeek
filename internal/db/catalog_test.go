@@ -117,6 +117,50 @@ func dataRows() *fakeRows {
 	return &fakeRows{cols: []string{"id"}, data: [][]any{{int64(1)}}}
 }
 
+func TestForeignKeys_Success(t *testing.T) {
+	rows := &fakeRows{
+		cols: []string{"col", "rs", "rt", "rc"},
+		data: [][]any{
+			{"company_id", "public", "companies", "id"},
+			{"manager_id", "public", "users", "id"},
+		},
+	}
+	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
+	got, err := p.ForeignKeys(context.Background(), "public", "users")
+	if err != nil {
+		t.Fatalf("ForeignKeys: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len = %d", len(got))
+	}
+	if got[0] != (ForeignKey{Column: "company_id", RefSchema: "public", RefTable: "companies", RefColumn: "id"}) {
+		t.Errorf("fk0 = %+v", got[0])
+	}
+}
+
+func TestForeignKeys_QueryError(t *testing.T) {
+	p := &Pool{pool: &fakePool{queryErr: errors.New("boom")}, rowCap: 10}
+	if _, err := p.ForeignKeys(context.Background(), "s", "t"); err == nil {
+		t.Fatal("expected query error")
+	}
+}
+
+func TestForeignKeys_ScanError(t *testing.T) {
+	rows := &fakeRows{cols: []string{"col"}, data: [][]any{{"x"}}, scanErr: errors.New("scan")}
+	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
+	if _, err := p.ForeignKeys(context.Background(), "s", "t"); err == nil {
+		t.Fatal("expected scan error")
+	}
+}
+
+func TestForeignKeys_RowsErr(t *testing.T) {
+	rows := &fakeRows{cols: []string{"col"}, errErr: errors.New("cursor")}
+	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
+	if _, err := p.ForeignKeys(context.Background(), "s", "t"); err == nil {
+		t.Fatal("expected rows.Err")
+	}
+}
+
 func TestTableRows_BuildsSanitizedSQLAndClamps(t *testing.T) {
 	fp := &fakePool{rows: dataRows()}
 	p := &Pool{pool: fp, rowCap: 100}

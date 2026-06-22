@@ -154,6 +154,41 @@ func TestIntegrationCatalog(t *testing.T) {
 	}
 }
 
+func TestIntegrationForeignKeys(t *testing.T) {
+	dsn := os.Getenv("PGPEEK_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("PGPEEK_TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	raw, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatalf("raw connect: %v", err)
+	}
+	defer raw.Close(ctx)
+	for _, q := range []string{
+		`DROP TABLE IF EXISTS pgpeek_child`,
+		`DROP TABLE IF EXISTS pgpeek_parent`,
+		`CREATE TABLE pgpeek_parent (id int primary key)`,
+		`CREATE TABLE pgpeek_child (id int primary key, parent_id int references pgpeek_parent(id))`,
+	} {
+		if _, err := raw.Exec(ctx, q); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+	t.Cleanup(func() {
+		_, _ = raw.Exec(ctx, `DROP TABLE IF EXISTS pgpeek_child`)
+		_, _ = raw.Exec(ctx, `DROP TABLE IF EXISTS pgpeek_parent`)
+	})
+
+	fks, err := testPool(t, 1000).ForeignKeys(ctx, "public", "pgpeek_child")
+	if err != nil {
+		t.Fatalf("ForeignKeys: %v", err)
+	}
+	if len(fks) != 1 || fks[0] != (ForeignKey{Column: "parent_id", RefSchema: "public", RefTable: "pgpeek_parent", RefColumn: "id"}) {
+		t.Errorf("fks = %+v", fks)
+	}
+}
+
 func TestIntegrationTableRowsFilterSortSearch(t *testing.T) {
 	dsn := os.Getenv("PGPEEK_TEST_DATABASE_URL")
 	if dsn == "" {

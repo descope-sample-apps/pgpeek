@@ -8,3 +8,9 @@
 /data/
 # local env
 .env
+
+# node / frontend tests
+/node_modules/
+/coverage/
+/web/coverage/
+*.cov

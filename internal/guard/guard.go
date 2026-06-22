@@ -214,12 +214,9 @@ func mask(sql string) (string, int) {
 	return b.String(), statements
 }
 
-// dollarTag returns the dollar-quote tag (e.g. "$$" or "$foo$") starting at i,
-// if sql[i] begins a valid dollar-quote opener.
+// dollarTag returns the dollar-quote tag (e.g. "$$" or "$foo$") starting at i.
+// The caller guarantees sql[i] == '$'.
 func dollarTag(sql string, i int) (string, bool) {
-	if sql[i] != '$' {
-		return "", false
-	}
 	j := i + 1
 	for j < len(sql) {
 		c := sql[j]

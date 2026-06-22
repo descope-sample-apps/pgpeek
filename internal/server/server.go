@@ -7,6 +7,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -19,17 +20,37 @@ import (
 	"github.com/descope/pgpeek/internal/store"
 )
 
+// maxBodyBytes caps request bodies. Queries are SQL text, not data, so 1 MiB is
+// generous while preventing a client from forcing unbounded buffering.
+const maxBodyBytes = 1 << 20
+
+// Querier runs read-only queries and reports database health. *db.Pool
+// implements it; tests substitute a fake.
+type Querier interface {
+	Query(ctx context.Context, sql string) (*db.Result, error)
+	Ping(ctx context.Context) error
+}
+
+// QueryStore persists saved/preset queries. *store.Store implements it.
+type QueryStore interface {
+	List(ctx context.Context) ([]store.SavedQuery, error)
+	Get(ctx context.Context, id int64) (store.SavedQuery, error)
+	Create(ctx context.Context, name, desc, sql string) (store.SavedQuery, error)
+	Update(ctx context.Context, id int64, name, desc, sql string) (store.SavedQuery, error)
+	Delete(ctx context.Context, id int64) error
+}
+
 // Server holds the dependencies for the HTTP handlers.
 type Server struct {
-	pool      *db.Pool
-	store     *store.Store
+	pool      Querier
+	store     QueryStore
 	web       fs.FS
 	log       *slog.Logger
 	queryWait time.Duration
 }
 
 // New constructs a Server.
-func New(pool *db.Pool, st *store.Store, web fs.FS, log *slog.Logger, queryWait time.Duration) *Server {
+func New(pool Querier, st QueryStore, web fs.FS, log *slog.Logger, queryWait time.Duration) *Server {
 	return &Server{pool: pool, store: st, web: web, log: log, queryWait: queryWait}
 }
 
@@ -55,7 +76,7 @@ func (s *Server) Routes() http.Handler {
 	// Static UI
 	mux.Handle("GET /", http.FileServerFS(s.web))
 
-	return logging(s.log, mux)
+	return securityHeaders(logging(s.log, mux))
 }
 
 type queryRequest struct {
@@ -64,8 +85,7 @@ type queryRequest struct {
 
 func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	var req queryRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeBody(w, r, &req) {
 		return
 	}
 	sql := strings.TrimSpace(req.SQL)
@@ -87,8 +107,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	var req queryRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeBody(w, r, &req) {
 		return
 	}
 	sql := strings.TrimSpace(req.SQL)
@@ -108,16 +127,26 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="pgpeek-export.csv"`)
+	if err := writeCSV(w, res); err != nil {
+		// Headers/partial body may already be sent; just log.
+		s.log.Error("csv export", "err", err)
+	}
+}
+
+// writeCSV streams the result as CSV. encoding/csv accumulates errors stickily,
+// so it's sufficient to check Error() once after Flush.
+func writeCSV(w io.Writer, res *db.Result) error {
 	cw := csv.NewWriter(w)
 	_ = cw.Write(res.Columns)
 	row := make([]string, len(res.Columns))
-	for _, r := range res.Rows {
-		for i, cell := range r {
+	for _, rec := range res.Rows {
+		for i, cell := range rec {
 			row[i] = db.CellString(cell)
 		}
 		_ = cw.Write(row)
 	}
 	cw.Flush()
+	return cw.Error()
 }
 
 func (s *Server) handleListQueries(w http.ResponseWriter, r *http.Request) {
@@ -208,8 +237,7 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 
 func decodeSavedQuery(w http.ResponseWriter, r *http.Request) (savedQueryRequest, bool) {
 	var req savedQueryRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeBody(w, r, &req) {
 		return req, false
 	}
 	req.Name = strings.TrimSpace(req.Name)
@@ -223,6 +251,19 @@ func decodeSavedQuery(w http.ResponseWriter, r *http.Request) (savedQueryRequest
 		return req, false
 	}
 	return req, true
+}
+
+// decodeBody reads a size-capped JSON body into v, rejecting unknown fields. It
+// writes the error response itself and returns false on failure.
+func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+		return false
+	}
+	return true
 }
 
 func pathID(w http.ResponseWriter, r *http.Request) (int64, bool) {
@@ -271,4 +312,29 @@ type statusWriter struct {
 func (w *statusWriter) WriteHeader(code int) {
 	w.status = code
 	w.ResponseWriter.WriteHeader(code)
+}
+
+// contentSecurityPolicy allows the app's own assets plus the CodeMirror CDN. The
+// inline page script lives in /app.js (no 'unsafe-inline' for scripts); styles
+// permit 'unsafe-inline' because CodeMirror injects them.
+const contentSecurityPolicy = "default-src 'self'; " +
+	"script-src 'self' https://cdnjs.cloudflare.com; " +
+	"style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; " +
+	"img-src 'self' data:; " +
+	"connect-src 'self'; " +
+	"base-uri 'self'; " +
+	"form-action 'self'; " +
+	"frame-ancestors 'none'"
+
+// securityHeaders sets conservative defaults on every response.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy", contentSecurityPolicy)
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		next.ServeHTTP(w, r)
+	})
 }

@@ -4,6 +4,10 @@
 // connection pooling (not a connection per request), result-row capping
 // (never buffer an unbounded set), a per-session statement timeout, and
 // stateless pods (saved queries live in a small SQLite file on a PVC).
+//
+// All configuration comes from the environment (see internal/config), secrets
+// may be supplied via mounted files, and the database connection supports
+// RDS/Aurora IAM authentication.
 package main
 
 import (
@@ -15,10 +19,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
+	"github.com/descope/pgpeek/internal/awsauth"
+	"github.com/descope/pgpeek/internal/config"
 	"github.com/descope/pgpeek/internal/db"
 	"github.com/descope/pgpeek/internal/server"
 	"github.com/descope/pgpeek/internal/store"
@@ -27,119 +32,108 @@ import (
 //go:embed web
 var webFiles embed.FS
 
+// version is overridden at build time via -ldflags "-X main.version=...".
+var version = "dev"
+
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-
-	if err := run(log); err != nil {
+	log.Info("starting pgpeek", "version", version)
+	if err := run(context.Background(), log); err != nil {
 		log.Error("fatal", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(log *slog.Logger) error {
-	cfg := loadConfig()
-
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		return errors.New("DATABASE_URL is required")
-	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	pool, err := db.New(ctx, db.Config{
-		DSN:              dsn,
-		MaxConns:         cfg.maxConns,
-		StatementTimeout: cfg.statementTimeout,
-		IdleTxTimeout:    cfg.idleTxTimeout,
-		RowCap:           cfg.rowCap,
-	})
-	if err != nil {
-		return err // db.New wraps without leaking the DSN
-	}
-	defer pool.Close()
-	log.Info("connected to database", "maxConns", cfg.maxConns, "rowCap", cfg.rowCap,
-		"statementTimeout", cfg.statementTimeout.String())
-
-	st, err := store.Open(cfg.storePath)
+func run(ctx context.Context, log *slog.Logger) error {
+	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
-	defer st.Close()
-	if err := st.SeedPresets(ctx, store.DefaultPresets); err != nil {
+
+	dbCfg := db.Config{
+		DSN:              cfg.DB.DSN,
+		MaxConns:         cfg.DB.MaxConns,
+		StatementTimeout: cfg.DB.StatementTimeout,
+		IdleTxTimeout:    cfg.DB.IdleTxTimeout,
+		RowCap:           cfg.RowCap,
+	}
+	if cfg.DB.IAMAuth {
+		provider, perr := awsauth.New(ctx, cfg.DB.Region)
+		if perr != nil {
+			return perr
+		}
+		dbCfg.BeforeConnect = provider.BeforeConnect
+		log.Info("RDS IAM authentication enabled", "region", cfg.DB.Region)
+	}
+
+	signalCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := db.New(signalCtx, dbCfg)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	log.Info("connected to database", "maxConns", cfg.DB.MaxConns, "rowCap", cfg.RowCap,
+		"statementTimeout", cfg.DB.StatementTimeout.String(), "iamAuth", cfg.DB.IAMAuth)
+
+	st, err := store.Open(cfg.StorePath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = st.Close() }()
+	if err := st.SeedPresets(signalCtx, store.DefaultPresets); err != nil {
 		log.Warn("seed presets", "err", err)
 	}
 
-	sub, err := fs.Sub(webFiles, "web")
-	if err != nil {
-		return err
-	}
-
-	srv := server.New(pool, st, sub, log, cfg.statementTimeout+5*time.Second)
+	web := mustSubFS(webFiles, "web")
+	srv := server.New(pool, st, web, log, cfg.DB.StatementTimeout+5*time.Second)
 	httpSrv := &http.Server{
-		Addr:              cfg.listen,
+		Addr:              cfg.Server.Listen,
 		Handler:           srv.Routes(),
-		ReadHeaderTimeout: 10 * time.Second,
-		WriteTimeout:      cfg.statementTimeout + 30*time.Second,
-		IdleTimeout:       120 * time.Second,
+		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
+		WriteTimeout:      cfg.Server.WriteTimeout,
+		IdleTimeout:       cfg.Server.IdleTimeout,
 	}
+	return serve(signalCtx, log, httpSrv, cfg.Server)
+}
 
+// serve runs the HTTP server until ctx is cancelled or the server fails, then
+// shuts down gracefully.
+func serve(ctx context.Context, log *slog.Logger, httpSrv *http.Server, sc config.Server) error {
+	errCh := make(chan error, 1)
 	go func() {
-		log.Info("listening", "addr", cfg.listen)
-		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Error("http server", "err", err)
-			stop()
+		var serveErr error
+		if sc.TLSEnabled() {
+			log.Info("listening", "addr", httpSrv.Addr, "tls", true)
+			serveErr = httpSrv.ListenAndServeTLS(sc.TLSCertFile, sc.TLSKeyFile)
+		} else {
+			log.Info("listening", "addr", httpSrv.Addr, "tls", false)
+			serveErr = httpSrv.ListenAndServe()
 		}
+		if errors.Is(serveErr, http.ErrServerClosed) {
+			serveErr = nil
+		}
+		errCh <- serveErr
 	}()
 
-	<-ctx.Done()
-	log.Info("shutting down")
-	shutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	return httpSrv.Shutdown(shutCtx)
-}
-
-type config struct {
-	listen           string
-	storePath        string
-	rowCap           int
-	maxConns         int32
-	statementTimeout time.Duration
-	idleTxTimeout    time.Duration
-}
-
-func loadConfig() config {
-	return config{
-		listen:           env("PGPEEK_LISTEN", ":8080"),
-		storePath:        env("PGPEEK_STORE_PATH", "/data/pgpeek.db"),
-		rowCap:           envInt("PGPEEK_ROW_CAP", 1000),
-		maxConns:         int32(envInt("PGPEEK_MAX_CONNS", 8)),
-		statementTimeout: envDur("PGPEEK_STATEMENT_TIMEOUT", 30*time.Second),
-		idleTxTimeout:    envDur("PGPEEK_IDLE_TX_TIMEOUT", 30*time.Second),
+	select {
+	case <-ctx.Done():
+		log.Info("shutting down")
+		shutCtx, cancel := context.WithTimeout(context.Background(), sc.ShutdownTimeout)
+		defer cancel()
+		return httpSrv.Shutdown(shutCtx)
+	case err := <-errCh:
+		return err
 	}
 }
 
-func env(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+// mustSubFS returns the sub-filesystem rooted at dir. The embed path is a
+// compile-time constant, so this never fails at runtime.
+func mustSubFS(f fs.FS, dir string) fs.FS {
+	sub, err := fs.Sub(f, dir)
+	if err != nil {
+		panic(err)
 	}
-	return def
-}
-
-func envInt(key string, def int) int {
-	if v := os.Getenv(key); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			return n
-		}
-	}
-	return def
-}
-
-func envDur(key string, def time.Duration) time.Duration {
-	if v := os.Getenv(key); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
-			return d
-		}
-	}
-	return def
+	return sub
 }

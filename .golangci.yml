@@ -1,0 +1,55 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose # HTTP response bodies are closed
+    - errorlint # correct error wrapping / errors.Is/As
+    - gocritic # opinionated correctness/style checks
+    - gosec # security issues
+    - misspell # typos in comments/strings
+    - nolintlint # //nolint directives must be specific and justified
+    - prealloc # slices that could be preallocated
+    - predeclared # don't shadow predeclared identifiers
+    - revive # broad style/lint rules
+    - unconvert # unnecessary type conversions
+    - whitespace
+  settings:
+    gocritic:
+      disabled-checks:
+        - ifElseChain # the guard's char scanner reads clearer as if/else
+    gosec:
+      excludes:
+        - G115 # integer conversions are bounded by validated config here
+    revive:
+      rules:
+        - name: exported
+          disabled: true # package-level doc comments cover the API; avoid noise
+  exclusions:
+    rules:
+      # Test code may ignore errors on cleanup and use simpler patterns.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - bodyclose
+      # The whole point of this app is to run user-supplied SQL; the read-only
+      # role + guard are the controls, not query parameterization.
+      - path: internal/db/pool\.go
+        text: "G201|G202"
+      - path: internal/server/server\.go
+        linters:
+          - gosec
+        text: "G104" # csv writes are explicitly error-checked at flush
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/descope/pgpeek

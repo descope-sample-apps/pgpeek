@@ -44,15 +44,46 @@ browser ── HTTP ──> pgpeek (Go, single static binary)
 
 ## Configuration (env vars)
 
-| Variable                   | Default            | Notes                                              |
-| -------------------------- | ------------------ | -------------------------------------------------- |
-| `DATABASE_URL`             | _(required)_       | Postgres DSN. Use the read-only role. **Never logged.** Aurora: include `?sslmode=require`. |
-| `PGPEEK_LISTEN`            | `:8080`            | Listen address.                                    |
-| `PGPEEK_ROW_CAP`           | `1000`             | Max rows returned/exported per query.              |
-| `PGPEEK_STATEMENT_TIMEOUT` | `30s`              | Per-query DB statement timeout.                    |
-| `PGPEEK_IDLE_TX_TIMEOUT`   | `30s`              | `idle_in_transaction_session_timeout`.             |
-| `PGPEEK_MAX_CONNS`         | `8`                | Max pool size (caps DB connection usage).          |
-| `PGPEEK_STORE_PATH`        | `/data/pgpeek.db`  | SQLite file for saved queries.                     |
+Everything is configured via the environment. Any value can also be supplied
+from a **mounted file** by setting `<VAR>_FILE` to a path (Docker secrets / k8s
+projected volumes); the file's trimmed contents become the value. This is wired
+for the secret-bearing `DATABASE_URL` (use `DATABASE_URL_FILE`).
+
+| Variable                     | Default              | Notes                                                                 |
+| ---------------------------- | -------------------- | --------------------------------------------------------------------- |
+| `DATABASE_URL`               | _(required)_         | Postgres DSN. Use the read-only role. **Never logged.** Aurora: include `?sslmode=require`. |
+| `DATABASE_URL_FILE`          | —                    | Path to a file holding the DSN (mounted-secret alternative).          |
+| `PGPEEK_LISTEN`              | `:8080`              | Listen address.                                                       |
+| `PGPEEK_ROW_CAP`             | `1000`               | Max rows returned/exported per query.                                 |
+| `PGPEEK_STATEMENT_TIMEOUT`   | `30s`                | Per-query DB statement timeout.                                       |
+| `PGPEEK_IDLE_TX_TIMEOUT`     | `30s`                | `idle_in_transaction_session_timeout`.                                |
+| `PGPEEK_MAX_CONNS`           | `8`                  | Max pool size (caps DB connection usage).                             |
+| `PGPEEK_STORE_PATH`          | `/data/pgpeek.db`    | SQLite file for saved queries.                                        |
+| `PGPEEK_READ_HEADER_TIMEOUT` | `10s`                | HTTP read-header timeout.                                             |
+| `PGPEEK_WRITE_TIMEOUT`       | `statementTimeout+30s` | HTTP write timeout (must exceed statement timeout for big exports). |
+| `PGPEEK_IDLE_TIMEOUT`        | `120s`               | HTTP keep-alive idle timeout.                                         |
+| `PGPEEK_SHUTDOWN_TIMEOUT`    | `15s`                | Graceful-shutdown grace period.                                       |
+| `PGPEEK_TLS_CERT_FILE`       | —                    | Enable HTTPS (set together with the key). Otherwise serve plain HTTP behind a TLS-terminating ingress. |
+| `PGPEEK_TLS_KEY_FILE`        | —                    | TLS private key path.                                                 |
+| `PGPEEK_DB_IAM_AUTH`         | `false`              | Use RDS/Aurora IAM auth instead of a password (see below).            |
+| `PGPEEK_AWS_REGION`          | `$AWS_REGION`        | AWS region for IAM token signing (required when IAM auth is on).      |
+
+### RDS / Aurora IAM authentication
+
+Set `PGPEEK_DB_IAM_AUTH=true` and `PGPEEK_AWS_REGION`. The `DATABASE_URL` then
+needs only host/port/user/dbname (no password) and `sslmode=require`. pgpeek
+mints a short-lived IAM auth token from the default AWS credential chain
+(env / web-identity / **IRSA** / instance role) **before every new connection**,
+so tokens never go stale and no static DB password is stored anywhere.
+
+```bash
+export PGPEEK_DB_IAM_AUTH=true
+export PGPEEK_AWS_REGION=us-east-1
+export DATABASE_URL='postgres://descoperead@your-cluster.cluster-xxxx.us-east-1.rds.amazonaws.com:5432/yourdb?sslmode=require'
+```
+
+In k8s, attach an IRSA-annotated ServiceAccount (see `k8s/serviceaccount.yaml`)
+whose role has `rds-db:connect` on the `descoperead` DB user.
 
 ## Run locally
 
@@ -68,10 +99,50 @@ Keyboard: **Ctrl/Cmd + Enter** runs the query.
 ## Build
 
 ```bash
-go test ./...
-CGO_ENABLED=0 go build -o pgpeek .          # static binary
-docker build -t ghcr.io/descope/pgpeek:latest .   # ~25MB distroless image
+make build                 # static binary (CGO disabled)
+make image                 # snapshot distroless image via goreleaser + ko
+docker build -t pgpeek .   # alternative: hand-written multi-stage Dockerfile
 ```
+
+Release images are built with [ko](https://ko.build) inside goreleaser
+(distroless, multi-arch, reproducible, with SBOMs) — see [Releases](#releases).
+
+## Testing & quality
+
+The backend is at **100% statement coverage** on every package under
+`internal/` (guard, db, store, server, config, awsauth); the front-end
+(`web/app.js`) is at **100%** lines/branches/functions via vitest. `package main`
+is thin bootstrap, exercised by integration tests.
+
+```bash
+make test               # unit tests, race detector
+make test-integration   # + db/main integration tests (needs Postgres)
+make cover-check        # full coverage profile, fail if internal/ < 100%
+make lint               # golangci-lint (errcheck, gosec, revive, …)
+make vulncheck          # govulncheck
+make web-test           # vitest --coverage (100% thresholds)
+make ci                 # everything above
+```
+
+A throwaway Postgres for integration/coverage:
+
+```bash
+docker run -d --name pg -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=testdb -p 55432:5432 postgres:16
+make cover-check        # uses PGPEEK_TEST_DATABASE_URL (default points at :55432)
+```
+
+## Releases
+
+- **release-please** watches `main` for [Conventional Commits](https://www.conventionalcommits.org)
+  and maintains a release PR (version bump + `CHANGELOG.md`). Merging it tags
+  `vX.Y.Z` and cuts a GitHub Release.
+- The tag triggers **goreleaser** (`.goreleaser.yaml`), which builds the
+  binaries and uses **ko** to publish multi-arch distroless images to
+  `ghcr.io/descope/pgpeek:{version,major.minor,latest}` with SBOMs.
+
+CI (`.github/workflows/ci.yml`) runs lint, vet, race tests with a Postgres
+service, the 100% coverage gate, govulncheck, the vitest suite, and a snapshot
+image build on every PR.
 
 ## Deploy to k8s
 

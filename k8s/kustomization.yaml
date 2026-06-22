@@ -4,6 +4,7 @@ kind: Kustomization
 # out-of-band (see secret.example.yaml). ingress.yaml is optional; remove if you
 # expose pgpeek another way.
 resources:
+  - serviceaccount.yaml
   - pvc.yaml
   - deployment.yaml
   - service.yaml

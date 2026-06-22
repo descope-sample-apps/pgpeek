@@ -1,0 +1,16 @@
+{
+  "name": "pgpeek-web",
+  "private": true,
+  "type": "module",
+  "description": "Front-end tests for the pgpeek UI (web/app.js).",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^2.1.8",
+    "jsdom": "^25.0.1",
+    "vitest": "^2.1.8"
+  }
+}

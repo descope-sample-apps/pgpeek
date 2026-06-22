@@ -1,0 +1,72 @@
+# goreleaser config. Builds the static binary, archives + checksums, and uses
+# ko (bundled into goreleaser) to publish multi-arch distroless images.
+#   Local dry run:  goreleaser release --snapshot --clean
+version: 2
+
+project_name: pgpeek
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: pgpeek
+    main: .
+    binary: pgpeek
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+# ko builds distroless, reproducible, multi-arch images straight from Go source.
+kos:
+  - id: pgpeek
+    build: pgpeek
+    main: .
+    base_image: gcr.io/distroless/static-debian12:nonroot
+    repositories:
+      - ghcr.io/descope/pgpeek
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    tags:
+      - "{{ .Version }}"
+      - "{{ .Major }}.{{ .Minor }}"
+      - latest
+    bare: true
+    preserve_import_paths: false
+    sbom: spdx
+
+archives:
+  - id: pgpeek
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+sboms:
+  - artifacts: archive
+
+changelog:
+  # release-please owns the changelog; keep goreleaser's notes minimal.
+  disable: true
+
+release:
+  github:
+    owner: descope
+    name: pgpeek
+  # release-please already created the GitHub Release + tag; just attach assets.
+  mode: append

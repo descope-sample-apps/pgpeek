@@ -32,9 +32,12 @@ type Store struct {
 	db *sql.DB
 }
 
+// sqlOpen is a seam so the (rare) open failure path is testable.
+var sqlOpen = sql.Open
+
 // Open opens (and migrates) the SQLite store at path.
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
+	db, err := sqlOpen("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +51,7 @@ func Open(path string) (*Store, error) {
 			is_preset   INTEGER NOT NULL DEFAULT 0,
 			updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);`); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	return &Store{db: db}, nil
@@ -66,7 +69,7 @@ func (s *Store) List(ctx context.Context) ([]SavedQuery, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []SavedQuery
 	for rows.Next() {
 		q, err := scan(rows)

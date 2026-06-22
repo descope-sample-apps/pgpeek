@@ -18,6 +18,7 @@ spec:
       labels:
         app: pgpeek
     spec:
+      serviceAccountName: pgpeek # IRSA target when using RDS IAM auth
       securityContext:
         runAsNonRoot: true
         fsGroup: 65532 # distroless 'nonroot' uid/gid, so /data is writable
@@ -44,6 +45,13 @@ spec:
               value: "8"
             - name: PGPEEK_STORE_PATH
               value: "/data/pgpeek.db"
+            # --- RDS/Aurora IAM auth (optional) ---
+            # Drop the secretKeyRef password above, set DATABASE_URL to a
+            # passwordless DSN, and enable IAM auth + region:
+            # - name: PGPEEK_DB_IAM_AUTH
+            #   value: "true"
+            # - name: PGPEEK_AWS_REGION
+            #   value: "us-east-1"
           volumeMounts:
             - name: data
               mountPath: /data

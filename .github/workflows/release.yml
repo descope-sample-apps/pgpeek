@@ -1,0 +1,43 @@
+name: release
+
+# Triggered when release-please pushes a vX.Y.Z tag. Builds binaries and
+# publishes multi-arch distroless images to GHCR via goreleaser + ko.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # attach archives/checksums to the release
+  packages: write # push images to ghcr.io
+  id-token: write # keyless signing / SBOM attestation
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: goreleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # ko reads the docker login above for GHCR auth.
+          KO_DOCKER_REPO: ghcr.io/descope/pgpeek

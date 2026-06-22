@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -20,11 +21,30 @@ type Config struct {
 	StatementTimeout time.Duration
 	IdleTxTimeout    time.Duration
 	RowCap           int
+
+	// BeforeConnect, if set, runs before every new physical connection. It is
+	// used for RDS/Aurora IAM auth to inject a freshly-minted (short-lived)
+	// auth token as the password, so connections never carry a static secret.
+	BeforeConnect func(context.Context, *pgx.ConnConfig) error
 }
 
-// Pool is a thin wrapper around pgxpool with a row cap.
+// pgxPool is the subset of *pgxpool.Pool that Pool depends on, so the
+// query/health logic can be unit-tested with a fake.
+type pgxPool interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	Ping(ctx context.Context) error
+	Close()
+}
+
+// newPool is a seam: production uses pgxpool.NewWithConfig; tests substitute a
+// fake so New can be exercised without a live database.
+var newPool = func(ctx context.Context, cfg *pgxpool.Config) (pgxPool, error) {
+	return pgxpool.NewWithConfig(ctx, cfg)
+}
+
+// Pool is a thin wrapper around a pgx pool with a row cap.
 type Pool struct {
-	pool   *pgxpool.Pool
+	pool   pgxPool
 	rowCap int
 }
 
@@ -38,8 +58,10 @@ type Result struct {
 	ElapsedMS int64    `json:"elapsedMs"`
 }
 
-// New builds and verifies the pool. The DSN is never logged.
-func New(ctx context.Context, c Config) (*Pool, error) {
+// buildConfig parses the DSN and applies the belt-and-suspenders session
+// limits. Split out from New so the parsing and parameter wiring are testable
+// without opening a pool.
+func buildConfig(c Config) (*pgxpool.Config, error) {
 	cfg, err := pgxpool.ParseConfig(c.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("parse DATABASE_URL: %w", err)
@@ -47,16 +69,22 @@ func New(ctx context.Context, c Config) (*Pool, error) {
 	if c.MaxConns > 0 {
 		cfg.MaxConns = c.MaxConns
 	}
-	if cfg.ConnConfig.RuntimeParams == nil {
-		cfg.ConnConfig.RuntimeParams = map[string]string{}
-	}
-	// Belt-and-suspenders limits applied to every pooled session.
+	// ParseConfig always populates RuntimeParams, so we can assign directly.
 	cfg.ConnConfig.RuntimeParams["statement_timeout"] = strconv.FormatInt(c.StatementTimeout.Milliseconds(), 10)
 	cfg.ConnConfig.RuntimeParams["idle_in_transaction_session_timeout"] = strconv.FormatInt(c.IdleTxTimeout.Milliseconds(), 10)
 	cfg.ConnConfig.RuntimeParams["default_transaction_read_only"] = "on"
 	cfg.ConnConfig.RuntimeParams["application_name"] = "pgpeek"
+	cfg.BeforeConnect = c.BeforeConnect
+	return cfg, nil
+}
 
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+// New builds and verifies the pool. The DSN is never logged.
+func New(ctx context.Context, c Config) (*Pool, error) {
+	cfg, err := buildConfig(c)
+	if err != nil {
+		return nil, err
+	}
+	pool, err := newPool(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("create pool: %w", err)
 	}
@@ -89,7 +117,7 @@ func (p *Pool) Query(ctx context.Context, sql string) (*Result, error) {
 	fds := rows.FieldDescriptions()
 	cols := make([]string, len(fds))
 	for i, f := range fds {
-		cols[i] = string(f.Name)
+		cols[i] = f.Name
 	}
 
 	out := make([][]any, 0, 128)

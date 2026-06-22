@@ -136,7 +136,7 @@ func TestIntegrationCatalog(t *testing.T) {
 		t.Errorf("columns wrong: %+v", cols)
 	}
 
-	page, err := p.TableRows(ctx, "public", "pgpeek_cat", 2, 0)
+	page, err := p.TableRows(ctx, TableQuery{Schema: "public", Table: "pgpeek_cat", Limit: 2})
 	if err != nil {
 		t.Fatalf("TableRows: %v", err)
 	}
@@ -145,11 +145,61 @@ func TestIntegrationCatalog(t *testing.T) {
 	}
 
 	// Offset paging returns the remainder.
-	page2, err := p.TableRows(ctx, "public", "pgpeek_cat", 2, 2)
+	page2, err := p.TableRows(ctx, TableQuery{Schema: "public", Table: "pgpeek_cat", Limit: 2, Offset: 2})
 	if err != nil {
 		t.Fatalf("TableRows page2: %v", err)
 	}
 	if page2.RowCount != 1 {
 		t.Errorf("page2 rowCount = %d, want 1", page2.RowCount)
+	}
+}
+
+func TestIntegrationTableRowsFilterSortSearch(t *testing.T) {
+	dsn := os.Getenv("PGPEEK_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("PGPEEK_TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	raw, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatalf("raw connect: %v", err)
+	}
+	defer raw.Close(ctx)
+	for _, q := range []string{
+		`DROP TABLE IF EXISTS pgpeek_fs`,
+		`CREATE TABLE pgpeek_fs (id int, name text, note text)`,
+		`INSERT INTO pgpeek_fs VALUES (1,'acme',null),(2,'beta','x'),(3,'acme2','y')`,
+	} {
+		if _, err := raw.Exec(ctx, q); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+	t.Cleanup(func() { _, _ = raw.Exec(ctx, `DROP TABLE IF EXISTS pgpeek_fs`) })
+
+	p := testPool(t, 1000)
+
+	// global search across all columns
+	res, err := p.TableRows(ctx, TableQuery{Schema: "public", Table: "pgpeek_fs", Search: "acme"})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if res.RowCount != 2 {
+		t.Errorf("search rowCount = %d, want 2", res.RowCount)
+	}
+
+	// per-column filter + sort desc
+	res, err = p.TableRows(ctx, TableQuery{
+		Schema: "public", Table: "pgpeek_fs",
+		Filters: []Filter{{Column: "id", Op: "gte", Value: "2"}, {Column: "note", Op: "is_not_null"}},
+		Sort:    "id", Desc: true,
+	})
+	if err != nil {
+		t.Fatalf("filter: %v", err)
+	}
+	if res.RowCount != 2 {
+		t.Fatalf("filter rowCount = %d, want 2", res.RowCount)
+	}
+	if first := res.Rows[0][0]; first != int32(3) && first != int64(3) {
+		t.Errorf("sort desc: first id = %v, want 3", first)
 	}
 }

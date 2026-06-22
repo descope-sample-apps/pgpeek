@@ -12,6 +12,8 @@ const FIXTURE = `
   <section id="panel-data"></section>
   <section id="panel-structure" hidden></section>
   <section id="panel-sql" hidden></section>
+  <input id="data-search" />
+  <button id="data-clear"></button>
   <button id="prev-btn"></button>
   <button id="next-btn"></button>
   <span id="page-info"></span>
@@ -101,6 +103,19 @@ const SAMPLE_TABLES = [
   { schema: "auth", name: "sessions", type: "table", estRows: 12 },
 ];
 
+async function selectFirstTable(dataResp = rowsResp(2)) {
+  routes["GET /api/tables"] = makeResp({ json: SAMPLE_TABLES });
+  routes["GET /api/tables/*/data"] = dataResp;
+  await loadApp();
+  $("tables").querySelector(".tbl").dispatchEvent(new Event("click"));
+  await flush();
+}
+
+function lastDataParams() {
+  const call = [...fetch.mock.calls].reverse().find(([u]) => String(u).includes("/data"));
+  return new URL("http://x" + call[0]).searchParams;
+}
+
 // ===================== sidebar / tabs =====================
 
 describe("sidebar", () => {
@@ -166,7 +181,7 @@ describe("data browsing", () => {
     await selectUsers(rowsResp(2));
     expect($("tab-title").textContent).toBe("public.users");
     expect($("panel-data").hidden).toBe(false);
-    expect($("data-results").querySelectorAll("td").length).toBe(2);
+    expect($("data-results").querySelectorAll("tbody td").length).toBe(2);
     expect($("prev-btn").disabled).toBe(true); // offset 0
     expect($("next-btn").disabled).toBe(true); // rowCount < PAGE_SIZE
     expect($("page-info").textContent).toBe("1–2");
@@ -255,6 +270,159 @@ describe("data browsing", () => {
     const spy = vi.spyOn(document, "createElement");
     click("data-export-btn");
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+// ===================== data filtering / sorting / search =====================
+
+describe("data toolbar", () => {
+  it("sorts on header click and toggles asc/desc", async () => {
+    await selectFirstTable(rowsResp(2));
+    routes["GET /api/tables/*/data"] = rowsResp(2);
+    $("data-results").querySelector("th.sortable").dispatchEvent(new Event("click"));
+    await flush();
+    let p = lastDataParams();
+    expect(p.get("sort")).toBe("n");
+    expect(p.get("dir")).toBe("asc");
+    expect($("data-results").querySelector("th").textContent).toContain("▲");
+
+    $("data-results").querySelector("th.sortable").dispatchEvent(new Event("click"));
+    await flush();
+    p = lastDataParams();
+    expect(p.get("dir")).toBe("desc");
+    expect($("data-results").querySelector("th").textContent).toContain("▼");
+  });
+
+  it("switches sort column and cycles asc→desc→asc", async () => {
+    const two = () => makeResp({ json: { columns: ["a", "b"], rows: [[1, 2]], rowCount: 1, truncated: false, elapsedMs: 1 } });
+    await selectFirstTable(two());
+    routes["GET /api/tables/*/data"] = two();
+    const ths = () => $("data-results").querySelectorAll("th.sortable");
+    ths()[0].dispatchEvent(new Event("click")); await flush(); // sort a asc
+    expect(lastDataParams().get("sort")).toBe("a");
+    ths()[1].dispatchEvent(new Event("click")); await flush(); // switch to b (else branch)
+    expect(lastDataParams().get("sort")).toBe("b");
+    expect(lastDataParams().get("dir")).toBe("asc");
+    ths()[1].dispatchEvent(new Event("click")); await flush(); // b desc
+    expect(lastDataParams().get("dir")).toBe("desc");
+    ths()[1].dispatchEvent(new Event("click")); await flush(); // b back to asc
+    expect(lastDataParams().get("dir")).toBe("asc");
+  });
+
+  it("skips columns with no operator and emits empty value for blank value-ops", async () => {
+    const two = () => makeResp({ json: { columns: ["a", "b"], rows: [[1, 2]], rowCount: 1, truncated: false, elapsedMs: 1 } });
+    await selectFirstTable(two());
+    routes["GET /api/tables/*/data"] = two();
+    const sels = $("data-results").querySelectorAll(".f-op");
+    sels[0].value = "eq"; // column a: value-op, value box left blank
+    // column b: no operator -> must be skipped
+    sels[0].dispatchEvent(new Event("change"));
+    await flush();
+    expect(lastDataParams().getAll("f")).toEqual(["a:eq:"]);
+  });
+
+  it("applies a per-column filter (op + value) and repopulates it", async () => {
+    await selectFirstTable(rowsResp(2));
+    routes["GET /api/tables/*/data"] = rowsResp(2);
+    const sel = $("data-results").querySelector(".f-op");
+    sel.value = "gt";
+    sel.parentElement.querySelector(".f-val").value = "100";
+    sel.dispatchEvent(new Event("change"));
+    await flush();
+    expect(lastDataParams().getAll("f")).toContain("n:gt:100");
+    // The rebuilt grid repopulates the filter from state.
+    expect($("data-results").querySelector(".f-op").value).toBe("gt");
+    expect($("data-results").querySelector(".f-val").value).toBe("100");
+  });
+
+  it("applies a value-less filter (is_null)", async () => {
+    await selectFirstTable(rowsResp(2));
+    routes["GET /api/tables/*/data"] = rowsResp(2);
+    const sel = $("data-results").querySelector(".f-op");
+    sel.value = "is_null";
+    sel.dispatchEvent(new Event("change"));
+    await flush();
+    expect(lastDataParams().getAll("f")).toContain("n:is_null");
+  });
+
+  it("applies a filter when Enter is pressed in the value box", async () => {
+    await selectFirstTable(rowsResp(2));
+    routes["GET /api/tables/*/data"] = rowsResp(2);
+    const sel = $("data-results").querySelector(".f-op");
+    sel.value = "ilike";
+    const inp = sel.parentElement.querySelector(".f-val");
+    inp.value = "%x%";
+    inp.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await flush();
+    expect(lastDataParams().getAll("f")).toContain("n:ilike:%x%");
+  });
+
+  it("searches all columns on Enter, ignores other keys", async () => {
+    await selectFirstTable(rowsResp(2));
+    routes["GET /api/tables/*/data"] = rowsResp(2);
+    $("data-search").value = "acme";
+    $("data-search").dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+    await flush();
+    fetch.mockClear();
+    $("data-search").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await flush();
+    expect(lastDataParams().get("search")).toBe("acme");
+  });
+
+  it("export includes active search/filter params", async () => {
+    let href = "";
+    HTMLAnchorElement.prototype.click = vi.fn(function () { href = this.href; });
+    await selectFirstTable(rowsResp(2));
+    routes["GET /api/tables/*/data"] = rowsResp(2);
+    const sel = $("data-results").querySelector(".f-op");
+    sel.value = "eq";
+    sel.parentElement.querySelector(".f-val").value = "5";
+    sel.dispatchEvent(new Event("change"));
+    await flush();
+    click("data-export-btn");
+    expect(href).toContain("format=csv");
+    expect(decodeURIComponent(href)).toContain("f=n:eq:5");
+  });
+
+  it("Clear resets search, filters and sort", async () => {
+    await selectFirstTable(rowsResp(2));
+    routes["GET /api/tables/*/data"] = rowsResp(2);
+    $("data-search").value = "x";
+    $("data-search").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await flush();
+    expect(lastDataParams().get("search")).toBe("x");
+
+    click("data-clear");
+    await flush();
+    expect(lastDataParams().get("search")).toBeNull();
+    expect($("data-search").value).toBe("");
+  });
+
+  it("Clear with no table selected does nothing", async () => {
+    await loadApp();
+    fetch.mockClear();
+    click("data-clear");
+    await flush();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("shows 'No columns' for a column-less data result", async () => {
+    await selectFirstTable(makeResp({ json: { columns: [], rows: [], rowCount: 0, truncated: false, elapsedMs: 0 } }));
+    expect($("data-results").textContent).toContain("No columns");
+  });
+
+  it("resets filters when switching tables", async () => {
+    await selectFirstTable(rowsResp(2));
+    routes["GET /api/tables/*/data"] = rowsResp(2);
+    const sel = $("data-results").querySelector(".f-op");
+    sel.value = "eq";
+    sel.parentElement.querySelector(".f-val").value = "1";
+    sel.dispatchEvent(new Event("change"));
+    await flush();
+    // Switch to another table -> filters cleared.
+    $("tables").querySelectorAll(".tbl")[2].dispatchEvent(new Event("click"));
+    await flush();
+    expect(lastDataParams().getAll("f")).toEqual([]);
   });
 });
 

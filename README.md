@@ -19,9 +19,17 @@ everywhere. Read-only by design: no row editing, schema management, or migration
 └───────────────┴───────────────────────────────────────┘
 ```
 
-- **Data** tab — click a table → paged rows (Prev/Next), CSV export of the page.
+- **Data** tab — click a table → paged rows (Prev/Next). A global search box
+  (matches any column), per-column filters with operators (`=`, `≠`, `<`, `>`,
+  `ILIKE`, `IS NULL`, …), and click-to-sort headers. CSV export respects the
+  active search/filters/sort.
 - **Structure** tab — column name, type, nullable, default.
 - **SQL** tab — CodeMirror editor, saved/preset queries, CSV export.
+
+Filtering is safe by construction: column names are validated against the
+relation's real columns and emitted via `pgx.Identifier`, operators come from a
+fixed allowlist, values are bound as query parameters, and sort is `ASC`/`DESC`
+only — no user input is ever concatenated into SQL.
 
 It exists because Adminer kept falling over. pgpeek avoids those failure modes
 on purpose:
@@ -214,7 +222,7 @@ Two ways:
 | `GET /api/meta`                               | Server limits the UI needs (`{rowCap}`).       |
 | `GET /api/tables`                             | List browsable tables/views (+ row estimate).  |
 | `GET /api/tables/{schema}/{table}/columns`    | Column structure (name, type, nullable, default). |
-| `GET /api/tables/{schema}/{table}/data`       | Paged rows (`?limit=&offset=`, `&format=csv`). |
+| `GET /api/tables/{schema}/{table}/data`       | Paged rows; `?limit=&offset=&search=&sort=&dir=&f=col:op:val` (`&format=csv`). |
 | `GET /api/queries`                            | List saved/preset queries.                     |
 | `POST /api/queries`         | Create a saved query.                     |
 | `PUT /api/queries/{id}`     | Update a saved query.                     |

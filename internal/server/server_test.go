@@ -22,15 +22,16 @@ import (
 )
 
 type fakeQuerier struct {
-	result   *db.Result
-	err      error
-	pingErr  error
-	called   bool
-	lastSQL  string
-	tables   []db.TableInfo
-	cols     []db.ColumnInfo
-	catErr   error
-	lastArgs struct {
+	result    *db.Result
+	err       error
+	pingErr   error
+	called    bool
+	lastSQL   string
+	tables    []db.TableInfo
+	cols      []db.ColumnInfo
+	catErr    error
+	lastQuery db.TableQuery
+	lastArgs  struct {
 		schema, table string
 		limit, offset int
 	}
@@ -51,9 +52,10 @@ func (f *fakeQuerier) Columns(_ context.Context, schema, table string) ([]db.Col
 	return f.cols, f.catErr
 }
 
-func (f *fakeQuerier) TableRows(_ context.Context, schema, table string, limit, offset int) (*db.Result, error) {
-	f.lastArgs.schema, f.lastArgs.table = schema, table
-	f.lastArgs.limit, f.lastArgs.offset = limit, offset
+func (f *fakeQuerier) TableRows(_ context.Context, q db.TableQuery) (*db.Result, error) {
+	f.lastQuery = q
+	f.lastArgs.schema, f.lastArgs.table = q.Schema, q.Table
+	f.lastArgs.limit, f.lastArgs.offset = q.Limit, q.Offset
 	return f.result, f.err
 }
 
@@ -521,6 +523,52 @@ func TestTableData_OK(t *testing.T) {
 	decode[db.Result](t, resp)
 	if q.lastArgs.limit != 25 || q.lastArgs.offset != 50 {
 		t.Errorf("limit/offset = %d/%d", q.lastArgs.limit, q.lastArgs.offset)
+	}
+}
+
+func TestTableData_ParsesSearchSortFilters(t *testing.T) {
+	q := &fakeQuerier{result: okResult()}
+	ts, _ := newTestServer(t, q)
+	resp := mustGet(t, ts, "/api/tables/public/users/data?search=acme&sort=id&dir=desc&f=id:gt:100&f=name:ilike:%25a%25&f=deleted_at:is_null")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	lq := q.lastQuery
+	if lq.Search != "acme" || lq.Sort != "id" || !lq.Desc {
+		t.Errorf("search/sort/desc = %+v", lq)
+	}
+	if len(lq.Filters) != 3 {
+		t.Fatalf("filters = %+v", lq.Filters)
+	}
+	if lq.Filters[0] != (db.Filter{Column: "id", Op: "gt", Value: "100"}) {
+		t.Errorf("filter0 = %+v", lq.Filters[0])
+	}
+	if lq.Filters[1] != (db.Filter{Column: "name", Op: "ilike", Value: "%a%"}) {
+		t.Errorf("filter1 = %+v", lq.Filters[1])
+	}
+	if lq.Filters[2] != (db.Filter{Column: "deleted_at", Op: "is_null"}) {
+		t.Errorf("filter2 (no value) = %+v", lq.Filters[2])
+	}
+}
+
+func TestParseFilters(t *testing.T) {
+	if parseFilters(nil) != nil {
+		t.Error("nil input should yield nil")
+	}
+	got := parseFilters([]string{"id:gt:100", "name:is_null", "bare"})
+	want := []db.Filter{
+		{Column: "id", Op: "gt", Value: "100"},
+		{Column: "name", Op: "is_null"},
+		{Column: "bare"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("len = %d", len(got))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("filter %d = %+v, want %+v", i, got[i], want[i])
+		}
 	}
 }
 

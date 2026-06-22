@@ -103,31 +103,44 @@ func TestColumns_RowsErr(t *testing.T) {
 	}
 }
 
+// colsFor builds a fakeRows usable as the information_schema.columns validation
+// result for the given column names.
+func colsFor(cols ...string) *fakeRows {
+	data := make([][]any, len(cols))
+	for i, c := range cols {
+		data[i] = []any{c, "text", true, (*string)(nil)}
+	}
+	return &fakeRows{cols: []string{"name", "type", "nullable", "default"}, data: data}
+}
+
+func dataRows() *fakeRows {
+	return &fakeRows{cols: []string{"id"}, data: [][]any{{int64(1)}}}
+}
+
 func TestTableRows_BuildsSanitizedSQLAndClamps(t *testing.T) {
-	fp := &fakePool{rows: &fakeRows{cols: []string{"n"}, data: [][]any{{int64(1)}}}}
+	fp := &fakePool{rows: dataRows()}
 	p := &Pool{pool: fp, rowCap: 100}
 
-	// limit over cap and negative offset get clamped.
-	res, err := p.TableRows(context.Background(), "pub lic", "od\"d", 0, -5)
+	// limit over cap and negative offset get clamped; no filters -> no col query.
+	res, err := p.TableRows(context.Background(), TableQuery{Schema: "pub lic", Table: `od"d`, Limit: 0, Offset: -5})
 	if err != nil {
 		t.Fatalf("TableRows: %v", err)
 	}
 	if res.RowCount != 1 {
 		t.Errorf("rowCount = %d", res.RowCount)
 	}
-	sql := fp.lastSQL
-	if !strings.Contains(sql, `"pub lic"."od""d"`) {
-		t.Errorf("identifier not sanitized: %q", sql)
+	if !strings.Contains(fp.lastSQL, `"pub lic"."od""d"`) {
+		t.Errorf("identifier not sanitized: %q", fp.lastSQL)
 	}
-	if !strings.Contains(sql, "LIMIT 100") || !strings.Contains(sql, "OFFSET 0") {
-		t.Errorf("clamp wrong: %q", sql)
+	if !strings.Contains(fp.lastSQL, "LIMIT 100") || !strings.Contains(fp.lastSQL, "OFFSET 0") {
+		t.Errorf("clamp wrong: %q", fp.lastSQL)
 	}
 }
 
 func TestTableRows_HonorsLimitOffset(t *testing.T) {
-	fp := &fakePool{rows: &fakeRows{cols: []string{"n"}, data: [][]any{{int64(1)}}}}
+	fp := &fakePool{rows: dataRows()}
 	p := &Pool{pool: fp, rowCap: 100}
-	if _, err := p.TableRows(context.Background(), "public", "users", 25, 50); err != nil {
+	if _, err := p.TableRows(context.Background(), TableQuery{Schema: "public", Table: "users", Limit: 25, Offset: 50}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(fp.lastSQL, "LIMIT 25") || !strings.Contains(fp.lastSQL, "OFFSET 50") {
@@ -137,7 +150,100 @@ func TestTableRows_HonorsLimitOffset(t *testing.T) {
 
 func TestTableRows_QueryError(t *testing.T) {
 	p := &Pool{pool: &fakePool{queryErr: errors.New("boom")}, rowCap: 10}
-	if _, err := p.TableRows(context.Background(), "s", "t", 10, 0); err == nil {
+	if _, err := p.TableRows(context.Background(), TableQuery{Schema: "s", Table: "t", Limit: 10}); err == nil {
 		t.Fatal("expected query error")
+	}
+}
+
+func TestTableRows_Search(t *testing.T) {
+	fp := &fakePool{rows: dataRows(), colRows: colsFor("id", "email")}
+	p := &Pool{pool: fp, rowCap: 100}
+	if _, err := p.TableRows(context.Background(), TableQuery{Schema: "public", Table: "users", Search: "acme"}); err != nil {
+		t.Fatal(err)
+	}
+	sql := fp.lastSQL
+	if !strings.Contains(sql, `"id"::text ILIKE $1`) || !strings.Contains(sql, `"email"::text ILIKE $1`) {
+		t.Errorf("search SQL wrong: %q", sql)
+	}
+	if !strings.Contains(sql, " OR ") || !strings.Contains(sql, "WHERE (") {
+		t.Errorf("search not OR-combined: %q", sql)
+	}
+	if len(fp.lastArgs) != 1 || fp.lastArgs[0] != "%acme%" {
+		t.Errorf("search arg = %v", fp.lastArgs)
+	}
+}
+
+func TestTableRows_Filters(t *testing.T) {
+	fp := &fakePool{rows: dataRows(), colRows: colsFor("id", "name", "deleted_at")}
+	p := &Pool{pool: fp, rowCap: 100}
+	_, err := p.TableRows(context.Background(), TableQuery{
+		Schema: "public", Table: "users",
+		Filters: []Filter{
+			{Column: "id", Op: "gt", Value: "100"},
+			{Column: "name", Op: "ilike", Value: "%a%"},
+			{Column: "deleted_at", Op: "is_null"},
+			{Column: "name", Op: "is_not_null"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("TableRows: %v", err)
+	}
+	sql := fp.lastSQL
+	for _, want := range []string{`"id" > $1`, `"name" ILIKE $2`, `"deleted_at" IS NULL`, `"name" IS NOT NULL`} {
+		if !strings.Contains(sql, want) {
+			t.Errorf("missing %q in %q", want, sql)
+		}
+	}
+	if len(fp.lastArgs) != 2 || fp.lastArgs[0] != "100" || fp.lastArgs[1] != "%a%" {
+		t.Errorf("args = %v", fp.lastArgs)
+	}
+}
+
+func TestTableRows_SortAscDesc(t *testing.T) {
+	for _, tc := range []struct {
+		desc bool
+		want string
+	}{{false, `ORDER BY "id" ASC`}, {true, `ORDER BY "id" DESC`}} {
+		fp := &fakePool{rows: dataRows(), colRows: colsFor("id")}
+		p := &Pool{pool: fp, rowCap: 100}
+		if _, err := p.TableRows(context.Background(), TableQuery{Schema: "s", Table: "t", Sort: "id", Desc: tc.desc}); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(fp.lastSQL, tc.want) {
+			t.Errorf("sql = %q, want %q", fp.lastSQL, tc.want)
+		}
+	}
+}
+
+func TestTableRows_RejectsUnknownColumnsAndOps(t *testing.T) {
+	mk := func() *Pool { return &Pool{pool: &fakePool{rows: dataRows(), colRows: colsFor("id")}, rowCap: 100} }
+	base := TableQuery{Schema: "s", Table: "t"}
+
+	cases := map[string]TableQuery{
+		"unknown filter column": {Schema: base.Schema, Table: base.Table, Filters: []Filter{{Column: "nope", Op: "eq", Value: "1"}}},
+		"unknown operator":      {Schema: base.Schema, Table: base.Table, Filters: []Filter{{Column: "id", Op: "evil", Value: "1"}}},
+		"unknown sort column":   {Schema: base.Schema, Table: base.Table, Sort: "nope"},
+	}
+	for name, q := range cases {
+		if _, err := mk().TableRows(context.Background(), q); err == nil {
+			t.Errorf("%s: expected error", name)
+		}
+	}
+}
+
+func TestTableRows_ColumnsLookupError(t *testing.T) {
+	// queryErr makes the validation (Columns) query fail when filters are present.
+	p := &Pool{pool: &fakePool{queryErr: errors.New("boom")}, rowCap: 100}
+	if _, err := p.TableRows(context.Background(), TableQuery{Schema: "s", Table: "t", Sort: "id"}); err == nil {
+		t.Fatal("expected columns lookup error")
+	}
+}
+
+func TestTableRows_NoColumns(t *testing.T) {
+	// Validation query returns zero columns -> error.
+	fp := &fakePool{rows: dataRows(), colRows: &fakeRows{cols: []string{"name", "type", "nullable", "default"}}}
+	p := &Pool{pool: fp, rowCap: 100}
+	if _, err := p.TableRows(context.Background(), TableQuery{Schema: "s", Table: "t", Search: "x"}); err == nil {
+		t.Fatal("expected no-columns error")
 	}
 }

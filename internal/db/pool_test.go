@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -70,16 +71,26 @@ func (r *fakeRows) Err() error { return r.errErr }
 func (r *fakeRows) Close()     { r.closed = true }
 
 type fakePool struct {
-	rows     pgx.Rows
+	rows     pgx.Rows // data rows
+	colRows  pgx.Rows // rows for the information_schema.columns validation query
 	queryErr error
 	pingErr  error
 	closed   bool
 	lastSQL  string
+	lastArgs []any
 }
 
-func (p *fakePool) Query(_ context.Context, sql string, _ ...any) (pgx.Rows, error) {
+func (p *fakePool) Query(_ context.Context, sql string, args ...any) (pgx.Rows, error) {
+	if p.queryErr != nil {
+		return nil, p.queryErr
+	}
+	// catalog.Columns runs the information_schema query first (for validation).
+	if p.colRows != nil && strings.Contains(sql, "information_schema.columns") {
+		return p.colRows, nil
+	}
 	p.lastSQL = sql
-	return p.rows, p.queryErr
+	p.lastArgs = args
+	return p.rows, nil
 }
 func (p *fakePool) Ping(context.Context) error { return p.pingErr }
 func (p *fakePool) Close()                     { p.closed = true }

@@ -15,12 +15,41 @@
   let pageSize = PAGE_SIZE; // narrowed to the server row cap once /api/meta loads
   let dataSeq = 0; // request tokens: ignore responses superseded by a newer click
   let structSeq = 0;
+  let searchTerm = "";
+  let filters = {}; // column -> {op, value}
+  let sortCol = null;
+  let sortDir = "asc";
+
+  // Allowlisted filter operators (key sent to the server, label shown in the UI).
+  const OPS = [
+    ["", "—"], ["eq", "="], ["ne", "≠"], ["lt", "<"], ["lte", "≤"],
+    ["gt", ">"], ["gte", "≥"], ["ilike", "ILIKE"], ["like", "LIKE"],
+    ["is_null", "IS NULL"], ["is_not_null", "NOT NULL"],
+  ];
+  const opNeedsValue = (op) => op !== "" && op !== "is_null" && op !== "is_not_null";
 
   function setStatus(msg, cls) { statusEl.className = "status " + cls; statusEl.textContent = msg; }
   function setStatusHTML(html, cls) { statusEl.className = "status " + cls; statusEl.innerHTML = html; }
   function empty(text) { const d = document.createElement("div"); d.className = "empty"; d.textContent = text; return d; }
 
-  // Shared tabular renderer for query/data results.
+  function cellEl(cell) {
+    const td = document.createElement("td");
+    if (cell === null || cell === undefined) { td.className = "null"; td.textContent = "NULL"; }
+    else td.textContent = typeof cell === "object" ? JSON.stringify(cell) : String(cell);
+    return td;
+  }
+
+  function bodyRows(res) {
+    const tbody = document.createElement("tbody");
+    for (const row of res.rows) {
+      const tr = document.createElement("tr");
+      for (const cell of row) tr.append(cellEl(cell));
+      tbody.append(tr);
+    }
+    return tbody;
+  }
+
+  // Plain tabular renderer for SQL query results.
   function renderGrid(el, res) {
     el.replaceChildren();
     if (!res.columns.length) { el.append(empty("Query ran. No columns returned.")); return; }
@@ -29,20 +58,83 @@
     const thead = document.createElement("thead");
     const htr = document.createElement("tr");
     for (const c of res.columns) { const th = document.createElement("th"); th.textContent = c; htr.append(th); }
-    thead.append(htr); table.append(thead);
-    const tbody = document.createElement("tbody");
-    for (const row of res.rows) {
-      const tr = document.createElement("tr");
-      for (const cell of row) {
-        const td = document.createElement("td");
-        if (cell === null || cell === undefined) { td.className = "null"; td.textContent = "NULL"; }
-        else td.textContent = typeof cell === "object" ? JSON.stringify(cell) : String(cell);
-        tr.append(td);
-      }
-      tbody.append(tr);
-    }
-    table.append(tbody);
+    thead.append(htr);
+    table.append(thead, bodyRows(res));
     el.append(table);
+  }
+
+  // Data renderer: sortable headers + a per-column filter row.
+  function renderDataGrid(res) {
+    const el = $("data-results");
+    el.replaceChildren();
+    if (!res.columns.length) { el.append(empty("No columns.")); return; }
+
+    const table = document.createElement("table");
+    const thead = document.createElement("thead");
+
+    const htr = document.createElement("tr");
+    for (const c of res.columns) {
+      const th = document.createElement("th");
+      th.className = "sortable";
+      th.textContent = c === sortCol ? c + (sortDir === "desc" ? " ▼" : " ▲") : c;
+      th.addEventListener("click", () => toggleSort(c));
+      htr.append(th);
+    }
+    thead.append(htr);
+
+    const ftr = document.createElement("tr");
+    ftr.className = "filter-row";
+    for (const c of res.columns) {
+      const td = document.createElement("td");
+      const sel = document.createElement("select");
+      sel.className = "f-op";
+      sel.dataset.col = c;
+      for (const [k, label] of OPS) sel.append(new Option(label, k));
+      const inp = document.createElement("input");
+      inp.className = "f-val";
+      inp.dataset.col = c;
+      inp.placeholder = "filter…";
+      const cur = filters[c];
+      if (cur) { sel.value = cur.op; inp.value = cur.value || ""; }
+      sel.addEventListener("change", applyFilters);
+      inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); applyFilters(); } });
+      td.append(sel, inp);
+      ftr.append(td);
+    }
+    thead.append(ftr);
+
+    table.append(thead, bodyRows(res));
+    el.append(table);
+    if (!res.rows.length) el.append(empty("0 rows."));
+  }
+
+  function toggleSort(col) {
+    if (sortCol === col) sortDir = sortDir === "asc" ? "desc" : "asc";
+    else { sortCol = col; sortDir = "asc"; }
+    offset = 0;
+    loadData();
+  }
+
+  function applyFilters() {
+    filters = {};
+    for (const sel of $("data-results").querySelectorAll(".f-op")) {
+      if (!sel.value) continue;
+      const inp = sel.parentElement.querySelector(".f-val");
+      filters[sel.dataset.col] = { op: sel.value, value: inp.value };
+    }
+    offset = 0;
+    loadData();
+  }
+
+  // appendDataParams adds search/sort/filter params shared by browse + export.
+  function appendDataParams(p) {
+    if (searchTerm) p.set("search", searchTerm);
+    if (sortCol) { p.set("sort", sortCol); p.set("dir", sortDir); }
+    for (const col of Object.keys(filters)) {
+      const f = filters[col];
+      if (opNeedsValue(f.op)) p.append("f", col + ":" + f.op + ":" + (f.value || ""));
+      else p.append("f", col + ":" + f.op);
+    }
   }
 
   // ---- tabs ----
@@ -90,6 +182,8 @@
 
   function selectTable(t, el) {
     current = t; offset = 0;
+    searchTerm = ""; filters = {}; sortCol = null; sortDir = "asc";
+    $("data-search").value = "";
     $("tab-title").textContent = t.schema + "." + t.name;
     for (const b of document.querySelectorAll(".tbl.active")) b.classList.remove("active");
     if (el) el.classList.add("active");
@@ -107,11 +201,15 @@
     const tbl = current, off = offset;
     setStatus("Loading " + tbl.schema + "." + tbl.name + "…", "ok");
     try {
-      const r = await fetch(tablePath(tbl) + "/data?limit=" + pageSize + "&offset=" + off);
+      const p = new URLSearchParams();
+      p.set("limit", pageSize);
+      p.set("offset", off);
+      appendDataParams(p);
+      const r = await fetch(tablePath(tbl) + "/data?" + p.toString());
       const data = await r.json();
       if (seq !== dataSeq) return; // a newer table/page selection superseded this
       if (!r.ok) { setStatus("✗ " + (data.error || r.statusText), "error"); return; }
-      renderGrid($("data-results"), data);
+      renderDataGrid(data);
       $("prev-btn").disabled = off === 0;
       $("next-btn").disabled = data.rowCount < pageSize;
       const from = data.rowCount ? off + 1 : 0;
@@ -126,11 +224,26 @@
   $("next-btn").addEventListener("click", () => { offset += pageSize; loadData(); });
   $("data-export-btn").addEventListener("click", () => {
     if (!current) return;
-    // Export the whole table (server caps at the row limit), not just this page.
+    // Export the whole filtered/sorted table (server caps at the row limit).
+    const p = new URLSearchParams();
+    p.set("format", "csv");
+    appendDataParams(p);
     const a = document.createElement("a");
-    a.href = tablePath(current) + "/data?format=csv";
+    a.href = tablePath(current) + "/data?" + p.toString();
     a.download = current.name + ".csv";
     a.click();
+  });
+
+  function doSearch() {
+    searchTerm = $("data-search").value.trim();
+    offset = 0;
+    loadData();
+  }
+  $("data-search").addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
+  $("data-clear").addEventListener("click", () => {
+    searchTerm = ""; filters = {}; sortCol = null; sortDir = "asc"; offset = 0;
+    $("data-search").value = "";
+    if (current) loadData();
   });
 
   async function loadStructure() {

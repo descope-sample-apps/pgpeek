@@ -30,7 +30,7 @@ type Querier interface {
 	Query(ctx context.Context, sql string) (*db.Result, error)
 	Tables(ctx context.Context) ([]db.TableInfo, error)
 	Columns(ctx context.Context, schema, table string) ([]db.ColumnInfo, error)
-	TableRows(ctx context.Context, schema, table string, limit, offset int) (*db.Result, error)
+	TableRows(ctx context.Context, q db.TableQuery) (*db.Result, error)
 	RowCap() int
 	Ping(ctx context.Context) error
 }
@@ -192,12 +192,20 @@ func (s *Server) handleColumns(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTableData(w http.ResponseWriter, r *http.Request) {
-	limit := queryInt(r, "limit", 0)   // 0 -> pool clamps to row cap
-	offset := queryInt(r, "offset", 0) // negative -> pool clamps to 0
+	q := db.TableQuery{
+		Schema:  r.PathValue("schema"),
+		Table:   r.PathValue("table"),
+		Search:  r.URL.Query().Get("search"),
+		Sort:    r.URL.Query().Get("sort"),
+		Desc:    r.URL.Query().Get("dir") == "desc",
+		Limit:   queryInt(r, "limit", 0),  // 0 -> pool clamps to row cap
+		Offset:  queryInt(r, "offset", 0), // negative -> pool clamps to 0
+		Filters: parseFilters(r.URL.Query()["f"]),
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
 	defer cancel()
-	res, err := s.pool.TableRows(ctx, r.PathValue("schema"), r.PathValue("table"), limit, offset)
+	res, err := s.pool.TableRows(ctx, q)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "failed to read rows: "+err.Error())
 		return
@@ -345,6 +353,27 @@ func safeFilename(name string) string {
 	}, name)
 	if out == "" {
 		return "table"
+	}
+	return out
+}
+
+// parseFilters turns repeated "f" params of the form "column:op[:value]" into
+// db.Filter values. Column/op/value are validated downstream by db.TableRows.
+func parseFilters(raw []string) []db.Filter {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make([]db.Filter, 0, len(raw))
+	for _, s := range raw {
+		parts := strings.SplitN(s, ":", 3)
+		f := db.Filter{Column: parts[0]}
+		if len(parts) >= 2 {
+			f.Op = parts[1]
+		}
+		if len(parts) == 3 {
+			f.Value = parts[2]
+		}
+		out = append(out, f)
 	}
 	return out
 }

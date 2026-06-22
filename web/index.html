@@ -56,6 +56,14 @@
   td.null { color: var(--muted); font-style: italic; }
   tbody tr:nth-child(even) { background: #14171d; }
   .empty { padding: 24px 16px; color: var(--muted); }
+  .toolbar .sep { width: 1px; align-self: stretch; background: var(--border); }
+  #data-search { min-width: 220px; }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { background: #262b36; }
+  tr.filter-row td { padding: 3px 5px; background: #14171d; position: sticky; top: 27px; }
+  tr.filter-row select, tr.filter-row input { padding: 2px 4px; font-size: 12px; border-radius: 4px; }
+  tr.filter-row select { width: 64px; }
+  tr.filter-row input { width: calc(100% - 70px); }
   .status { padding: 6px 16px; font-size: 12px; min-height: 28px; border-top: 1px solid var(--border); background: var(--panel); }
   .status.error { color: var(--danger); }
   .status.ok { color: var(--muted); }
@@ -85,6 +93,9 @@
     <!-- Data -->
     <section class="panel" id="panel-data">
       <div class="toolbar">
+        <input id="data-search" type="search" placeholder="Search all columns…" autocomplete="off" />
+        <button class="ghost" id="data-clear">Clear</button>
+        <span class="sep"></span>
         <button class="ghost" id="prev-btn" disabled>◀ Prev</button>
         <button class="ghost" id="next-btn" disabled>Next ▶</button>
         <span class="page-info" id="page-info">—</span>

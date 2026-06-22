@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -16,12 +17,30 @@ import (
 
 type fakeRows struct {
 	pgx.Rows
-	cols   []string
-	data   [][]any
-	idx    int
-	valErr error
-	errErr error
-	closed bool
+	cols    []string
+	data    [][]any
+	idx     int
+	valErr  error
+	errErr  error
+	scanErr error
+	closed  bool
+}
+
+// Scan copies the current row's values into dest (used by catalog queries).
+func (r *fakeRows) Scan(dest ...any) error {
+	if r.scanErr != nil {
+		return r.scanErr
+	}
+	row := r.data[r.idx-1]
+	for i := range dest {
+		dv := reflect.ValueOf(dest[i]).Elem()
+		if row[i] == nil {
+			dv.Set(reflect.Zero(dv.Type()))
+			continue
+		}
+		dv.Set(reflect.ValueOf(row[i]))
+	}
+	return nil
 }
 
 func (r *fakeRows) FieldDescriptions() []pgconn.FieldDescription {
@@ -55,9 +74,11 @@ type fakePool struct {
 	queryErr error
 	pingErr  error
 	closed   bool
+	lastSQL  string
 }
 
-func (p *fakePool) Query(context.Context, string, ...any) (pgx.Rows, error) {
+func (p *fakePool) Query(_ context.Context, sql string, _ ...any) (pgx.Rows, error) {
+	p.lastSQL = sql
 	return p.rows, p.queryErr
 }
 func (p *fakePool) Ping(context.Context) error { return p.pingErr }
@@ -190,6 +211,12 @@ func TestQuery_RowsErr(t *testing.T) {
 	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
 	if _, err := p.Query(context.Background(), "SELECT n"); err == nil {
 		t.Fatal("expected rows.Err error")
+	}
+}
+
+func TestRowCap(t *testing.T) {
+	if got := (&Pool{rowCap: 250}).RowCap(); got != 250 {
+		t.Errorf("RowCap = %d, want 250", got)
 	}
 }
 

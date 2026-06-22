@@ -22,11 +22,18 @@ import (
 )
 
 type fakeQuerier struct {
-	result  *db.Result
-	err     error
-	pingErr error
-	called  bool
-	lastSQL string
+	result   *db.Result
+	err      error
+	pingErr  error
+	called   bool
+	lastSQL  string
+	tables   []db.TableInfo
+	cols     []db.ColumnInfo
+	catErr   error
+	lastArgs struct {
+		schema, table string
+		limit, offset int
+	}
 }
 
 func (f *fakeQuerier) Query(_ context.Context, sql string) (*db.Result, error) {
@@ -34,6 +41,23 @@ func (f *fakeQuerier) Query(_ context.Context, sql string) (*db.Result, error) {
 	f.lastSQL = sql
 	return f.result, f.err
 }
+
+func (f *fakeQuerier) Tables(context.Context) ([]db.TableInfo, error) {
+	return f.tables, f.catErr
+}
+
+func (f *fakeQuerier) Columns(_ context.Context, schema, table string) ([]db.ColumnInfo, error) {
+	f.lastArgs.schema, f.lastArgs.table = schema, table
+	return f.cols, f.catErr
+}
+
+func (f *fakeQuerier) TableRows(_ context.Context, schema, table string, limit, offset int) (*db.Result, error) {
+	f.lastArgs.schema, f.lastArgs.table = schema, table
+	f.lastArgs.limit, f.lastArgs.offset = limit, offset
+	return f.result, f.err
+}
+
+func (f *fakeQuerier) RowCap() int { return 1000 }
 
 func (f *fakeQuerier) Ping(_ context.Context) error { return f.pingErr }
 
@@ -395,6 +419,155 @@ func TestStoreErrorPaths(t *testing.T) {
 	}
 	if code := do(http.MethodDelete, "/api/queries/1", ""); code != http.StatusInternalServerError {
 		t.Errorf("delete error code = %d, want 500", code)
+	}
+}
+
+// --- catalog / browse endpoints -----------------------------------------
+
+func TestMeta(t *testing.T) {
+	ts, _ := newTestServer(t, &fakeQuerier{})
+	resp := mustGet(t, ts, "/api/meta")
+	got := decode[map[string]int](t, resp)
+	if got["rowCap"] != 1000 {
+		t.Errorf("rowCap = %d, want 1000", got["rowCap"])
+	}
+}
+
+func TestSafeFilename(t *testing.T) {
+	cases := map[string]string{
+		"users":          "users",
+		`a"; x`:          "a___x",
+		"sch.tbl":        "sch.tbl",
+		"évil/../x":      "_vil_.._x",
+		"":               "table",
+		"weird name!@#$": "weird_name____",
+	}
+	for in, want := range cases {
+		if got := safeFilename(in); got != want {
+			t.Errorf("safeFilename(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestTables_OK(t *testing.T) {
+	q := &fakeQuerier{tables: []db.TableInfo{{Schema: "public", Name: "users", Type: "table", EstRows: 5}}}
+	ts, _ := newTestServer(t, q)
+	resp := mustGet(t, ts, "/api/tables")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	got := decode[[]db.TableInfo](t, resp)
+	if len(got) != 1 || got[0].Name != "users" {
+		t.Errorf("tables = %+v", got)
+	}
+}
+
+func TestTables_EmptyReturnsArray(t *testing.T) {
+	srv := serverWithStore(t, &fakeQuerier{}, &fakeStore{})
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/tables", nil))
+	if strings.TrimSpace(rec.Body.String()) != "[]" {
+		t.Errorf("body = %q, want []", rec.Body.String())
+	}
+}
+
+func TestTables_Error(t *testing.T) {
+	ts, _ := newTestServer(t, &fakeQuerier{catErr: errors.New("boom")})
+	resp := mustGet(t, ts, "/api/tables")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", resp.StatusCode)
+	}
+}
+
+func TestColumns_OK(t *testing.T) {
+	q := &fakeQuerier{cols: []db.ColumnInfo{{Name: "id", Type: "integer"}}}
+	ts, _ := newTestServer(t, q)
+	resp := mustGet(t, ts, "/api/tables/public/users/columns")
+	got := decode[[]db.ColumnInfo](t, resp)
+	if len(got) != 1 || got[0].Name != "id" {
+		t.Errorf("columns = %+v", got)
+	}
+	if q.lastArgs.schema != "public" || q.lastArgs.table != "users" {
+		t.Errorf("path values not passed: %+v", q.lastArgs)
+	}
+}
+
+func TestColumns_EmptyReturnsArray(t *testing.T) {
+	srv := serverWithStore(t, &fakeQuerier{}, &fakeStore{})
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/tables/public/users/columns", nil))
+	if strings.TrimSpace(rec.Body.String()) != "[]" {
+		t.Errorf("body = %q, want []", rec.Body.String())
+	}
+}
+
+func TestColumns_Error(t *testing.T) {
+	ts, _ := newTestServer(t, &fakeQuerier{catErr: errors.New("boom")})
+	resp := mustGet(t, ts, "/api/tables/public/users/columns")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", resp.StatusCode)
+	}
+}
+
+func TestTableData_OK(t *testing.T) {
+	q := &fakeQuerier{result: okResult()}
+	ts, _ := newTestServer(t, q)
+	resp := mustGet(t, ts, "/api/tables/public/users/data?limit=25&offset=50")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	decode[db.Result](t, resp)
+	if q.lastArgs.limit != 25 || q.lastArgs.offset != 50 {
+		t.Errorf("limit/offset = %d/%d", q.lastArgs.limit, q.lastArgs.offset)
+	}
+}
+
+func TestTableData_DefaultsAndBadParams(t *testing.T) {
+	q := &fakeQuerier{result: okResult()}
+	ts, _ := newTestServer(t, q)
+	// Non-numeric params fall back to defaults (0 -> pool clamps).
+	resp := mustGet(t, ts, "/api/tables/public/users/data?limit=abc")
+	resp.Body.Close()
+	if q.lastArgs.limit != 0 || q.lastArgs.offset != 0 {
+		t.Errorf("expected defaults, got %d/%d", q.lastArgs.limit, q.lastArgs.offset)
+	}
+}
+
+func TestTableData_Error(t *testing.T) {
+	ts, _ := newTestServer(t, &fakeQuerier{err: errors.New("no such table")})
+	resp := mustGet(t, ts, "/api/tables/public/nope/data")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestTableData_CSV(t *testing.T) {
+	q := &fakeQuerier{result: &db.Result{Columns: []string{"a"}, Rows: [][]any{{"1"}}, RowCount: 1}}
+	ts, _ := newTestServer(t, q)
+	resp := mustGet(t, ts, "/api/tables/public/users/data?format=csv")
+	defer resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/csv") {
+		t.Errorf("content-type = %q", ct)
+	}
+	if cd := resp.Header.Get("Content-Disposition"); !strings.Contains(cd, "users.csv") {
+		t.Errorf("disposition = %q", cd)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "a\n1\n") {
+		t.Errorf("csv body = %q", body)
+	}
+}
+
+func TestTableData_CSVWriteFailure(t *testing.T) {
+	srv := serverWithStore(t, &fakeQuerier{result: okResult()}, &fakeStore{})
+	req := httptest.NewRequest(http.MethodGet, "/api/tables/public/users/data?format=csv", nil)
+	fw := &failingWriter{}
+	srv.handleTableData(fw, req)
+	if ct := fw.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/csv") {
+		t.Errorf("content-type = %q", ct)
 	}
 }
 

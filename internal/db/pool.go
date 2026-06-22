@@ -97,6 +97,9 @@ func New(ctx context.Context, c Config) (*Pool, error) {
 	return &Pool{pool: pool, rowCap: c.RowCap}, nil
 }
 
+// RowCap is the maximum number of rows any query or page returns.
+func (p *Pool) RowCap() int { return p.rowCap }
+
 // Ping checks connectivity (used by /readyz).
 func (p *Pool) Ping(ctx context.Context) error { return p.pool.Ping(ctx) }
 
@@ -112,6 +115,12 @@ func (p *Pool) Query(ctx context.Context, sql string) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	return p.collect(rows, start)
+}
+
+// collect reads up to rowCap rows from rows (which it closes), normalizing
+// values for JSON, and reports whether more rows were available.
+func (p *Pool) collect(rows pgx.Rows, start time.Time) (*Result, error) {
 	defer rows.Close()
 
 	fds := rows.FieldDescriptions()

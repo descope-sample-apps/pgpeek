@@ -24,10 +24,14 @@ import (
 // generous while preventing a client from forcing unbounded buffering.
 const maxBodyBytes = 1 << 20
 
-// Querier runs read-only queries and reports database health. *db.Pool
-// implements it; tests substitute a fake.
+// Querier runs read-only queries, browses the catalog, and reports database
+// health. *db.Pool implements it; tests substitute a fake.
 type Querier interface {
 	Query(ctx context.Context, sql string) (*db.Result, error)
+	Tables(ctx context.Context) ([]db.TableInfo, error)
+	Columns(ctx context.Context, schema, table string) ([]db.ColumnInfo, error)
+	TableRows(ctx context.Context, schema, table string, limit, offset int) (*db.Result, error)
+	RowCap() int
 	Ping(ctx context.Context) error
 }
 
@@ -66,8 +70,12 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /readyz", s.handleReady)
 
 	// API
+	mux.HandleFunc("GET /api/meta", s.handleMeta)
 	mux.HandleFunc("POST /api/query", s.handleQuery)
 	mux.HandleFunc("POST /api/export", s.handleExport)
+	mux.HandleFunc("GET /api/tables", s.handleTables)
+	mux.HandleFunc("GET /api/tables/{schema}/{table}/columns", s.handleColumns)
+	mux.HandleFunc("GET /api/tables/{schema}/{table}/data", s.handleTableData)
 	mux.HandleFunc("GET /api/queries", s.handleListQueries)
 	mux.HandleFunc("POST /api/queries", s.handleCreateQuery)
 	mux.HandleFunc("PUT /api/queries/{id}", s.handleUpdateQuery)
@@ -147,6 +155,63 @@ func writeCSV(w io.Writer, res *db.Result) error {
 	}
 	cw.Flush()
 	return cw.Error()
+}
+
+// handleMeta exposes server-side limits the UI needs (notably the row cap, so
+// the client can size its page and pagination correctly).
+func (s *Server) handleMeta(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]int{"rowCap": s.pool.RowCap()})
+}
+
+func (s *Server) handleTables(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
+	defer cancel()
+	tables, err := s.pool.Tables(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list tables: "+err.Error())
+		return
+	}
+	if tables == nil {
+		tables = []db.TableInfo{}
+	}
+	writeJSON(w, http.StatusOK, tables)
+}
+
+func (s *Server) handleColumns(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
+	defer cancel()
+	cols, err := s.pool.Columns(ctx, r.PathValue("schema"), r.PathValue("table"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read columns: "+err.Error())
+		return
+	}
+	if cols == nil {
+		cols = []db.ColumnInfo{}
+	}
+	writeJSON(w, http.StatusOK, cols)
+}
+
+func (s *Server) handleTableData(w http.ResponseWriter, r *http.Request) {
+	limit := queryInt(r, "limit", 0)   // 0 -> pool clamps to row cap
+	offset := queryInt(r, "offset", 0) // negative -> pool clamps to 0
+
+	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
+	defer cancel()
+	res, err := s.pool.TableRows(ctx, r.PathValue("schema"), r.PathValue("table"), limit, offset)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read rows: "+err.Error())
+		return
+	}
+
+	if r.URL.Query().Get("format") == "csv" {
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+safeFilename(r.PathValue("table"))+`.csv"`)
+		if err := writeCSV(w, res); err != nil {
+			s.log.Error("csv export", "err", err)
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (s *Server) handleListQueries(w http.ResponseWriter, r *http.Request) {
@@ -264,6 +329,35 @@ func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
 		return false
 	}
 	return true
+}
+
+// safeFilename keeps only filename-safe characters, so a table name can't break
+// out of the quoted Content-Disposition value or inject a different extension.
+func safeFilename(name string) string {
+	out := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
+			r == '_', r == '-', r == '.':
+			return r
+		default:
+			return '_'
+		}
+	}, name)
+	if out == "" {
+		return "table"
+	}
+	return out
+}
+
+// queryInt parses a query-string integer, falling back to def on absence or
+// parse error (the db layer clamps the actual bounds).
+func queryInt(r *http.Request, key string, def int) int {
+	if v := r.URL.Query().Get(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return def
 }
 
 func pathID(w http.ResponseWriter, r *http.Request) (int64, bool) {

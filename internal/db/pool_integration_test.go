@@ -12,6 +12,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func testPool(t *testing.T, rowCap int) *Pool {
@@ -83,5 +85,71 @@ func TestIntegrationPing(t *testing.T) {
 	p := testPool(t, 1000)
 	if err := p.Ping(context.Background()); err != nil {
 		t.Errorf("Ping: %v", err)
+	}
+}
+
+func TestIntegrationCatalog(t *testing.T) {
+	dsn := os.Getenv("PGPEEK_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("PGPEEK_TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+
+	// Seed with a raw (writable) connection — the pgpeek pool is read-only.
+	raw, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatalf("raw connect: %v", err)
+	}
+	defer raw.Close(ctx)
+	for _, q := range []string{
+		`DROP TABLE IF EXISTS pgpeek_cat`,
+		`CREATE TABLE pgpeek_cat (id serial primary key, name text not null, note text)`,
+		`INSERT INTO pgpeek_cat (name, note) VALUES ('a', null), ('b', 'x'), ('c', null)`,
+	} {
+		if _, err := raw.Exec(ctx, q); err != nil {
+			t.Fatalf("seed %q: %v", q, err)
+		}
+	}
+	t.Cleanup(func() { _, _ = raw.Exec(ctx, `DROP TABLE IF EXISTS pgpeek_cat`) })
+
+	p := testPool(t, 1000)
+
+	tables, err := p.Tables(ctx)
+	if err != nil {
+		t.Fatalf("Tables: %v", err)
+	}
+	found := false
+	for _, tb := range tables {
+		if tb.Name == "pgpeek_cat" && tb.Type == "table" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("pgpeek_cat not listed by Tables")
+	}
+
+	cols, err := p.Columns(ctx, "public", "pgpeek_cat")
+	if err != nil {
+		t.Fatalf("Columns: %v", err)
+	}
+	if len(cols) != 3 || cols[0].Name != "id" || cols[1].Name != "name" || cols[1].Nullable {
+		t.Errorf("columns wrong: %+v", cols)
+	}
+
+	page, err := p.TableRows(ctx, "public", "pgpeek_cat", 2, 0)
+	if err != nil {
+		t.Fatalf("TableRows: %v", err)
+	}
+	if page.RowCount != 2 {
+		t.Errorf("page rowCount = %d, want 2", page.RowCount)
+	}
+
+	// Offset paging returns the remainder.
+	page2, err := p.TableRows(ctx, "public", "pgpeek_cat", 2, 2)
+	if err != nil {
+		t.Fatalf("TableRows page2: %v", err)
+	}
+	if page2.RowCount != 1 {
+		t.Errorf("page2 rowCount = %d, want 1", page2.RowCount)
 	}
 }

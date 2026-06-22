@@ -1,9 +1,27 @@
 # pgpeek
 
 A minimal, **read-only**, team-shared Postgres browser. Built to replace Adminer
-for the support team — a query box, a results table, saved/preset queries, and
-CSV export. Nothing else (no row editing, no schema management, no migrations,
-no charts).
+for the support team. pgweb-style browsing — a **sidebar of tables/views** you
+click to page through rows, a **Structure** tab showing each table's columns, and
+a **SQL** tab for free-form `SELECT`s with saved/preset queries — plus CSV export
+everywhere. Read-only by design: no row editing, schema management, or migrations.
+
+## What it looks like
+
+```
+┌─ tables ──────┬─ Data │ Structure │ SQL ─────────────┐
+│ 🔍 filter…    │  id   email          created_at       │
+│ public        │  1    a@x.com        2026-01-02…      │
+│  • users  ◀   │  2    b@y.com        2026-01-03…      │
+│  • companies  │  …                                    │
+│ auth          │  ◀ Prev   1–100   Next ▶   [Export]   │
+│  • sessions   │                                       │
+└───────────────┴───────────────────────────────────────┘
+```
+
+- **Data** tab — click a table → paged rows (Prev/Next), CSV export of the page.
+- **Structure** tab — column name, type, nullable, default.
+- **SQL** tab — CodeMirror editor, saved/preset queries, CSV export.
 
 It exists because Adminer kept falling over. pgpeek avoids those failure modes
 on purpose:
@@ -189,11 +207,15 @@ Two ways:
 
 ## Endpoints
 
-| Method & path               | Purpose                                   |
-| --------------------------- | ----------------------------------------- |
-| `POST /api/query`           | Run a query → JSON `{columns, rows, …}`.  |
-| `POST /api/export`          | Run a query → CSV download.               |
-| `GET /api/queries`          | List saved/preset queries.                |
+| Method & path                                 | Purpose                                        |
+| --------------------------------------------- | ---------------------------------------------- |
+| `POST /api/query`                             | Run a query → JSON `{columns, rows, …}`.       |
+| `POST /api/export`                            | Run a query → CSV download.                    |
+| `GET /api/meta`                               | Server limits the UI needs (`{rowCap}`).       |
+| `GET /api/tables`                             | List browsable tables/views (+ row estimate).  |
+| `GET /api/tables/{schema}/{table}/columns`    | Column structure (name, type, nullable, default). |
+| `GET /api/tables/{schema}/{table}/data`       | Paged rows (`?limit=&offset=`, `&format=csv`). |
+| `GET /api/queries`                            | List saved/preset queries.                     |
 | `POST /api/queries`         | Create a saved query.                     |
 | `PUT /api/queries/{id}`     | Update a saved query.                     |
 | `DELETE /api/queries/{id}`  | Delete a saved query.                     |

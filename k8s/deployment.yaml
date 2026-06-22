@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgpeek
+  labels:
+    app: pgpeek
+spec:
+  # Single replica: the saved-query SQLite file lives on a ReadWriteOnce PVC.
+  # See pvc.yaml for the multi-replica scaling path.
+  replicas: 1
+  strategy:
+    type: Recreate # RWO volume can't be mounted by old+new pod simultaneously
+  selector:
+    matchLabels:
+      app: pgpeek
+  template:
+    metadata:
+      labels:
+        app: pgpeek
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 65532 # distroless 'nonroot' uid/gid, so /data is writable
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pgpeek
+          image: ghcr.io/descope/pgpeek:latest # replace with your registry/tag
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: pgpeek-db
+                  key: DATABASE_URL
+            - name: PGPEEK_ROW_CAP
+              value: "1000"
+            - name: PGPEEK_STATEMENT_TIMEOUT
+              value: "30s"
+            - name: PGPEEK_MAX_CONNS
+              value: "8"
+            - name: PGPEEK_STORE_PATH
+              value: "/data/pgpeek.db"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            failureThreshold: 3
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: pgpeek-data

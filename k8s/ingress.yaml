@@ -1,0 +1,31 @@
+# Optional. pgpeek itself is auth-thin by design — DO NOT expose it without an
+# auth layer in front. The annotations below assume oauth2-proxy fronting the
+# Ingress (Entra/Google SAML via your existing SSO). Adjust to your ingress
+# controller. If you terminate auth elsewhere (service mesh, VPN-only), drop the
+# auth-* annotations.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pgpeek
+  labels:
+    app: pgpeek
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: "https://oauth2-proxy.internal/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://oauth2-proxy.internal/oauth2/start?rd=$escaped_request_uri"
+    cert-manager.io/cluster-issuer: "letsencrypt"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["pgpeek.internal.example.com"]
+      secretName: pgpeek-tls
+  rules:
+    - host: pgpeek.internal.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: pgpeek
+                port:
+                  number: 80

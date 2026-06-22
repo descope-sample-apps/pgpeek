@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>pgpeek — read-only SQL browser</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
+<style>
+  :root {
+    --bg: #0f1115; --panel: #181b22; --border: #2a2f3a; --text: #e6e8eb;
+    --muted: #9aa3b2; --accent: #4f8cff; --danger: #ff5c5c; --ok: #3ecf8e;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--panel); }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+  header .badge { font-size: 11px; color: var(--ok); border: 1px solid var(--border); padding: 2px 8px; border-radius: 999px; }
+  header .spacer { flex: 1; }
+  select, button, input { font: inherit; color: var(--text); background: #20242e; border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:disabled { opacity: .5; cursor: default; }
+  button.ghost { background: transparent; }
+  main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .editor-wrap { border-bottom: 1px solid var(--border); }
+  .CodeMirror { height: 200px; font-size: 13px; }
+  textarea#sql { width: 100%; height: 200px; background: var(--panel); color: var(--text); border: 0; padding: 10px; font: 13px/1.5 monospace; resize: vertical; }
+  .toolbar { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--panel); flex-wrap: wrap; }
+  .toolbar .hint { color: var(--muted); font-size: 12px; }
+  .status { padding: 6px 16px; font-size: 12px; min-height: 28px; }
+  .status.error { color: var(--danger); }
+  .status.ok { color: var(--muted); }
+  .status .warn { color: #ffce5c; }
+  .results { flex: 1; overflow: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { border: 1px solid var(--border); padding: 5px 9px; text-align: left; white-space: pre; max-width: 460px; overflow: hidden; text-overflow: ellipsis; }
+  th { position: sticky; top: 0; background: #20242e; z-index: 1; }
+  td.null { color: var(--muted); font-style: italic; }
+  tbody tr:nth-child(even) { background: #14171d; }
+  .empty { padding: 24px 16px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>pgpeek</h1>
+  <span class="badge">read-only</span>
+  <span class="spacer"></span>
+  <select id="presets" title="Saved &amp; preset queries"><option value="">Saved queries…</option></select>
+  <button class="ghost" id="save-btn" title="Save current query">Save</button>
+  <button class="ghost" id="delete-btn" title="Delete selected saved query" disabled>Delete</button>
+</header>
+
+<main>
+  <div class="editor-wrap">
+    <textarea id="sql" placeholder="SELECT ... -- Ctrl/Cmd+Enter to run">SELECT now();</textarea>
+  </div>
+  <div class="toolbar">
+    <button class="primary" id="run-btn">Run ▶</button>
+    <button class="ghost" id="export-btn" disabled>Export CSV</button>
+    <span class="hint">Ctrl/Cmd&nbsp;+&nbsp;Enter to run · single SELECT/WITH only</span>
+  </div>
+  <div class="status ok" id="status">Ready.</div>
+  <div class="results" id="results">
+    <div class="empty">Run a query to see results.</div>
+  </div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js"></script>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const statusEl = $("status");
+  const resultsEl = $("results");
+  const presetsEl = $("presets");
+  let editor = null;
+  let savedQueries = [];
+  let lastSQL = "";
+
+  // Progressive enhancement: CodeMirror if it loaded, else the raw textarea.
+  if (window.CodeMirror) {
+    editor = CodeMirror.fromTextArea($("sql"), {
+      mode: "text/x-pgsql", lineNumbers: true, theme: "default",
+      lineWrapping: true, autofocus: true,
+    });
+    editor.setOption("extraKeys", { "Cmd-Enter": run, "Ctrl-Enter": run });
+  } else {
+    $("sql").addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); run(); }
+    });
+  }
+  const getSQL = () => (editor ? editor.getValue() : $("sql").value).trim();
+  const setSQL = (v) => editor ? editor.setValue(v) : ($("sql").value = v);
+
+  function setStatus(msg, cls) { statusEl.className = "status " + (cls || "ok"); statusEl.innerHTML = msg; }
+
+  function renderTable(res) {
+    if (!res.columns.length) { resultsEl.innerHTML = '<div class="empty">Query ran. No columns returned.</div>'; return; }
+    const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+    let html = "<table><thead><tr>";
+    for (const c of res.columns) html += "<th>" + esc(c) + "</th>";
+    html += "</tr></thead><tbody>";
+    for (const row of res.rows) {
+      html += "<tr>";
+      for (const cell of row) {
+        if (cell === null || cell === undefined) html += '<td class="null">NULL</td>';
+        else html += "<td>" + esc(typeof cell === "object" ? JSON.stringify(cell) : cell) + "</td>";
+      }
+      html += "</tr>";
+    }
+    html += "</tbody></table>";
+    if (!res.rows.length) html = '<div class="empty">0 rows.</div>';
+    resultsEl.innerHTML = html;
+  }
+
+  async function run() {
+    const sql = getSQL();
+    if (!sql) return;
+    setStatus("Running…", "ok");
+    $("run-btn").disabled = true; $("export-btn").disabled = true;
+    try {
+      const r = await fetch("/api/query", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sql }),
+      });
+      const data = await r.json();
+      if (!r.ok) { setStatus("✗ " + (data.error || r.statusText), "error"); resultsEl.innerHTML = ""; return; }
+      lastSQL = sql;
+      renderTable(data);
+      let msg = "✓ " + data.rowCount + " row" + (data.rowCount === 1 ? "" : "s") + " in " + data.elapsedMs + " ms";
+      if (data.truncated) msg += ' <span class="warn">· capped (more rows available — add LIMIT or refine)</span>';
+      setStatus(msg, "ok");
+      $("export-btn").disabled = data.rowCount === 0;
+    } catch (e) {
+      setStatus("✗ " + e.message, "error");
+    } finally {
+      $("run-btn").disabled = false;
+    }
+  }
+
+  async function exportCSV() {
+    const sql = lastSQL || getSQL();
+    if (!sql) return;
+    const r = await fetch("/api/export", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sql }),
+    });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); setStatus("✗ " + (d.error || "export failed"), "error"); return; }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "pgpeek-export.csv"; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function loadSaved() {
+    const r = await fetch("/api/queries");
+    savedQueries = await r.json();
+    presetsEl.innerHTML = '<option value="">Saved queries…</option>';
+    const presets = savedQueries.filter((q) => q.isPreset);
+    const mine = savedQueries.filter((q) => !q.isPreset);
+    const addGroup = (label, items) => {
+      if (!items.length) return;
+      const g = document.createElement("optgroup"); g.label = label;
+      for (const q of items) { const o = document.createElement("option"); o.value = q.id; o.textContent = q.name; g.appendChild(o); }
+      presetsEl.appendChild(g);
+    };
+    addGroup("Presets", presets);
+    addGroup("Saved", mine);
+  }
+
+  presetsEl.addEventListener("change", () => {
+    const id = presetsEl.value;
+    const q = savedQueries.find((x) => String(x.id) === id);
+    $("delete-btn").disabled = !(q && !q.isPreset);
+    if (q) { setSQL(q.sql); setStatus("Loaded “" + q.name + "”. Press Run.", "ok"); }
+  });
+
+  $("run-btn").addEventListener("click", run);
+  $("export-btn").addEventListener("click", exportCSV);
+
+  $("save-btn").addEventListener("click", async () => {
+    const sql = getSQL();
+    if (!sql) return;
+    const name = prompt("Name for this saved query:");
+    if (!name) return;
+    const description = prompt("Description (optional):") || "";
+    const r = await fetch("/api/queries", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, description, sql }),
+    });
+    const d = await r.json();
+    if (!r.ok) { setStatus("✗ " + (d.error || "save failed"), "error"); return; }
+    await loadSaved(); presetsEl.value = d.id; $("delete-btn").disabled = false;
+    setStatus("✓ Saved “" + d.name + "”.", "ok");
+  });
+
+  $("delete-btn").addEventListener("click", async () => {
+    const id = presetsEl.value;
+    if (!id) return;
+    const q = savedQueries.find((x) => String(x.id) === id);
+    if (!q || !confirm("Delete saved query “" + q.name + "”?")) return;
+    const r = await fetch("/api/queries/" + id, { method: "DELETE" });
+    if (!r.ok && r.status !== 204) { setStatus("✗ delete failed", "error"); return; }
+    await loadSaved(); $("delete-btn").disabled = true;
+    setStatus("✓ Deleted.", "ok");
+  });
+
+  loadSaved().catch((e) => setStatus("✗ failed to load saved queries: " + e.message, "error"));
+})();
+</script>
+</body>
+</html>

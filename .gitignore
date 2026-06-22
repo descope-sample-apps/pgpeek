@@ -1,0 +1,10 @@
+# binaries
+/pgpeek
+/pgpeek-*
+# local store
+*.db
+*.db-wal
+*.db-shm
+/data/
+# local env
+.env

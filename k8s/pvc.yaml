@@ -1,0 +1,17 @@
+# Small persistent volume for the saved-queries SQLite file. This is the ONLY
+# stateful piece; the Postgres being browsed is external. Because it's a
+# ReadWriteOnce volume holding a SQLite file, the Deployment runs a single
+# replica (see deployment.yaml). To scale to multiple replicas, move the
+# saved-query store to a shared backend (e.g. a dedicated schema in Postgres)
+# and drop this PVC.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pgpeek-data
+  labels:
+    app: pgpeek
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 256Mi

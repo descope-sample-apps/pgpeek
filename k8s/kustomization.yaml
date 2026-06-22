@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# secret.example.yaml is intentionally excluded — create the real Secret
+# out-of-band (see secret.example.yaml). ingress.yaml is optional; remove if you
+# expose pgpeek another way.
+resources:
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml

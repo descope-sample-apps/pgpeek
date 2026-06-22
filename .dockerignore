@@ -1,0 +1,9 @@
+.git
+.gitignore
+*.md
+k8s
+data
+*.db
+*.db-wal
+*.db-shm
+.github

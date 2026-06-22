@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgpeek
+  labels:
+    app: pgpeek
+spec:
+  type: ClusterIP
+  selector:
+    app: pgpeek
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

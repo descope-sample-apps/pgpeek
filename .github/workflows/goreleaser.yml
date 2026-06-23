@@ -1,0 +1,57 @@
+name: goreleaser
+
+# Reusable workflow. Builds the binaries, archives, checksums and SBOMs, and
+# (via ko) the multi-arch distroless images. Called in two modes:
+#
+#   snapshot: true   -> dry run on every PR. Nothing is published. Uses the
+#                       single-platform snapshot config and skips ko to keep CI
+#                       fast while still exercising archive SBOMs via syft.
+#   snapshot: false  -> real release. Pushes images to GHCR and attaches the
+#                       archives/checksums to the GitHub Release.
+#
+# Permissions are inherited from the calling job, so callers must grant
+# contents:write + packages:write + id-token:write for a real release.
+
+on:
+  workflow_call:
+    inputs:
+      snapshot:
+        description: "Run goreleaser in snapshot mode (build everything, publish nothing)."
+        type: boolean
+        default: false
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      # goreleaser's `sboms:` block and ko's `sbom: spdx` shell out to syft,
+      # which is NOT bundled with goreleaser-action. Install it explicitly or
+      # the SBOM step fails with: exec: "syft": executable file not found.
+      - uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+
+      - name: Log in to GHCR
+        if: ${{ !inputs.snapshot }}
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: goreleaser
+        uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7
+        with:
+          version: "~> v2"
+          args: ${{ inputs.snapshot && 'release --snapshot --clean --config .goreleaser.snapshot.yaml --skip ko' || 'release --clean' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # ko reads the docker login above for GHCR auth (release mode only).
+          KO_DOCKER_REPO: ghcr.io/descope/pgpeek

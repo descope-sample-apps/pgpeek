@@ -7,6 +7,9 @@
     "gomodTidy",
     "gomodUpdateImportPaths"
   ],
+  "constraints": {
+    "go": "1.26"
+  },
   "packageRules": [
     {
       "description": "Keep vitest and its lockstep-versioned plugins together; @vitest/* declare exact peer deps on vitest, so bumping them apart breaks lockfile resolution (ERESOLVE).",

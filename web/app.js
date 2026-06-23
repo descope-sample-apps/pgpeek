@@ -58,7 +58,7 @@ function BodyRows({ rows, fkByCol, onNavigate }) {
 }
 
 // ---- Sidebar ----
-function Sidebar({ tables, currentKey, onSelect }) {
+function Sidebar({ tables, loaded, currentKey, onSelect }) {
   const [filter, setFilter] = useState("");
   const f = filter.toLowerCase();
   const items = [];
@@ -79,7 +79,7 @@ function Sidebar({ tables, currentKey, onSelect }) {
     <aside class="sidebar">
       <input id="tbl-filter" type="search" placeholder="Filter tables…" autocomplete="off"
         value=${filter} onInput=${(e) => setFilter(e.target.value)} />
-      <div id="tables">${items.length ? items : html`<div class="empty">${tables.length ? "No tables match." : "Loading tables…"}</div>`}</div>
+      <div id="tables">${items.length ? items : html`<div class="empty">${tables.length ? "No tables match." : (loaded ? "No tables." : "Loading tables…")}</div>`}</div>
     </aside>`;
 }
 
@@ -354,6 +354,7 @@ function SqlTab({ active, saved, reloadSaved, setStatus }) {
 // ---- App ----
 function App() {
   const [tables, setTables] = useState([]);
+  const [tablesLoaded, setTablesLoaded] = useState(false);
   const [rowCap, setRowCap] = useState(PAGE_SIZE);
   const [saved, setSaved] = useState([]);
   const [tab, setTab] = useState("data");
@@ -368,7 +369,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    (async () => { try { setTables(await getJSON("/api/tables")); } catch (e) { setStatus({ text: "✗ failed to load tables: " + e.message, cls: "error" }); } })();
+    (async () => { try { setTables(await getJSON("/api/tables")); } catch (e) { setStatus({ text: "✗ failed to load tables: " + e.message, cls: "error" }); } finally { setTablesLoaded(true); } })();
     (async () => { try { const m = await getJSON("/api/meta"); if (m && m.rowCap > 0) setRowCap(m.rowCap); } catch { /* default */ } })();
     reloadSaved();
   }, []);
@@ -389,7 +390,7 @@ function App() {
   return html`
     <header><h1>pgpeek</h1><span class="badge">read-only</span></header>
     <div class="body">
-      <${Sidebar} tables=${tables} currentKey=${current && tableKey(current)} onSelect=${(t) => open(t)} />
+      <${Sidebar} tables=${tables} loaded=${tablesLoaded} currentKey=${current && tableKey(current)} onSelect=${(t) => open(t)} />
       <main>
         <${Tabs} tab=${tab} setTab=${setTab} title=${title} />
         <section class="panel" id="panel-data" hidden=${tab !== "data"}>

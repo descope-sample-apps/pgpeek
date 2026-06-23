@@ -160,7 +160,7 @@ describe("sidebar and tabs", () => {
     await loadApp();
 
     expect($("tab-title").textContent).toBe("Pick a table");
-    expect($("tables").textContent).toContain("Loading tables…");
+    expect($("tables").textContent).toContain("No tables.");
     expect($("panel-data").textContent).toContain("Select a table to browse its rows.");
     await click("tab-structure");
     expect($("panel-structure").hidden).toBe(false);
@@ -169,6 +169,13 @@ describe("sidebar and tabs", () => {
     expect($("panel-sql").hidden).toBe(false);
     expect($("panel-data").hidden).toBe(true);
     expect($("tab-sql").classList.contains("active")).toBe(true);
+  });
+
+  it("shows loading copy while tables have not resolved", async () => {
+    setRoute("GET /api/tables", () => new Promise(() => {}));
+    await loadApp();
+
+    expect($("tables").textContent).toContain("Loading tables…");
   });
 
   it("groups schemas, styles views, filters matches and no-matches", async () => {
@@ -208,6 +215,7 @@ describe("sidebar and tabs", () => {
     await loadApp();
     expect($("status").classList.contains("error")).toBe(true);
     expect($("status").textContent).toContain("failed to load tables: catalog down");
+    expect($("tables").textContent).toContain("No tables.");
   });
 });
 

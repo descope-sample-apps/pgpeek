@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/descope-sample-apps/pgpeek/compare/v0.3.0...v0.3.1) (2026-06-23)
+
+
+### Bug Fixes
+
+* **deps:** update module modernc.org/sqlite to v1.53.0 ([#28](https://github.com/descope-sample-apps/pgpeek/issues/28)) ([a44186b](https://github.com/descope-sample-apps/pgpeek/commit/a44186bac130949ddf39196285f90eec264d4142))
+
 ## [0.3.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.2.0...v0.3.0) (2026-06-23)
 
 

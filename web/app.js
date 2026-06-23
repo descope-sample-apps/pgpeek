@@ -1,450 +1,414 @@
-// pgpeek UI. Kept in a separate file so the Content-Security-Policy can forbid
-// inline scripts (script-src 'self' + the CodeMirror CDN, no 'unsafe-inline').
-(function () {
-  "use strict";
-  const $ = (id) => document.getElementById(id);
-  const PAGE_SIZE = 100;
+// pgpeek UI — Preact + htm, no build step. Vendored Preact/htm keeps the app a
+// set of static files embedded in the Go binary, CSP-safe (no eval), with the
+// reactivity that the imperative version was outgrowing.
+import {
+  html, render, useState, useEffect, useRef, useCallback,
+} from "./vendor/preact-htm.js";
 
-  const statusEl = $("status");
-  let editor = null;
-  let savedQueries = [];
-  let tables = [];
-  let current = null; // {schema, name, type}
-  let offset = 0;
-  let lastSQL = "";
-  let pageSize = PAGE_SIZE; // narrowed to the server row cap once /api/meta loads
-  let dataSeq = 0; // request tokens: ignore responses superseded by a newer click
-  let structSeq = 0;
-  let searchTerm = "";
-  let filters = {}; // column -> {op, value}
-  let sortCol = null;
-  let sortDir = "asc";
-  let currentFKs = {}; // column -> {schema, table, column} for the open table
+const PAGE_SIZE = 100;
 
-  // Allowlisted filter operators (key sent to the server, label shown in the UI).
-  const OPS = [
-    ["", "—"], ["eq", "="], ["ne", "≠"], ["lt", "<"], ["lte", "≤"],
-    ["gt", ">"], ["gte", "≥"], ["ilike", "ILIKE"], ["like", "LIKE"],
-    ["is_null", "IS NULL"], ["is_not_null", "NOT NULL"],
-  ];
-  const opNeedsValue = (op) => op !== "" && op !== "is_null" && op !== "is_not_null";
+// Allowlisted filter operators (key sent to the server, label shown in the UI).
+const OPS = [
+  ["", "—"], ["eq", "="], ["ne", "≠"], ["lt", "<"], ["lte", "≤"],
+  ["gt", ">"], ["gte", "≥"], ["ilike", "ILIKE"], ["like", "LIKE"],
+  ["is_null", "IS NULL"], ["is_not_null", "NOT NULL"],
+];
+const opNeedsValue = (op) => op !== "" && op !== "is_null" && op !== "is_not_null";
 
-  function setStatus(msg, cls) { statusEl.className = "status " + cls; statusEl.textContent = msg; }
-  function setStatusHTML(html, cls) { statusEl.className = "status " + cls; statusEl.innerHTML = html; }
-  function empty(text) { const d = document.createElement("div"); d.className = "empty"; d.textContent = text; return d; }
+const tablePath = (t) => "/api/tables/" + encodeURIComponent(t.schema) + "/" + encodeURIComponent(t.name);
+const tableKey = (t) => t.schema + "." + t.name;
 
-  function cellEl(cell, ref) {
-    const td = document.createElement("td");
-    if (cell === null || cell === undefined) { td.className = "null"; td.textContent = "NULL"; return td; }
-    const text = typeof cell === "object" ? JSON.stringify(cell) : String(cell);
-    if (ref) {
-      const link = document.createElement("button");
-      link.className = "fk";
-      link.textContent = text;
-      link.title = "→ " + ref.schema + "." + ref.table + "." + ref.column;
-      link.addEventListener("click", () => openRef(ref, cell));
-      td.append(link);
-    } else {
-      td.textContent = text;
+async function getJSON(url) {
+  const r = await fetch(url);
+  const body = await r.json();
+  if (!r.ok) throw new Error(body.error || r.statusText);
+  return body;
+}
+
+// appendDataParams adds search/sort/filter params shared by browse + export.
+function appendDataParams(p, search, sort, filters) {
+  if (search) p.set("search", search);
+  if (sort) { p.set("sort", sort.col); p.set("dir", sort.dir); }
+  for (const col of Object.keys(filters)) {
+    const f = filters[col];
+    if (!f.op) continue;
+    if (opNeedsValue(f.op)) p.append("f", col + ":" + f.op + ":" + (f.value || ""));
+    else p.append("f", col + ":" + f.op);
+  }
+}
+
+function cellText(v) {
+  if (v === null || v === undefined) return null;
+  return typeof v === "object" ? JSON.stringify(v) : String(v);
+}
+
+// Cell renders one value, as an FK link when fkRef is set.
+function Cell({ value, fkRef, onNavigate }) {
+  const text = cellText(value);
+  if (text === null) return html`<td class="null">NULL</td>`;
+  if (fkRef) {
+    return html`<td><button class="fk" title=${"→ " + fkRef.schema + "." + fkRef.table + "." + fkRef.column}
+      onClick=${() => onNavigate(fkRef, value)}>${text}</button></td>`;
+  }
+  return html`<td>${text}</td>`;
+}
+
+function BodyRows({ rows, fkByCol, onNavigate }) {
+  return rows.map((row) => html`<tr>${row.map((v, i) => html`<${Cell} value=${v} fkRef=${fkByCol && fkByCol[i]} onNavigate=${onNavigate} />`)}</tr>`);
+}
+
+// ---- Sidebar ----
+function Sidebar({ tables, currentKey, onSelect }) {
+  const [filter, setFilter] = useState("");
+  const f = filter.toLowerCase();
+  const items = [];
+  let schema = null;
+  for (const t of tables) {
+    const label = tableKey(t);
+    if (f && !label.toLowerCase().includes(f)) continue;
+    if (t.schema !== schema) {
+      schema = t.schema;
+      items.push(html`<div class="schema" key=${"s:" + schema}>${schema}</div>`);
     }
-    return td;
+    const cls = "tbl" + (t.type === "view" ? " view" : "") + (label === currentKey ? " active" : "");
+    items.push(html`<button class=${cls} key=${label}
+      title=${label + (t.estRows >= 0 ? " (~" + t.estRows + " rows)" : "")}
+      onClick=${() => onSelect(t)}>${t.name}</button>`);
   }
+  return html`
+    <aside class="sidebar">
+      <input id="tbl-filter" type="search" placeholder="Filter tables…" autocomplete="off"
+        value=${filter} onInput=${(e) => setFilter(e.target.value)} />
+      <div id="tables">${items.length ? items : html`<div class="empty">${tables.length ? "No tables match." : "Loading tables…"}</div>`}</div>
+    </aside>`;
+}
 
-  // fkByCol maps a column index to its FK ref (or null) so cells become links.
-  function bodyRows(res, fkByCol) {
-    const tbody = document.createElement("tbody");
-    for (const row of res.rows) {
-      const tr = document.createElement("tr");
-      row.forEach((cell, i) => tr.append(cellEl(cell, fkByCol && fkByCol[i])));
-      tbody.append(tr);
-    }
-    return tbody;
-  }
+// ---- Tabs ----
+function Tabs({ tab, setTab, title }) {
+  const btn = (id, label) => html`<button id=${"tab-" + id} class=${tab === id ? "active" : ""} onClick=${() => setTab(id)}>${label}</button>`;
+  return html`
+    <div class="tabs">
+      ${btn("data", "Data")} ${btn("structure", "Structure")} ${btn("sql", "SQL")}
+      <span class="title" id="tab-title">${title}</span>
+    </div>`;
+}
 
-  // Plain tabular renderer for SQL query results.
-  function renderGrid(el, res) {
-    el.replaceChildren();
-    if (!res.columns.length) { el.append(empty("Query ran. No columns returned.")); return; }
-    if (!res.rows.length) { el.append(empty("0 rows.")); return; }
-    const table = document.createElement("table");
-    const thead = document.createElement("thead");
-    const htr = document.createElement("tr");
-    for (const c of res.columns) { const th = document.createElement("th"); th.textContent = c; htr.append(th); }
-    thead.append(htr);
-    table.append(thead, bodyRows(res));
-    el.append(table);
-  }
+// ---- Data tab ----
+function DataTab({ table, pageSize, initialFilters, onNavigate, setStatus }) {
+  const [offset, setOffset] = useState(0);
+  const [search, setSearch] = useState("");
+  const [searchBox, setSearchBox] = useState("");
+  const [filters, setFilters] = useState(initialFilters || {});
+  const [draft, setDraft] = useState(initialFilters || {});
+  const [sort, setSort] = useState(null);
+  const [data, setData] = useState(null);
+  const [fks, setFks] = useState({});
 
-  // Data renderer: sortable headers + a per-column filter row.
-  function renderDataGrid(res) {
-    const el = $("data-results");
-    el.replaceChildren();
-    if (!res.columns.length) { el.append(empty("No columns.")); return; }
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const list = await getJSON(tablePath(table) + "/fks");
+        if (!live) return;
+        const m = {};
+        for (const fk of list) m[fk.column] = { schema: fk.refSchema, table: fk.refTable, column: fk.refColumn };
+        setFks(m);
+      } catch { /* no FK links */ }
+    })();
+    return () => { live = false; };
+  }, [table]);
 
-    const table = document.createElement("table");
-    const thead = document.createElement("thead");
-
-    const htr = document.createElement("tr");
-    for (const c of res.columns) {
-      const th = document.createElement("th");
-      th.className = "sortable";
-      th.textContent = c === sortCol ? c + (sortDir === "desc" ? " ▼" : " ▲") : c;
-      th.addEventListener("click", () => toggleSort(c));
-      htr.append(th);
-    }
-    thead.append(htr);
-
-    const ftr = document.createElement("tr");
-    ftr.className = "filter-row";
-    for (const c of res.columns) {
-      const td = document.createElement("td");
-      const sel = document.createElement("select");
-      sel.className = "f-op";
-      sel.dataset.col = c;
-      for (const [k, label] of OPS) sel.append(new Option(label, k));
-      const inp = document.createElement("input");
-      inp.className = "f-val";
-      inp.dataset.col = c;
-      inp.placeholder = "filter…";
-      const cur = filters[c];
-      if (cur) { sel.value = cur.op; inp.value = cur.value || ""; }
-      sel.addEventListener("change", applyFilters);
-      inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); applyFilters(); } });
-      td.append(sel, inp);
-      ftr.append(td);
-    }
-    thead.append(ftr);
-
-    const fkByCol = res.columns.map((c) => currentFKs[c] || null);
-    table.append(thead, bodyRows(res, fkByCol));
-    el.append(table);
-    if (!res.rows.length) el.append(empty("0 rows."));
-  }
-
-  function toggleSort(col) {
-    if (sortCol === col) sortDir = sortDir === "asc" ? "desc" : "asc";
-    else { sortCol = col; sortDir = "asc"; }
-    offset = 0;
-    loadData();
-  }
-
-  function applyFilters() {
-    filters = {};
-    for (const sel of $("data-results").querySelectorAll(".f-op")) {
-      if (!sel.value) continue;
-      const inp = sel.parentElement.querySelector(".f-val");
-      filters[sel.dataset.col] = { op: sel.value, value: inp.value };
-    }
-    offset = 0;
-    loadData();
-  }
-
-  // appendDataParams adds search/sort/filter params shared by browse + export.
-  function appendDataParams(p) {
-    if (searchTerm) p.set("search", searchTerm);
-    if (sortCol) { p.set("sort", sortCol); p.set("dir", sortDir); }
-    for (const col of Object.keys(filters)) {
-      const f = filters[col];
-      if (opNeedsValue(f.op)) p.append("f", col + ":" + f.op + ":" + (f.value || ""));
-      else p.append("f", col + ":" + f.op);
-    }
-  }
-
-  // ---- tabs ----
-  const TABS = ["data", "structure", "sql"];
-  function switchTab(name) {
-    for (const t of TABS) {
-      $("panel-" + t).hidden = t !== name;
-      $("tab-" + t).classList.toggle("active", t === name);
-    }
-  }
-  $("tab-data").addEventListener("click", () => switchTab("data"));
-  $("tab-structure").addEventListener("click", () => { switchTab("structure"); loadStructure(); });
-  $("tab-sql").addEventListener("click", () => {
-    switchTab("sql");
-    // CodeMirror was created while this panel was hidden (zero size); it must be
-    // refreshed once visible or it renders blank.
-    if (editor) editor.refresh();
-  });
-
-  // ---- sidebar ----
-  async function loadTables() {
-    const r = await fetch("/api/tables");
-    tables = await r.json();
-    renderSidebar();
-  }
-
-  function renderSidebar() {
-    const filter = $("tbl-filter").value.toLowerCase();
-    const list = $("tables");
-    list.replaceChildren();
-    let schema = null;
-    for (const t of tables) {
-      const label = t.schema + "." + t.name;
-      if (filter && !label.toLowerCase().includes(filter)) continue;
-      if (t.schema !== schema) {
-        schema = t.schema;
-        const h = document.createElement("div"); h.className = "schema"; h.textContent = schema;
-        list.append(h);
+  useEffect(() => {
+    let live = true;
+    setStatus({ text: "Loading " + tableKey(table) + "…", cls: "ok" });
+    const p = new URLSearchParams();
+    p.set("limit", pageSize);
+    p.set("offset", offset);
+    appendDataParams(p, search, sort, filters);
+    (async () => {
+      try {
+        const d = await getJSON(tablePath(table) + "/data?" + p.toString());
+        if (!live) return;
+        setData(d);
+        setStatus({ text: "✓ " + d.rowCount + " row" + (d.rowCount === 1 ? "" : "s") + " in " + d.elapsedMs + " ms", cls: "ok" });
+      } catch (e) {
+        if (live) setStatus({ text: "✗ " + e.message, cls: "error" });
       }
-      const item = document.createElement("button");
-      item.className = "tbl" + (t.type === "view" ? " view" : "");
-      item.textContent = t.name;
-      item.dataset.key = label;
-      item.title = label + (t.estRows >= 0 ? " (~" + t.estRows + " rows)" : "");
-      item.addEventListener("click", () => activateTable(t));
-      list.append(item);
-    }
-    if (!list.children.length) list.append(empty("No tables match."));
-  }
-  $("tbl-filter").addEventListener("input", renderSidebar);
+    })();
+    return () => { live = false; };
+  }, [table, offset, search, JSON.stringify(filters), sort && sort.col, sort && sort.dir, pageSize]);
 
-  function highlightSidebar(t) {
-    for (const b of document.querySelectorAll(".tbl.active")) b.classList.remove("active");
-    const key = t.schema + "." + t.name;
-    for (const b of document.querySelectorAll("#tables .tbl")) {
-      if (b.dataset.key === key) b.classList.add("active");
-    }
-  }
+  const applyDraft = useCallback((next) => {
+    const clean = {};
+    for (const c of Object.keys(next)) if (next[c] && next[c].op) clean[c] = next[c];
+    setFilters(clean);
+    setOffset(0);
+  }, []);
 
-  // activateTable opens a table in the Data tab, optionally with preset filters
-  // (used by FK click-through to land on a specific referenced row).
-  async function activateTable(t, initialFilters) {
-    current = t; offset = 0;
-    searchTerm = ""; sortCol = null; sortDir = "asc";
-    filters = initialFilters || {};
-    $("data-search").value = "";
-    $("tab-title").textContent = t.schema + "." + t.name;
-    highlightSidebar(t);
-    switchTab("data");
-    await loadFKs(t);
-    loadData();
-  }
+  const toggleSort = (col) => {
+    setOffset(0);
+    setSort((s) => (s && s.col === col ? { col, dir: s.dir === "asc" ? "desc" : "asc" } : { col, dir: "asc" }));
+  };
 
-  // openRef navigates to the row referenced by a foreign-key cell.
-  function openRef(ref, value) {
-    const target = tables.find((x) => x.schema === ref.schema && x.name === ref.table);
-    if (!target) { setStatus("✗ referenced table " + ref.schema + "." + ref.table + " is not browsable", "error"); return; }
-    activateTable(target, { [ref.column]: { op: "eq", value: String(value) } });
-  }
-
-  async function loadFKs(t) {
-    currentFKs = {};
-    try {
-      const r = await fetch(tablePath(t) + "/fks");
-      const list = await r.json();
-      if (r.ok) for (const f of list) currentFKs[f.column] = { schema: f.refSchema, table: f.refTable, column: f.refColumn };
-    } catch {
-      /* no FK links if introspection fails */
-    }
-  }
-
-  function tablePath(t) {
-    return "/api/tables/" + encodeURIComponent(t.schema) + "/" + encodeURIComponent(t.name);
-  }
-
-  async function loadData() {
-    if (!current) return;
-    const seq = ++dataSeq;
-    const tbl = current, off = offset;
-    setStatus("Loading " + tbl.schema + "." + tbl.name + "…", "ok");
-    try {
-      const p = new URLSearchParams();
-      p.set("limit", pageSize);
-      p.set("offset", off);
-      appendDataParams(p);
-      const r = await fetch(tablePath(tbl) + "/data?" + p.toString());
-      const data = await r.json();
-      if (seq !== dataSeq) return; // a newer table/page selection superseded this
-      if (!r.ok) { setStatus("✗ " + (data.error || r.statusText), "error"); return; }
-      renderDataGrid(data);
-      $("prev-btn").disabled = off === 0;
-      $("next-btn").disabled = data.rowCount < pageSize;
-      const from = data.rowCount ? off + 1 : 0;
-      $("page-info").textContent = from + "–" + (off + data.rowCount);
-      $("data-export-btn").disabled = data.rowCount === 0;
-      setStatus("✓ " + data.rowCount + " row" + (data.rowCount === 1 ? "" : "s") + " in " + data.elapsedMs + " ms", "ok");
-    } catch (e) {
-      setStatus("✗ " + e.message, "error");
-    }
-  }
-  $("prev-btn").addEventListener("click", () => { if (offset > 0) { offset = Math.max(0, offset - pageSize); loadData(); } });
-  $("next-btn").addEventListener("click", () => { offset += pageSize; loadData(); });
-  $("data-export-btn").addEventListener("click", () => {
-    if (!current) return;
-    // Export the whole filtered/sorted table (server caps at the row limit).
+  const exportURL = () => {
     const p = new URLSearchParams();
     p.set("format", "csv");
-    appendDataParams(p);
-    const a = document.createElement("a");
-    a.href = tablePath(current) + "/data?" + p.toString();
-    a.download = current.name + ".csv";
-    a.click();
-  });
+    appendDataParams(p, search, sort, filters);
+    return tablePath(table) + "/data?" + p.toString();
+  };
 
-  function doSearch() {
-    searchTerm = $("data-search").value.trim();
-    offset = 0;
-    loadData();
-  }
-  $("data-search").addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
-  $("data-clear").addEventListener("click", () => {
-    searchTerm = ""; filters = {}; sortCol = null; sortDir = "asc"; offset = 0;
-    $("data-search").value = "";
-    if (current) loadData();
-  });
-
-  async function loadStructure() {
-    if (!current) { $("structure-results").replaceChildren(empty("Select a table to see its structure.")); return; }
-    const seq = ++structSeq;
-    const tbl = current;
-    try {
-      const r = await fetch(tablePath(tbl) + "/columns");
-      const cols = await r.json();
-      if (seq !== structSeq) return; // superseded by a newer selection
-      if (!r.ok) { setStatus("✗ " + (cols.error || r.statusText), "error"); return; }
-      renderColumns($("structure-results"), cols);
-    } catch (e) {
-      setStatus("✗ " + e.message, "error");
-    }
-  }
-
-  function renderColumns(el, cols) {
-    el.replaceChildren();
-    if (!cols.length) { el.append(empty("No columns.")); return; }
-    const table = document.createElement("table");
-    const thead = document.createElement("tr");
-    for (const h of ["Column", "Type", "Nullable", "Default"]) { const th = document.createElement("th"); th.textContent = h; thead.append(th); }
-    table.append(thead);
-    for (const c of cols) {
-      const tr = document.createElement("tr");
-      const cells = [c.name, c.type, c.nullable ? "YES" : "NO", c.default == null ? "" : c.default];
-      for (const v of cells) { const td = document.createElement("td"); td.textContent = v; tr.append(td); }
-      table.append(tr);
-    }
-    el.append(table);
-  }
-
-  // ---- SQL tab ----
-  if (window.CodeMirror) {
-    editor = CodeMirror.fromTextArea($("sql"), {
-      mode: "text/x-pgsql", lineNumbers: true, theme: "default",
-      lineWrapping: true,
-    });
-    editor.setOption("extraKeys", { "Cmd-Enter": runQuery, "Ctrl-Enter": runQuery });
+  let grid;
+  if (!data || data.columns === undefined) {
+    grid = html`<div class="empty">Loading…</div>`;
+  } else if (!data.columns.length) {
+    grid = html`<div class="empty">No columns.</div>`;
   } else {
-    $("sql").addEventListener("keydown", (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); runQuery(); }
-    });
+    const fkByCol = data.columns.map((c) => fks[c] || null);
+    grid = html`
+      <table>
+        <thead>
+          <tr>${data.columns.map((c) => html`<th class="sortable" key=${c} onClick=${() => toggleSort(c)}>
+            ${c}${sort && sort.col === c ? (sort.dir === "desc" ? " ▼" : " ▲") : ""}</th>`)}</tr>
+          <tr class="filter-row">${data.columns.map((c) => {
+            const d = draft[c] || {};
+            return html`<td key=${c}>
+              <select class="f-op" data-col=${c} value=${d.op || ""} onChange=${(e) => {
+                const next = { ...draft, [c]: { op: e.target.value, value: d.value || "" } };
+                setDraft(next); applyDraft(next);
+              }}>${OPS.map(([k, label]) => html`<option value=${k}>${label}</option>`)}</select>
+              <input class="f-val" data-col=${c} placeholder="filter…" value=${d.value || ""}
+                onInput=${(e) => setDraft({ ...draft, [c]: { op: d.op || "", value: e.target.value } })}
+                onKeyDown=${(e) => { if (e.key === "Enter") applyDraft({ ...draft, [c]: { op: d.op || "", value: e.target.value } }); }} />
+            </td>`;
+          })}</tr>
+        </thead>
+        <tbody><${BodyRows} rows=${data.rows} fkByCol=${fkByCol} onNavigate=${onNavigate} /></tbody>
+      </table>
+      ${data.rows.length ? "" : html`<div class="empty">0 rows.</div>`}`;
   }
-  const getSQL = () => (editor ? editor.getValue() : $("sql").value).trim();
-  const setSQL = (v) => editor ? editor.setValue(v) : ($("sql").value = v);
 
-  async function runQuery() {
+  const rowCount = data && data.rowCount ? data.rowCount : 0;
+  const from = rowCount ? offset + 1 : 0;
+
+  return html`
+    <div class="toolbar">
+      <input id="data-search" type="search" placeholder="Search all columns…" autocomplete="off"
+        value=${searchBox} onInput=${(e) => setSearchBox(e.target.value)}
+        onKeyDown=${(e) => { if (e.key === "Enter") { setOffset(0); setSearch(searchBox.trim()); } }} />
+      <button class="ghost" id="data-clear" onClick=${() => {
+        setSearch(""); setSearchBox(""); setFilters({}); setDraft({}); setSort(null); setOffset(0);
+      }}>Clear</button>
+      <span class="sep"></span>
+      <button class="ghost" id="prev-btn" disabled=${offset === 0} onClick=${() => setOffset(Math.max(0, offset - pageSize))}>◀ Prev</button>
+      <button class="ghost" id="next-btn" disabled=${rowCount < pageSize} onClick=${() => setOffset(offset + pageSize)}>Next ▶</button>
+      <span class="page-info" id="page-info">${from}–${offset + rowCount}</span>
+      <a class="ghost btn" id="data-export-btn" role="button" href=${exportURL()} download=${table.name + ".csv"}>Export CSV</a>
+    </div>
+    <div class="results" id="data-results">${grid}</div>`;
+}
+
+// ---- Structure tab ----
+function StructureTab({ table, setStatus }) {
+  const [cols, setCols] = useState(null);
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const c = await getJSON(tablePath(table) + "/columns");
+        if (live) setCols(c);
+      } catch (e) {
+        if (live) setStatus({ text: "✗ " + e.message, cls: "error" });
+      }
+    })();
+    return () => { live = false; };
+  }, [table]);
+
+  let body;
+  if (cols === null) body = html`<div class="empty">Loading…</div>`;
+  else if (!cols.length) body = html`<div class="empty">No columns.</div>`;
+  else body = html`<table>
+    <tr><th>Column</th><th>Type</th><th>Nullable</th><th>Default</th></tr>
+    ${cols.map((c) => html`<tr key=${c.name}><td>${c.name}</td><td>${c.type}</td>
+      <td>${c.nullable ? "YES" : "NO"}</td><td>${c.default == null ? "" : c.default}</td></tr>`)}
+  </table>`;
+  return html`<div class="results" id="structure-results">${body}</div>`;
+}
+
+// ---- SQL tab ----
+function SqlTab({ active, saved, reloadSaved, setStatus }) {
+  const wrapRef = useRef();
+  const taRef = useRef();
+  const cmRef = useRef();
+  const [result, setResult] = useState(null);
+  const [lastSQL, setLastSQL] = useState("");
+  const [selected, setSelected] = useState("");
+  const [running, setRunning] = useState(false);
+  const runningRef = useRef(false);
+
+  const getSQL = () => (cmRef.current ? cmRef.current.getValue() : taRef.current.value).trim();
+  const setSQL = (v) => { if (cmRef.current) cmRef.current.setValue(v); else taRef.current.value = v; };
+
+  const run = useCallback(async () => {
     const sql = getSQL();
     if (!sql) return;
-    setStatus("Running…", "ok");
-    $("run-btn").disabled = true; $("sql-export-btn").disabled = true;
+    if (runningRef.current) return;
+    runningRef.current = true; setRunning(true);
+    setStatus({ text: "Running…", cls: "ok" });
     try {
-      const r = await fetch("/api/query", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sql }),
-      });
-      const data = await r.json();
-      if (!r.ok) { setStatus("✗ " + (data.error || r.statusText), "error"); $("sql-results").replaceChildren(); return; }
-      lastSQL = sql;
-      renderGrid($("sql-results"), data);
-      const msg = "✓ " + data.rowCount + " row" + (data.rowCount === 1 ? "" : "s") + " in " + data.elapsedMs + " ms";
-      if (data.truncated) setStatusHTML(msg + ' <span class="warn">· capped (more rows available — add LIMIT or refine)</span>', "ok");
-      else setStatus(msg, "ok");
-      $("sql-export-btn").disabled = data.rowCount === 0;
+      const r = await fetch("/api/query", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sql }) });
+      const d = await r.json();
+      if (!r.ok) { setStatus({ text: "✗ " + (d.error || r.statusText), cls: "error" }); setResult(null); return; }
+      setLastSQL(sql); setResult(d);
+      const base = "✓ " + d.rowCount + " row" + (d.rowCount === 1 ? "" : "s") + " in " + d.elapsedMs + " ms";
+      setStatus(d.truncated ? { text: base, cls: "ok", warn: "· capped (more rows available — add LIMIT or refine)" } : { text: base, cls: "ok" });
     } catch (e) {
-      setStatus("✗ " + e.message, "error");
+      setStatus({ text: "✗ " + e.message, cls: "error" });
     } finally {
-      $("run-btn").disabled = false;
+      runningRef.current = false; setRunning(false);
     }
-  }
+  }, []);
 
-  async function exportSQL() {
+  // Init CodeMirror once, into a Preact-stable wrapper it fully owns.
+  useEffect(() => {
+    const ta = document.createElement("textarea");
+    ta.id = "sql";
+    ta.value = "SELECT now();";
+    wrapRef.current.appendChild(ta);
+    taRef.current = ta;
+    if (window.CodeMirror) {
+      cmRef.current = window.CodeMirror.fromTextArea(ta, { mode: "text/x-pgsql", lineNumbers: true, lineWrapping: true });
+      cmRef.current.setOption("extraKeys", { "Cmd-Enter": run, "Ctrl-Enter": run });
+    } else {
+      ta.addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); run(); } });
+    }
+  }, []);
+
+  // CodeMirror was created while hidden (zero size); refresh when shown.
+  useEffect(() => { if (active && cmRef.current) cmRef.current.refresh(); }, [active]);
+
+  const exportCSV = async () => {
     const sql = lastSQL || getSQL();
     if (!sql) return;
-    const r = await fetch("/api/export", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sql }),
-    });
-    if (!r.ok) { const d = await r.json().catch(() => ({})); setStatus("✗ " + (d.error || "export failed"), "error"); return; }
-    const blob = await r.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "pgpeek-export.csv"; a.click();
+    const r = await fetch("/api/export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sql }) });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); setStatus({ text: "✗ " + (d.error || "export failed"), cls: "error" }); return; }
+    const url = URL.createObjectURL(await r.blob());
+    const a = document.createElement("a"); a.href = url; a.download = "pgpeek-export.csv"; a.click();
     URL.revokeObjectURL(url);
-  }
+  };
 
-  async function loadSaved() {
-    const r = await fetch("/api/queries");
-    savedQueries = await r.json();
-    const presetsEl = $("presets");
-    presetsEl.replaceChildren(new Option("Saved queries…", ""));
-    const addGroup = (lbl, items) => {
-      if (!items.length) return;
-      const g = document.createElement("optgroup"); g.label = lbl;
-      for (const q of items) g.append(new Option(q.name, q.id));
-      presetsEl.append(g);
-    };
-    addGroup("Presets", savedQueries.filter((q) => q.isPreset));
-    addGroup("Saved", savedQueries.filter((q) => !q.isPreset));
-  }
+  const onPick = (e) => {
+    const id = e.target.value; setSelected(id);
+    const q = saved.find((x) => String(x.id) === id);
+    if (q) { setSQL(q.sql); setStatus({ text: "Loaded “" + q.name + "”. Press Run.", cls: "ok" }); }
+  };
+  const selectedQ = saved.find((x) => String(x.id) === selected);
 
-  $("presets").addEventListener("change", () => {
-    const id = $("presets").value;
-    const q = savedQueries.find((x) => String(x.id) === id);
-    $("delete-btn").disabled = !(q && !q.isPreset);
-    if (q) { setSQL(q.sql); setStatus("Loaded “" + q.name + "”. Press Run.", "ok"); }
-  });
-
-  $("run-btn").addEventListener("click", runQuery);
-  $("sql-export-btn").addEventListener("click", exportSQL);
-
-  $("save-btn").addEventListener("click", async () => {
+  const onSave = async () => {
     const sql = getSQL();
     if (!sql) return;
     const name = prompt("Name for this saved query:");
     if (!name) return;
     const description = prompt("Description (optional):") || "";
-    const r = await fetch("/api/queries", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, description, sql }),
-    });
+    const r = await fetch("/api/queries", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, description, sql }) });
     const d = await r.json();
-    if (!r.ok) { setStatus("✗ " + (d.error || "save failed"), "error"); return; }
-    await loadSaved(); $("presets").value = d.id; $("delete-btn").disabled = false;
-    setStatus("✓ Saved “" + d.name + "”.", "ok");
-  });
+    if (!r.ok) { setStatus({ text: "✗ " + (d.error || "save failed"), cls: "error" }); return; }
+    await reloadSaved(); setSelected(String(d.id));
+    setStatus({ text: "✓ Saved “" + d.name + "”.", cls: "ok" });
+  };
 
-  $("delete-btn").addEventListener("click", async () => {
-    const id = $("presets").value;
-    if (!id) return;
-    const q = savedQueries.find((x) => String(x.id) === id);
-    if (!q || !confirm("Delete saved query “" + q.name + "”?")) return;
-    const r = await fetch("/api/queries/" + id, { method: "DELETE" });
-    if (!r.ok && r.status !== 204) { setStatus("✗ delete failed", "error"); return; }
-    await loadSaved(); $("delete-btn").disabled = true;
-    setStatus("✓ Deleted.", "ok");
-  });
+  const onDelete = async () => {
+    if (!selectedQ) return;
+    if (!confirm("Delete saved query “" + selectedQ.name + "”?")) return;
+    const r = await fetch("/api/queries/" + selectedQ.id, { method: "DELETE" });
+    if (!r.ok && r.status !== 204) { setStatus({ text: "✗ delete failed", cls: "error" }); return; }
+    await reloadSaved(); setSelected("");
+    setStatus({ text: "✓ Deleted.", cls: "ok" });
+  };
 
-  // Learn the server's row cap so paging never asks for more than a page the
-  // server will actually return (otherwise Next could never enable).
-  async function loadMeta() {
-    try {
-      const r = await fetch("/api/meta");
-      const m = await r.json();
-      if (m && m.rowCap > 0) pageSize = Math.min(PAGE_SIZE, m.rowCap);
-    } catch {
-      /* keep the default page size */
-    }
-  }
+  const presets = saved.filter((q) => q.isPreset);
+  const mine = saved.filter((q) => !q.isPreset);
 
-  loadMeta();
-  loadTables().catch((e) => setStatus("✗ failed to load tables: " + e.message, "error"));
-  loadSaved().catch((e) => setStatus("✗ failed to load saved queries: " + e.message, "error"));
-})();
+  return html`
+    <div class="editor-wrap" ref=${wrapRef}></div>
+    <div class="toolbar">
+      <button class="primary" id="run-btn" disabled=${running} onClick=${run}>Run ▶</button>
+      <button class="ghost" id="sql-export-btn" disabled=${running || !result || result.rowCount === 0} onClick=${exportCSV}>Export CSV</button>
+      <select id="presets" title="Saved & preset queries" value=${selected} onChange=${onPick}>
+        <option value="">Saved queries…</option>
+        ${presets.length ? html`<optgroup label="Presets">${presets.map((q) => html`<option key=${q.id} value=${q.id}>${q.name}</option>`)}</optgroup>` : ""}
+        ${mine.length ? html`<optgroup label="Saved">${mine.map((q) => html`<option key=${q.id} value=${q.id}>${q.name}</option>`)}</optgroup>` : ""}
+      </select>
+      <button class="ghost" id="save-btn" onClick=${onSave}>Save</button>
+      <button class="ghost" id="delete-btn" disabled=${!(selectedQ && !selectedQ.isPreset)} onClick=${onDelete}>Delete</button>
+      <span class="hint">Ctrl/Cmd\u00a0+\u00a0Enter to run · single SELECT/WITH only</span>
+    </div>
+    <div class="results" id="sql-results">
+      ${result ? (result.columns.length === 0 ? html`<div class="empty">Query ran. No columns returned.</div>`
+        : (result.rows.length === 0 ? html`<div class="empty">0 rows.</div>`
+          : html`<table><thead><tr>${result.columns.map((c) => html`<th key=${c}>${c}</th>`)}</tr></thead>
+              <tbody><${BodyRows} rows=${result.rows} /></tbody></table>`))
+        : html`<div class="empty">Run a query to see results.</div>`}
+    </div>`;
+}
+
+// ---- App ----
+function App() {
+  const [tables, setTables] = useState([]);
+  const [rowCap, setRowCap] = useState(PAGE_SIZE);
+  const [saved, setSaved] = useState([]);
+  const [tab, setTab] = useState("data");
+  const [current, setCurrent] = useState(null);
+  const [navKey, setNavKey] = useState(0);
+  const [pendingFilters, setPendingFilters] = useState(null);
+  const [status, setStatus] = useState({ text: "Ready.", cls: "ok" });
+
+  const reloadSaved = useCallback(async () => {
+    try { setSaved(await getJSON("/api/queries")); }
+    catch (e) { setStatus({ text: "✗ failed to load saved queries: " + e.message, cls: "error" }); }
+  }, []);
+
+  useEffect(() => {
+    (async () => { try { setTables(await getJSON("/api/tables")); } catch (e) { setStatus({ text: "✗ failed to load tables: " + e.message, cls: "error" }); } })();
+    (async () => { try { const m = await getJSON("/api/meta"); if (m && m.rowCap > 0) setRowCap(m.rowCap); } catch { /* default */ } })();
+    reloadSaved();
+  }, []);
+
+  const open = (t, initialFilters) => {
+    setCurrent(t); setPendingFilters(initialFilters || null);
+    setNavKey((n) => n + 1); setTab("data");
+  };
+  const onNavigate = (ref, value) => {
+    const target = tables.find((x) => x.schema === ref.schema && x.name === ref.table);
+    if (!target) { setStatus({ text: "✗ referenced table " + ref.schema + "." + ref.table + " is not browsable", cls: "error" }); return; }
+    open(target, { [ref.column]: { op: "eq", value: String(value) } });
+  };
+
+  const pageSize = Math.min(PAGE_SIZE, rowCap);
+  const title = current ? tableKey(current) : "Pick a table";
+
+  return html`
+    <header><h1>pgpeek</h1><span class="badge">read-only</span></header>
+    <div class="body">
+      <${Sidebar} tables=${tables} currentKey=${current && tableKey(current)} onSelect=${(t) => open(t)} />
+      <main>
+        <${Tabs} tab=${tab} setTab=${setTab} title=${title} />
+        <section class="panel" id="panel-data" hidden=${tab !== "data"}>
+          ${current
+            ? html`<${DataTab} key=${navKey} table=${current} pageSize=${pageSize}
+                initialFilters=${pendingFilters} onNavigate=${onNavigate} setStatus=${setStatus} />`
+            : html`<div class="results"><div class="empty">Select a table to browse its rows.</div></div>`}
+        </section>
+        <section class="panel" id="panel-structure" hidden=${tab !== "structure"}>
+          ${current && tab === "structure"
+            ? html`<${StructureTab} key=${"s" + navKey} table=${current} setStatus=${setStatus} />`
+            : html`<div class="results"><div class="empty">Select a table to see its structure.</div></div>`}
+        </section>
+        <section class="panel" id="panel-sql" hidden=${tab !== "sql"}>
+          <${SqlTab} active=${tab === "sql"} saved=${saved} reloadSaved=${reloadSaved} setStatus=${setStatus} />
+        </section>
+      </main>
+    </div>
+    <div class=${"status " + status.cls} id="status">${status.text}${status.warn ? html`<span class="warn"> ${status.warn}</span>` : ""}</div>`;
+}
+
+render(html`<${App} />`, document.getElementById("app"));

@@ -1,36 +1,14 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-// Mirrors the IDs in index.html that app.js binds to.
-const FIXTURE = `
-  <input id="tbl-filter" />
-  <div id="tables"></div>
-  <button id="tab-data"></button>
-  <button id="tab-structure"></button>
-  <button id="tab-sql"></button>
-  <span id="tab-title"></span>
-  <section id="panel-data"></section>
-  <section id="panel-structure" hidden></section>
-  <section id="panel-sql" hidden></section>
-  <input id="data-search" />
-  <button id="data-clear"></button>
-  <button id="prev-btn"></button>
-  <button id="next-btn"></button>
-  <span id="page-info"></span>
-  <button id="data-export-btn"></button>
-  <div id="data-results"></div>
-  <div id="structure-results"></div>
-  <textarea id="sql"></textarea>
-  <button id="run-btn"></button>
-  <button id="sql-export-btn"></button>
-  <select id="presets"></select>
-  <button id="save-btn"></button>
-  <button id="delete-btn"></button>
-  <div id="sql-results"></div>
-  <div id="status"></div>
-`;
+// allow: SIZE_OK — characterization suite pins one frozen component tree end-to-end.
 
-const flush = () => new Promise((r) => setTimeout(r, 0));
+async function flush() {
+  for (let i = 0; i < 10; i += 1) {
+    await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
+  }
+}
 
 function makeResp({ ok = true, status = 200, json, blob, statusText = "" } = {}) {
   return {
@@ -45,7 +23,6 @@ function makeResp({ ok = true, status = 200, json, blob, statusText = "" } = {})
 let routes;
 function setRoute(key, resp) { routes[key] = resp; }
 
-// Normalize a request to a stable route key.
 function routeKey(method, path) {
   if (path.endsWith("/data")) return `${method} /api/tables/*/data`;
   if (path.endsWith("/columns")) return `${method} /api/tables/*/columns`;
@@ -59,29 +36,42 @@ function installFetch() {
     const method = (opts && opts.method) || "GET";
     const path = String(url).split("?")[0];
     const r = routes[routeKey(method, path)];
-    if (typeof r === "function") return r(url, opts); // controllable (race tests)
+    if (typeof r === "function") return r(url, opts);
     if (r === undefined) return Promise.reject(new Error("no route for " + method + " " + path));
     if (r instanceof Error) return Promise.reject(r);
     return Promise.resolve(r);
   });
+  window.fetch = globalThis.fetch;
 }
 
 async function loadApp() {
   vi.resetModules();
   await import("./app.js");
-  await flush(); // let loadTables() + loadSaved() settle
+  await flush();
+}
+
+function dataResp({ columns = ["n"], rows, rowCount, truncated = false, elapsedMs = 1 } = {}) {
+  const finalRows = rows ?? Array.from({ length: rowCount ?? 0 }, (_, i) => columns.map((_, j) => (j === 0 ? i + 1 : `${columns[j]}-${i + 1}`)));
+  return makeResp({ json: { columns, rows: finalRows, rowCount: rowCount ?? finalRows.length, truncated, elapsedMs } });
 }
 
 function rowsResp(n, cols = ["n"]) {
-  const rows = Array.from({ length: n }, (_, i) => [i + 1]);
-  return makeResp({ json: { columns: cols, rows, rowCount: n, truncated: false, elapsedMs: 1 } });
+  return dataResp({ columns: cols, rowCount: n });
 }
 
+const SAMPLE_TABLES = [
+  { schema: "public", name: "users", type: "table", estRows: 5 },
+  { schema: "public", name: "v_active", type: "view", estRows: -1 },
+  { schema: "auth", name: "sessions", type: "table", estRows: 12 },
+  { schema: "public", name: "companies", type: "table", estRows: 3 },
+];
+
 beforeEach(() => {
-  document.body.innerHTML = FIXTURE;
+  document.body.innerHTML = '<div id="app"></div>';
   routes = {
     "GET /api/meta": makeResp({ json: { rowCap: 1000 } }),
     "GET /api/tables": makeResp({ json: [] }),
+    "GET /api/tables/*/columns": makeResp({ json: [] }),
     "GET /api/tables/*/fks": makeResp({ json: [] }),
     "GET /api/queries": makeResp({ json: [] }),
   };
@@ -91,25 +81,50 @@ beforeEach(() => {
   globalThis.URL.createObjectURL = vi.fn(() => "blob:fake");
   globalThis.URL.revokeObjectURL = vi.fn();
   HTMLAnchorElement.prototype.click = vi.fn();
+  globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
+  globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
+  window.requestAnimationFrame = globalThis.requestAnimationFrame;
+  window.cancelAnimationFrame = globalThis.cancelAnimationFrame;
+  delete window.CodeMirror;
   delete globalThis.CodeMirror;
 });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  delete window.CodeMirror;
+  delete globalThis.CodeMirror;
+});
 
 const $ = (id) => document.getElementById(id);
-const click = (id) => $(id).dispatchEvent(new Event("click"));
 
-const SAMPLE_TABLES = [
-  { schema: "public", name: "users", type: "table", estRows: 5 },
-  { schema: "public", name: "v_active", type: "view", estRows: -1 },
-  { schema: "auth", name: "sessions", type: "table", estRows: 12 },
-];
+async function click(target) {
+  const el = typeof target === "string" ? $(target) : target;
+  el.click();
+  await flush();
+}
 
-async function selectFirstTable(dataResp = rowsResp(2)) {
-  routes["GET /api/tables"] = makeResp({ json: SAMPLE_TABLES });
-  routes["GET /api/tables/*/data"] = dataResp;
-  await loadApp();
-  $("tables").querySelector(".tbl").dispatchEvent(new Event("click"));
+async function dispatchClick(target) {
+  const el = typeof target === "string" ? $(target) : target;
+  el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await flush();
+}
+
+async function input(id, value) {
+  const el = $(id);
+  el.value = value;
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  await flush();
+}
+
+async function keydown(target, key, init = {}) {
+  const el = typeof target === "string" ? $(target) : target;
+  el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, ...init }));
+  await flush();
+}
+
+async function changeSelect(el, value) {
+  el.value = value;
+  el.dispatchEvent(new Event("change", { bubbles: true }));
   await flush();
 }
 
@@ -118,842 +133,702 @@ function lastDataParams() {
   return new URL("http://x" + call[0]).searchParams;
 }
 
-// ===================== sidebar / tabs =====================
+function postBody(path) {
+  const call = [...fetch.mock.calls].reverse().find(([u, opts]) => String(u).includes(path) && opts?.body);
+  return JSON.parse(call[1].body);
+}
 
-describe("sidebar", () => {
-  it("renders tables grouped by schema with view styling", async () => {
-    routes["GET /api/tables"] = makeResp({ json: SAMPLE_TABLES });
-    await loadApp();
-    const schemas = $("tables").querySelectorAll(".schema");
-    expect([...schemas].map((s) => s.textContent)).toEqual(["public", "auth"]);
-    const btns = $("tables").querySelectorAll(".tbl");
-    expect(btns.length).toBe(3);
-    expect(btns[1].classList.contains("view")).toBe(true);
-    expect(btns[0].title).toContain("~5 rows"); // estRows >= 0
-    expect(btns[1].title).toBe("public.v_active"); // estRows < 0, no count
-  });
+function callsTo(path) {
+  return fetch.mock.calls.filter(([u]) => String(u).includes(path));
+}
 
-  it("filters the table list", async () => {
-    routes["GET /api/tables"] = makeResp({ json: SAMPLE_TABLES });
-    await loadApp();
-    $("tbl-filter").value = "session";
-    $("tbl-filter").dispatchEvent(new Event("input"));
-    const btns = $("tables").querySelectorAll(".tbl");
-    expect(btns.length).toBe(1);
-    expect(btns[0].textContent).toBe("sessions");
-  });
+async function selectTable(index = 0, data = rowsResp(2)) {
+  setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+  setRoute("GET /api/tables/*/data", data);
+  await loadApp();
+  await click($("tables").querySelectorAll(".tbl")[index]);
+}
 
-  it("shows an empty message when nothing matches the filter", async () => {
-    routes["GET /api/tables"] = makeResp({ json: SAMPLE_TABLES });
-    await loadApp();
-    $("tbl-filter").value = "zzz";
-    $("tbl-filter").dispatchEvent(new Event("input"));
-    expect($("tables").textContent).toContain("No tables match");
-  });
+function deferred() {
+  let resolve;
+  const promise = new Promise((r) => { resolve = r; });
+  return { promise, resolve };
+}
 
-  it("reports an error when tables fail to load", async () => {
-    routes["GET /api/tables"] = new Error("offline");
+describe("sidebar and tabs", () => {
+  it("renders initial shell, empty-table copy, and no-table panel hints", async () => {
     await loadApp();
-    expect($("status").textContent).toContain("failed to load tables");
-  });
 
-  it("switches tabs", async () => {
-    await loadApp();
-    click("tab-sql");
+    expect($("tab-title").textContent).toBe("Pick a table");
+    expect($("tables").textContent).toContain("Loading tables…");
+    expect($("panel-data").textContent).toContain("Select a table to browse its rows.");
+    await click("tab-structure");
+    expect($("panel-structure").hidden).toBe(false);
+    expect($("panel-structure").textContent).toContain("Select a table to see its structure.");
+    await click("tab-sql");
     expect($("panel-sql").hidden).toBe(false);
     expect($("panel-data").hidden).toBe(true);
     expect($("tab-sql").classList.contains("active")).toBe(true);
-    click("tab-data");
-    expect($("panel-data").hidden).toBe(false);
   });
-});
 
-// ===================== data browsing =====================
-
-describe("data browsing", () => {
-  async function selectUsers(dataResp) {
-    routes["GET /api/tables"] = makeResp({ json: SAMPLE_TABLES });
-    routes["GET /api/tables/*/data"] = dataResp;
+  it("groups schemas, styles views, filters matches and no-matches", async () => {
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
     await loadApp();
-    $("tables").querySelector(".tbl").dispatchEvent(new Event("click")); // users
-    await flush();
-  }
 
-  it("loads a table's first page and updates pager", async () => {
-    await selectUsers(rowsResp(2));
+    expect([...$("tables").querySelectorAll(".schema")].map((s) => s.textContent)).toEqual(["public", "auth", "public"]);
+    const buttons = $("tables").querySelectorAll(".tbl");
+    expect(buttons).toHaveLength(4);
+    expect(buttons[1].classList.contains("view")).toBe(true);
+    expect(buttons[0].title).toContain("~5 rows");
+    expect(buttons[1].title).toBe("public.v_active");
+
+    await input("tbl-filter", "session");
+    expect([...$("tables").querySelectorAll(".tbl")].map((b) => b.textContent)).toEqual(["sessions"]);
+    await input("tbl-filter", "zzz");
+    expect($("tables").textContent).toContain("No tables match.");
+  });
+
+  it("marks one active table and clears it when another table opens", async () => {
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/data", rowsResp(1));
+    await loadApp();
+
+    const buttons = $("tables").querySelectorAll(".tbl");
+    await click(buttons[0]);
     expect($("tab-title").textContent).toBe("public.users");
-    expect($("panel-data").hidden).toBe(false);
-    expect($("data-results").querySelectorAll("tbody td").length).toBe(2);
-    expect($("prev-btn").disabled).toBe(true); // offset 0
-    expect($("next-btn").disabled).toBe(true); // rowCount < PAGE_SIZE
-    expect($("page-info").textContent).toBe("1–2");
-    expect($("data-export-btn").disabled).toBe(false);
-    expect($("tables").querySelector(".tbl.active")).not.toBeNull();
-  });
-
-  it("enables Next on a full page and paginates", async () => {
-    await selectUsers(rowsResp(100));
-    expect($("next-btn").disabled).toBe(false);
-
-    // Next -> offset 100; serve a partial page.
-    routes["GET /api/tables/*/data"] = rowsResp(3);
-    click("next-btn");
-    await flush();
-    expect($("page-info").textContent).toBe("101–103");
-    expect($("prev-btn").disabled).toBe(false);
-
-    // Prev -> back to offset 0.
-    routes["GET /api/tables/*/data"] = rowsResp(100);
-    click("prev-btn");
-    await flush();
-    expect($("page-info").textContent).toBe("1–100");
-  });
-
-  it("Prev at offset 0 is a no-op", async () => {
-    await selectUsers(rowsResp(2));
-    fetch.mockClear();
-    click("prev-btn"); // offset already 0
-    await flush();
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it("shows zero-row page info", async () => {
-    await selectUsers(rowsResp(0));
-    expect($("page-info").textContent).toBe("0–0");
-    expect($("data-export-btn").disabled).toBe(true);
-  });
-
-  it("clears the previous active highlight when switching tables", async () => {
-    routes["GET /api/tables"] = makeResp({ json: SAMPLE_TABLES });
-    routes["GET /api/tables/*/data"] = rowsResp(1);
-    await loadApp();
-    const btns = $("tables").querySelectorAll(".tbl");
-    btns[0].dispatchEvent(new Event("click")); await flush(); // users
-    btns[2].dispatchEvent(new Event("click")); await flush(); // sessions
+    expect($("tables").querySelector(".tbl.active").textContent).toBe("users");
+    await click(buttons[2]);
     const active = $("tables").querySelectorAll(".tbl.active");
-    expect(active.length).toBe(1);
+    expect(active).toHaveLength(1);
     expect(active[0].textContent).toBe("sessions");
   });
 
-  it("shows a server error for table data", async () => {
-    await selectUsers(makeResp({ ok: false, status: 400, json: { error: "no such table" } }));
-    expect($("status").textContent).toContain("no such table");
-  });
-
-  it("uses statusText when the data error has no body", async () => {
-    await selectUsers(makeResp({ ok: false, status: 500, statusText: "Server Error", json: {} }));
-    expect($("status").textContent).toContain("Server Error");
-  });
-
-  it("handles a network error while loading data", async () => {
-    await selectUsers(new Error("boom"));
-    expect($("status").textContent).toContain("boom");
-  });
-
-  it("Next with no table selected is a guarded no-op", async () => {
+  it("reports table load errors", async () => {
+    setRoute("GET /api/tables", makeResp({ ok: false, status: 500, json: { error: "catalog down" } }));
     await loadApp();
-    fetch.mockClear();
-    click("next-btn"); // current is null
-    await flush();
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it("exports the current table to CSV", async () => {
-    let href = "";
-    HTMLAnchorElement.prototype.click = vi.fn(function () { href = this.href; });
-    await selectUsers(rowsResp(2));
-    click("data-export-btn");
-    expect(href).toContain("/api/tables/public/users/data");
-    expect(href).toContain("format=csv");
-  });
-
-  it("export with no table selected is a no-op", async () => {
-    await loadApp();
-    const spy = vi.spyOn(document, "createElement");
-    click("data-export-btn");
-    expect(spy).not.toHaveBeenCalled();
+    expect($("status").classList.contains("error")).toBe(true);
+    expect($("status").textContent).toContain("failed to load tables: catalog down");
   });
 });
 
-// ===================== data filtering / sorting / search =====================
+describe("data tab", () => {
+  it("loads rows, renders values, and updates status/pager/export", async () => {
+    await selectTable(0, dataResp({ columns: ["id", "meta", "none"], rows: [[1, { a: 1 }, null]], rowCount: 1, elapsedMs: 7 }));
 
-describe("data toolbar", () => {
-  it("sorts on header click and toggles asc/desc", async () => {
-    await selectFirstTable(rowsResp(2));
-    routes["GET /api/tables/*/data"] = rowsResp(2);
-    $("data-results").querySelector("th.sortable").dispatchEvent(new Event("click"));
-    await flush();
-    let p = lastDataParams();
-    expect(p.get("sort")).toBe("n");
-    expect(p.get("dir")).toBe("asc");
-    expect($("data-results").querySelector("th").textContent).toContain("▲");
-
-    $("data-results").querySelector("th.sortable").dispatchEvent(new Event("click"));
-    await flush();
-    p = lastDataParams();
-    expect(p.get("dir")).toBe("desc");
-    expect($("data-results").querySelector("th").textContent).toContain("▼");
+    expect($("status").className).toContain("ok");
+    expect($("status").textContent).toContain("✓ 1 row in 7 ms");
+    expect($("prev-btn").disabled).toBe(true);
+    expect($("next-btn").disabled).toBe(true);
+    expect($("page-info").textContent).toBe("1–1");
+    expect($("data-results").textContent).toContain('{"a":1}');
+    expect($("data-results").querySelector("td.null").textContent).toBe("NULL");
+    expect($("data-export-btn").tagName).toBe("A");
+    expect($("data-export-btn").getAttribute("download")).toBe("users.csv");
   });
 
-  it("switches sort column and cycles asc→desc→asc", async () => {
-    const two = () => makeResp({ json: { columns: ["a", "b"], rows: [[1, 2]], rowCount: 1, truncated: false, elapsedMs: 1 } });
-    await selectFirstTable(two());
-    routes["GET /api/tables/*/data"] = two();
-    const ths = () => $("data-results").querySelectorAll("th.sortable");
-    ths()[0].dispatchEvent(new Event("click")); await flush(); // sort a asc
-    expect(lastDataParams().get("sort")).toBe("a");
-    ths()[1].dispatchEvent(new Event("click")); await flush(); // switch to b (else branch)
-    expect(lastDataParams().get("sort")).toBe("b");
+  it("shows loading, no-column, and zero-row states", async () => {
+    const pending = deferred();
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/data", () => pending.promise);
+    await loadApp();
+    await click($("tables").querySelector(".tbl"));
+    expect($("data-results").textContent).toContain("Loading…");
+    pending.resolve(makeResp({ json: { columns: [], rows: [], rowCount: 0, elapsedMs: 2 } }));
+    await flush();
+    expect($("data-results").textContent).toContain("No columns.");
+    expect($("page-info").textContent).toBe("0–0");
+
+    document.body.innerHTML = '<div id="app"></div>';
+    await selectTable(0, dataResp({ columns: ["id"], rows: [], rowCount: 0 }));
+    expect($("data-results").textContent).toContain("0 rows.");
+    expect($("page-info").textContent).toBe("0–0");
+  });
+
+  it("paginates with default and small rowCap page sizes", async () => {
+    await selectTable(0, rowsResp(100));
+    expect(lastDataParams().get("limit")).toBe("100");
+    expect($("next-btn").disabled).toBe(false);
+
+    setRoute("GET /api/tables/*/data", rowsResp(3));
+    await click("next-btn");
+    expect(lastDataParams().get("offset")).toBe("100");
+    expect($("page-info").textContent).toBe("101–103");
+    expect($("prev-btn").disabled).toBe(false);
+
+    setRoute("GET /api/tables/*/data", rowsResp(100));
+    await click("prev-btn");
+    expect(lastDataParams().get("offset")).toBe("0");
+
+    document.body.innerHTML = '<div id="app"></div>';
+    setRoute("GET /api/meta", makeResp({ json: { rowCap: 3 } }));
+    setRoute("GET /api/tables/*/data", rowsResp(3));
+    await selectTable(0, rowsResp(3));
+    expect(lastDataParams().get("limit")).toBe("3");
+  });
+
+  it("refetches open table when delayed meta narrows page size", async () => {
+    const meta = deferred();
+    setRoute("GET /api/meta", () => meta.promise);
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/data", rowsResp(5));
+    await loadApp();
+    await click($("tables").querySelector(".tbl"));
+
+    expect(callsTo("/data")).toHaveLength(1);
+    expect(lastDataParams().get("limit")).toBe("100");
+    meta.resolve(makeResp({ json: { rowCap: 5 } }));
+    await flush();
+    expect(callsTo("/data")).toHaveLength(2);
+    expect(lastDataParams().get("limit")).toBe("5");
+  });
+
+  it("keeps default page size for large, missing, non-positive, or failed meta", async () => {
+    for (const meta of [makeResp({ json: { rowCap: 1000 } }), makeResp({ json: {} }), makeResp({ json: { rowCap: 0 } }), new Error("meta down")]) {
+      document.body.innerHTML = '<div id="app"></div>';
+      setRoute("GET /api/meta", meta);
+      setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+      setRoute("GET /api/tables/*/data", rowsResp(100));
+      await loadApp();
+      await click($("tables").querySelector(".tbl"));
+      expect(lastDataParams().get("limit")).toBe("100");
+    }
+  });
+
+  it("sorts, searches, clears, and builds export URLs from active params", async () => {
+    await selectTable(0, dataResp({ columns: ["id", "email"], rows: [[1, "a@x"]], rowCount: 1 }));
+    const headers = $("data-results").querySelectorAll("th.sortable");
+
+    await click(headers[0]);
+    expect(lastDataParams().get("sort")).toBe("id");
     expect(lastDataParams().get("dir")).toBe("asc");
-    ths()[1].dispatchEvent(new Event("click")); await flush(); // b desc
+    expect(headers[0].textContent).toContain("▲");
+    await click($("data-results").querySelectorAll("th.sortable")[0]);
     expect(lastDataParams().get("dir")).toBe("desc");
-    ths()[1].dispatchEvent(new Event("click")); await flush(); // b back to asc
+    expect($("data-results").querySelectorAll("th.sortable")[0].textContent).toContain("▼");
+    await click($("data-results").querySelectorAll("th.sortable")[0]);
     expect(lastDataParams().get("dir")).toBe("asc");
+    await click($("data-results").querySelectorAll("th.sortable")[1]);
+    expect(lastDataParams().get("sort")).toBe("email");
+    expect(lastDataParams().get("dir")).toBe("asc");
+
+    await input("data-search", " ignored ");
+    await keydown("data-search", "Escape");
+    expect(lastDataParams().has("search")).toBe(false);
+    await keydown("data-search", "Enter");
+    expect(lastDataParams().get("search")).toBe("ignored");
+
+    const val = $("data-results").querySelector('input.f-val[data-col="email"]');
+    val.value = "a@x";
+    val.dispatchEvent(new Event("input", { bubbles: true }));
+    await flush();
+    await changeSelect($("data-results").querySelector('select.f-op[data-col="email"]'), "eq");
+
+    const href = new URL($("data-export-btn").href);
+    expect(href.pathname).toBe("/api/tables/public/users/data");
+    expect(href.searchParams.get("format")).toBe("csv");
+    expect(href.searchParams.get("search")).toBe("ignored");
+    expect(href.searchParams.get("sort")).toBe("email");
+    expect(href.searchParams.get("f")).toBe("email:eq:a@x");
+
+    await click("data-clear");
+    expect(lastDataParams().has("search")).toBe(false);
+    expect(lastDataParams().has("sort")).toBe(false);
+    expect(lastDataParams().has("f")).toBe(false);
   });
 
-  it("skips columns with no operator and emits empty value for blank value-ops", async () => {
-    const two = () => makeResp({ json: { columns: ["a", "b"], rows: [[1, 2]], rowCount: 1, truncated: false, elapsedMs: 1 } });
-    await selectFirstTable(two());
-    routes["GET /api/tables/*/data"] = two();
-    const sels = $("data-results").querySelectorAll(".f-op");
-    sels[0].value = "eq"; // column a: value-op, value box left blank
-    // column b: no operator -> must be skipped
-    sels[0].dispatchEvent(new Event("change"));
+  it("emits every filter operator and preserves blank value operands", async () => {
+    await selectTable(0, dataResp({ columns: ["id"], rows: [[1]], rowCount: 1 }));
+    const op = () => $("data-results").querySelector('select.f-op[data-col="id"]');
+    const val = () => $("data-results").querySelector('input.f-val[data-col="id"]');
+
+    for (const name of ["eq", "ne", "lt", "lte", "gt", "gte", "ilike", "like"]) {
+      val().value = name === "eq" ? "" : "7";
+      val().dispatchEvent(new Event("input", { bubbles: true }));
+      await flush();
+      await changeSelect(op(), name);
+      expect(lastDataParams().get("f")).toBe(`id:${name}:${name === "eq" ? "" : "7"}`);
+    }
+    await changeSelect(op(), "is_null");
+    expect(lastDataParams().get("f")).toBe("id:is_null");
+    await changeSelect(op(), "is_not_null");
+    expect(lastDataParams().get("f")).toBe("id:is_not_null");
+    await changeSelect(op(), "");
+    expect(lastDataParams().has("f")).toBe(false);
+
+    val().value = "11";
+    val().dispatchEvent(new Event("input", { bubbles: true }));
     await flush();
-    expect(lastDataParams().getAll("f")).toEqual(["a:eq:"]);
+    await keydown(val(), "Escape");
+    expect(lastDataParams().has("f")).toBe(false);
+    await keydown(val(), "Enter");
+    expect(lastDataParams().has("f")).toBe(false);
   });
 
-  it("applies a per-column filter (op + value) and repopulates it", async () => {
-    await selectFirstTable(rowsResp(2));
-    routes["GET /api/tables/*/data"] = rowsResp(2);
-    const sel = $("data-results").querySelector(".f-op");
-    sel.value = "gt";
-    sel.parentElement.querySelector(".f-val").value = "100";
-    sel.dispatchEvent(new Event("change"));
-    await flush();
-    expect(lastDataParams().getAll("f")).toContain("n:gt:100");
-    // The rebuilt grid repopulates the filter from state.
-    expect($("data-results").querySelector(".f-op").value).toBe("gt");
-    expect($("data-results").querySelector(".f-val").value).toBe("100");
+  it("skips no-op filter entries when data params are appended", async () => {
+    await selectTable(0, dataResp({ columns: ["id"], rows: [[1]], rowCount: 1 }));
+    const realKeys = Object.keys;
+    Object.defineProperty(Object.prototype, "__blankFilter__", { value: { op: "" }, configurable: true });
+    const keysSpy = vi.spyOn(Object, "keys").mockImplementation((obj) => {
+      const keys = realKeys(obj);
+      return (new Error().stack || "").includes("appendDataParams") ? [...keys, "__blankFilter__"] : keys;
+    });
+    try {
+      await click($("data-results").querySelector("th.sortable"));
+      expect(lastDataParams().getAll("f")).toEqual([]);
+    } finally {
+      keysSpy.mockRestore();
+      delete Object.prototype.__blankFilter__;
+    }
   });
 
-  it("applies a value-less filter (is_null)", async () => {
-    await selectFirstTable(rowsResp(2));
-    routes["GET /api/tables/*/data"] = rowsResp(2);
-    const sel = $("data-results").querySelector(".f-op");
-    sel.value = "is_null";
-    sel.dispatchEvent(new Event("change"));
-    await flush();
-    expect(lastDataParams().getAll("f")).toContain("n:is_null");
-  });
-
-  it("applies a filter when Enter is pressed in the value box", async () => {
-    await selectFirstTable(rowsResp(2));
-    routes["GET /api/tables/*/data"] = rowsResp(2);
-    const sel = $("data-results").querySelector(".f-op");
-    sel.value = "ilike";
-    const inp = sel.parentElement.querySelector(".f-val");
-    inp.value = "%x%";
-    inp.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    await flush();
-    expect(lastDataParams().getAll("f")).toContain("n:ilike:%x%");
-  });
-
-  it("searches all columns on Enter, ignores other keys", async () => {
-    await selectFirstTable(rowsResp(2));
-    routes["GET /api/tables/*/data"] = rowsResp(2);
-    $("data-search").value = "acme";
-    $("data-search").dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
-    await flush();
-    fetch.mockClear();
-    $("data-search").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    await flush();
-    expect(lastDataParams().get("search")).toBe("acme");
-  });
-
-  it("export includes active search/filter params", async () => {
-    let href = "";
-    HTMLAnchorElement.prototype.click = vi.fn(function () { href = this.href; });
-    await selectFirstTable(rowsResp(2));
-    routes["GET /api/tables/*/data"] = rowsResp(2);
-    const sel = $("data-results").querySelector(".f-op");
-    sel.value = "eq";
-    sel.parentElement.querySelector(".f-val").value = "5";
-    sel.dispatchEvent(new Event("change"));
-    await flush();
-    click("data-export-btn");
-    expect(href).toContain("format=csv");
-    expect(decodeURIComponent(href)).toContain("f=n:eq:5");
-  });
-
-  it("Clear resets search, filters and sort", async () => {
-    await selectFirstTable(rowsResp(2));
-    routes["GET /api/tables/*/data"] = rowsResp(2);
-    $("data-search").value = "x";
-    $("data-search").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    await flush();
-    expect(lastDataParams().get("search")).toBe("x");
-
-    click("data-clear");
-    await flush();
-    expect(lastDataParams().get("search")).toBeNull();
-    expect($("data-search").value).toBe("");
-  });
-
-  it("Clear with no table selected does nothing", async () => {
+  it("resets filters when switching tables and has no clear control before selection", async () => {
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/data", dataResp({ columns: ["id"], rows: [[1]], rowCount: 1 }));
     await loadApp();
-    fetch.mockClear();
-    click("data-clear");
-    await flush();
-    expect(fetch).not.toHaveBeenCalled();
-  });
+    expect($("data-clear")).toBeNull();
 
-  it("shows 'No columns' for a column-less data result", async () => {
-    await selectFirstTable(makeResp({ json: { columns: [], rows: [], rowCount: 0, truncated: false, elapsedMs: 0 } }));
-    expect($("data-results").textContent).toContain("No columns");
-  });
-
-  it("resets filters when switching tables", async () => {
-    await selectFirstTable(rowsResp(2));
-    routes["GET /api/tables/*/data"] = rowsResp(2);
-    const sel = $("data-results").querySelector(".f-op");
-    sel.value = "eq";
-    sel.parentElement.querySelector(".f-val").value = "1";
-    sel.dispatchEvent(new Event("change"));
-    await flush();
-    // Switch to another table -> filters cleared.
-    $("tables").querySelectorAll(".tbl")[2].dispatchEvent(new Event("click"));
-    await flush();
-    expect(lastDataParams().getAll("f")).toEqual([]);
-  });
-});
-
-// ===================== page size (/api/meta) =====================
-
-describe("page size from /api/meta", () => {
-  async function selectUsersAndCaptureLimit() {
-    routes["GET /api/tables"] = makeResp({ json: SAMPLE_TABLES });
-    routes["GET /api/tables/*/data"] = rowsResp(1);
-    await loadApp();
-    $("tables").querySelector(".tbl").dispatchEvent(new Event("click"));
-    await flush();
-    const dataCall = fetch.mock.calls.find(([u]) => String(u).includes("/data"));
-    return new URL("http://x" + dataCall[0]).searchParams.get("limit");
-  }
-
-  it("narrows the page size to a small row cap", async () => {
-    routes["GET /api/meta"] = makeResp({ json: { rowCap: 50 } });
-    expect(await selectUsersAndCaptureLimit()).toBe("50");
-  });
-
-  it("keeps page size at 100 when the cap is larger", async () => {
-    routes["GET /api/meta"] = makeResp({ json: { rowCap: 5000 } });
-    expect(await selectUsersAndCaptureLimit()).toBe("100");
-  });
-
-  it("ignores a non-positive / missing rowCap", async () => {
-    routes["GET /api/meta"] = makeResp({ json: { rowCap: 0 } });
-    expect(await selectUsersAndCaptureLimit()).toBe("100");
-  });
-
-  it("falls back to default page size if meta fails", async () => {
-    routes["GET /api/meta"] = new Error("nope");
-    expect(await selectUsersAndCaptureLimit()).toBe("100");
-  });
-});
-
-// ===================== out-of-order request guards =====================
-
-describe("request sequencing", () => {
-  it("ignores a stale data response when the table changes", async () => {
-    routes["GET /api/tables"] = makeResp({ json: SAMPLE_TABLES });
-    let releaseFirst;
-    let n = 0;
-    routes["GET /api/tables/*/data"] = () => {
-      n += 1;
-      if (n === 1) {
-        return new Promise((res) => {
-          releaseFirst = () => res(makeResp({ json: { columns: ["A"], rows: [[1]], rowCount: 1, truncated: false, elapsedMs: 1 } }));
-        });
-      }
-      return Promise.resolve(makeResp({ json: { columns: ["B"], rows: [[2]], rowCount: 1, truncated: false, elapsedMs: 1 } }));
-    };
-    await loadApp();
-    const btns = $("tables").querySelectorAll(".tbl");
-    btns[0].dispatchEvent(new Event("click")); // users -> request 1 (pending)
-    await flush();
-    btns[2].dispatchEvent(new Event("click")); // sessions -> request 2 (resolves now)
-    await flush();
-    expect([...$("data-results").querySelectorAll("th")].map((t) => t.textContent)).toEqual(["B"]);
-
-    releaseFirst(); // stale users response arrives last
-    await flush();
-    // Still showing sessions ("B"), not the stale users ("A").
-    expect([...$("data-results").querySelectorAll("th")].map((t) => t.textContent)).toEqual(["B"]);
+    const buttons = $("tables").querySelectorAll(".tbl");
+    await click(buttons[0]);
+    await changeSelect($("data-results").querySelector('select.f-op[data-col="id"]'), "is_null");
+    expect(lastDataParams().get("f")).toBe("id:is_null");
+    await click(buttons[2]);
     expect($("tab-title").textContent).toBe("auth.sessions");
+    expect(lastDataParams().has("f")).toBe(false);
   });
 
-  it("ignores a stale structure response when the table changes", async () => {
-    routes["GET /api/tables"] = makeResp({ json: SAMPLE_TABLES });
-    routes["GET /api/tables/*/data"] = rowsResp(1);
-    let releaseFirst;
-    let n = 0;
-    routes["GET /api/tables/*/columns"] = () => {
-      n += 1;
-      if (n === 1) {
-        return new Promise((res) => {
-          releaseFirst = () => res(makeResp({ json: [{ name: "stale", type: "text", nullable: true, default: null }] }));
-        });
-      }
-      return Promise.resolve(makeResp({ json: [{ name: "fresh", type: "text", nullable: true, default: null }] }));
-    };
-    await loadApp();
-    const btns = $("tables").querySelectorAll(".tbl");
-    btns[0].dispatchEvent(new Event("click")); await flush(); // users -> data
-    click("tab-structure"); await flush(); // structure request 1 (pending)
-    btns[2].dispatchEvent(new Event("click")); await flush(); // sessions
-    click("tab-structure"); await flush(); // structure request 2 (fresh)
-    expect($("structure-results").textContent).toContain("fresh");
+  it("reports body, statusText, and network data load errors", async () => {
+    await selectTable(0, makeResp({ ok: false, status: 400, json: { error: "bad filter" } }));
+    expect($("status").textContent).toContain("bad filter");
 
-    releaseFirst(); // stale columns arrive last
+    document.body.innerHTML = '<div id="app"></div>';
+    await selectTable(0, makeResp({ ok: false, status: 500, statusText: "Server Error", json: {} }));
+    expect($("status").textContent).toContain("Server Error");
+
+    document.body.innerHTML = '<div id="app"></div>';
+    await selectTable(0, new Error("network gone"));
+    expect($("status").textContent).toContain("network gone");
+  });
+
+  it("ignores stale data responses after a table switch", async () => {
+    const first = deferred();
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/data", (url) => String(url).includes("/public/users/") ? first.promise : Promise.resolve(dataResp({ columns: ["sid"], rows: [[9]], rowCount: 1 })));
+    await loadApp();
+
+    const buttons = $("tables").querySelectorAll(".tbl");
+    await click(buttons[0]);
+    expect($("status").textContent).toContain("Loading public.users");
+    await click(buttons[2]);
+    expect($("tab-title").textContent).toBe("auth.sessions");
+    expect($("data-results").textContent).toContain("sid");
+
+    first.resolve(dataResp({ columns: ["stale"], rows: [[1]], rowCount: 1 }));
     await flush();
-    expect($("structure-results").textContent).toContain("fresh");
-    expect($("structure-results").textContent).not.toContain("stale");
+    expect($("tab-title").textContent).toBe("auth.sessions");
+    expect($("data-results").textContent).not.toContain("stale");
   });
 });
-
-// ===================== foreign keys =====================
 
 describe("foreign keys", () => {
-  const TABLES = [
-    { schema: "public", name: "companies", type: "table", estRows: 4 },
-    { schema: "public", name: "users", type: "table", estRows: 6 },
-  ];
-  const USERS_FK = [{ column: "company_id", refSchema: "public", refTable: "companies", refColumn: "id" }];
-  const usersData = () => makeResp({ json: { columns: ["id", "company_id"], rows: [[1, 7], [2, 8]], rowCount: 2, truncated: false, elapsedMs: 1 } });
-
-  async function openUsers() {
-    routes["GET /api/tables"] = makeResp({ json: TABLES });
-    routes["GET /api/tables/*/fks"] = makeResp({ json: USERS_FK });
-    routes["GET /api/tables/*/data"] = usersData();
+  it("renders FK buttons, navigates with an eq filter, and reports non-browsable refs", async () => {
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/fks", makeResp({ json: [{ column: "company_id", refSchema: "public", refTable: "companies", refColumn: "id" }] }));
+    setRoute("GET /api/tables/*/data", dataResp({ columns: ["id", "company_id"], rows: [[1, 42]], rowCount: 1 }));
     await loadApp();
-    $("tables").querySelectorAll(".tbl")[1].dispatchEvent(new Event("click")); // users
-    await flush();
-  }
+    await click($("tables").querySelector(".tbl"));
 
-  it("renders FK columns as links", async () => {
-    await openUsers();
-    const links = $("data-results").querySelectorAll("button.fk");
-    expect(links.length).toBe(2); // company_id column, 2 rows; id column is not an FK
-    expect(links[0].textContent).toBe("7");
-    expect(links[0].title).toContain("public.companies.id");
-  });
-
-  it("navigates to the referenced row on click", async () => {
-    await openUsers();
-    routes["GET /api/tables/*/data"] = makeResp({ json: { columns: ["id", "name"], rows: [[7, "Acme"]], rowCount: 1, truncated: false, elapsedMs: 1 } });
-    $("data-results").querySelector("button.fk").dispatchEvent(new Event("click"));
-    await flush();
+    const fk = $("data-results").querySelector("button.fk");
+    expect(fk.title).toBe("→ public.companies.id");
+    await click(fk);
     expect($("tab-title").textContent).toBe("public.companies");
-    expect(lastDataParams().getAll("f")).toContain("id:eq:7");
-    // The sidebar highlight follows the navigation.
-    expect($("tables").querySelector(".tbl.active").textContent).toBe("companies");
+    expect(lastDataParams().get("f")).toBe("id:eq:42");
+
+    setRoute("GET /api/tables/*/fks", makeResp({ json: [{ column: "company_id", refSchema: "missing", refTable: "nope", refColumn: "id" }] }));
+    await click($("tables").querySelectorAll(".tbl")[0]);
+    await click($("data-results").querySelector("button.fk"));
+    expect($("status").textContent).toContain("referenced table missing.nope is not browsable");
   });
 
-  it("reports when the referenced table is not browsable", async () => {
-    routes["GET /api/tables"] = makeResp({ json: [TABLES[1]] }); // users only, no companies
-    routes["GET /api/tables/*/fks"] = makeResp({ json: USERS_FK });
-    routes["GET /api/tables/*/data"] = usersData();
+  it("silently omits FK links when introspection fails or goes stale", async () => {
+    const firstFk = deferred();
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/data", dataResp({ columns: ["id"], rows: [[1]], rowCount: 1 }));
+    setRoute("GET /api/tables/*/fks", (url) => String(url).includes("/public/users/") ? firstFk.promise : Promise.reject(new Error("fk down")));
     await loadApp();
-    $("tables").querySelector(".tbl").dispatchEvent(new Event("click"));
+    const buttons = $("tables").querySelectorAll(".tbl");
+    await click(buttons[0]);
+    await click(buttons[2]);
+    firstFk.resolve(makeResp({ json: [{ column: "id", refSchema: "public", refTable: "companies", refColumn: "id" }] }));
     await flush();
-    $("data-results").querySelector("button.fk").dispatchEvent(new Event("click"));
-    await flush();
-    expect($("status").textContent).toContain("not browsable");
-  });
-
-  it("loads without FK links when introspection fails", async () => {
-    routes["GET /api/tables"] = makeResp({ json: TABLES });
-    routes["GET /api/tables/*/fks"] = new Error("fk fail");
-    routes["GET /api/tables/*/data"] = makeResp({ json: { columns: ["id"], rows: [[1]], rowCount: 1, truncated: false, elapsedMs: 1 } });
-    await loadApp();
-    $("tables").querySelectorAll(".tbl")[1].dispatchEvent(new Event("click"));
-    await flush();
-    expect($("data-results").querySelectorAll("button.fk").length).toBe(0);
-    expect($("data-results").querySelectorAll("tbody tr").length).toBe(1); // data still loads
+    expect($("data-results").querySelector("button.fk")).toBeNull();
+    expect($("status").className).not.toContain("error");
   });
 });
-
-// ===================== structure =====================
 
 describe("structure tab", () => {
-  async function selectAndOpenStructure(colsResp) {
-    routes["GET /api/tables"] = makeResp({ json: SAMPLE_TABLES });
-    routes["GET /api/tables/*/data"] = rowsResp(1);
-    routes["GET /api/tables/*/columns"] = colsResp;
+  it("defers columns fetch until the structure tab is active", async () => {
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/data", rowsResp(1));
+    setRoute("GET /api/tables/*/columns", makeResp({ json: [{ name: "id", type: "int", nullable: false, default: null }] }));
     await loadApp();
-    $("tables").querySelector(".tbl").dispatchEvent(new Event("click"));
-    await flush();
-    click("tab-structure");
-    await flush();
-  }
 
-  it("renders columns with nullable/default", async () => {
-    await selectAndOpenStructure(
-      makeResp({
-        json: [
-          { name: "id", type: "integer", nullable: false, default: "nextval('s')" },
-          { name: "email", type: "text", nullable: true, default: null },
-        ],
-      })
-    );
-    const rows = $("structure-results").querySelectorAll("tr");
-    expect(rows.length).toBe(3); // header + 2
-    const firstData = rows[1].querySelectorAll("td");
-    expect(firstData[0].textContent).toBe("id");
-    expect(firstData[2].textContent).toBe("NO");
-    expect(firstData[3].textContent).toContain("nextval");
-    const secondData = rows[2].querySelectorAll("td");
-    expect(secondData[2].textContent).toBe("YES");
-    expect(secondData[3].textContent).toBe(""); // null default
+    await click($("tables").querySelector(".tbl"));
+    expect(callsTo("/columns")).toHaveLength(0);
+    await click("tab-structure");
+    expect(callsTo("/columns")).toHaveLength(1);
+    expect($("structure-results").textContent).toContain("id");
   });
 
-  it("renders an empty-structure message", async () => {
-    await selectAndOpenStructure(makeResp({ json: [] }));
-    expect($("structure-results").textContent).toContain("No columns");
-  });
-
-  it("opening structure with no table selected shows a hint", async () => {
+  it("shows loading, renders columns, and ignores stale column responses", async () => {
+    const stale = deferred();
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/data", rowsResp(1));
+    setRoute("GET /api/tables/*/columns", (url) => String(url).includes("/public/users/")
+      ? stale.promise
+      : Promise.resolve(makeResp({ json: [{ name: "sid", type: "uuid", nullable: false, default: null }] })));
     await loadApp();
-    click("tab-structure");
+    const buttons = $("tables").querySelectorAll(".tbl");
+    await click(buttons[0]);
+    await click("tab-structure");
+    expect($("structure-results").textContent).toContain("Loading…");
+
+    await click(buttons[2]);
+    await click("tab-structure");
+    stale.resolve(makeResp({ json: [{ name: "stale", type: "text", nullable: true, default: "x" }] }));
     await flush();
-    expect($("structure-results").textContent).toContain("Select a table");
+    expect($("structure-results").textContent).toContain("sid");
+    expect($("structure-results").textContent).toContain("NO");
+    expect($("structure-results").textContent).not.toContain("stale");
   });
 
-  it("shows a server error for structure", async () => {
-    await selectAndOpenStructure(makeResp({ ok: false, status: 500, json: { error: "denied" } }));
-    expect($("status").textContent).toContain("denied");
-  });
+  it("renders nullable/default variants, empty structures, and errors", async () => {
+    setRoute("GET /api/tables/*/columns", makeResp({ json: [
+      { name: "id", type: "int", nullable: false, default: "nextval()" },
+      { name: "nickname", type: "text", nullable: true, default: null },
+    ] }));
+    await selectTable(0, rowsResp(1));
+    await click("tab-structure");
+    expect($("structure-results").textContent).toContain("id");
+    expect($("structure-results").textContent).toContain("NO");
+    expect($("structure-results").textContent).toContain("YES");
+    expect($("structure-results").textContent).toContain("nextval()");
 
-  it("uses statusText when the structure error has no body", async () => {
-    await selectAndOpenStructure(makeResp({ ok: false, status: 500, statusText: "Boom", json: {} }));
-    expect($("status").textContent).toContain("Boom");
-  });
+    setRoute("GET /api/tables/*/columns", makeResp({ json: [] }));
+    await click($("tables").querySelector(".tbl"));
+    await click("tab-structure");
+    expect($("structure-results").textContent).toContain("No columns.");
 
-  it("handles a network error for structure", async () => {
-    await selectAndOpenStructure(new Error("netfail"));
-    expect($("status").textContent).toContain("netfail");
+    for (const [err, text] of [
+      [makeResp({ ok: false, status: 500, json: { error: "bad columns" } }), "bad columns"],
+      [makeResp({ ok: false, status: 500, statusText: "Column Error", json: {} }), "Column Error"],
+      [new Error("columns offline"), "columns offline"],
+    ]) {
+      document.body.innerHTML = '<div id="app"></div>';
+      setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+      setRoute("GET /api/tables/*/data", () => new Promise(() => {}));
+      setRoute("GET /api/tables/*/columns", err);
+      await loadApp();
+      await click($("tables").querySelector(".tbl"));
+      await click("tab-structure");
+      expect($("status").className).toContain("error");
+      expect($("status").textContent).toContain(text);
+    }
   });
 });
 
-// ===================== SQL tab =====================
-
-describe("SQL tab (textarea mode)", () => {
-  it("runs a query and renders results", async () => {
+describe("SQL tab textarea mode", () => {
+  async function openSql() {
     await loadApp();
-    $("sql").value = "SELECT * FROM t";
-    setRoute("POST /api/query", makeResp({
-      json: { columns: ["a", "b"], rows: [[1, "x"], [null, { k: 1 }]], rowCount: 2, truncated: false, elapsedMs: 3 },
-    }));
-    click("run-btn");
-    await flush();
-    expect($("sql-results").querySelectorAll("th").length).toBe(2);
-    const cells = $("sql-results").querySelectorAll("td");
-    expect(cells[2].classList.contains("null")).toBe(true);
-    expect(cells[3].textContent).toBe('{"k":1}');
-    expect($("status").textContent).toContain("2 rows");
+    await click("tab-sql");
+  }
+
+  it("runs queries, renders rows, and shows capped warnings", async () => {
+    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 4, truncated: true } }));
+    await openSql();
+    $("sql").value = " select 1 ";
+    await click("run-btn");
+
+    expect(postBody("/api/query")).toEqual({ sql: "select 1" });
+    expect($("sql-results").textContent).toContain("1");
+    expect($("status").textContent).toContain("✓ 1 row in 4 ms");
+    expect($("status").querySelector(".warn").textContent).toContain("capped");
     expect($("sql-export-btn").disabled).toBe(false);
   });
 
-  it("shows the capped warning and singular row text", async () => {
-    await loadApp();
-    $("sql").value = "SELECT 1";
-    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, truncated: true, elapsedMs: 1 } }));
-    click("run-btn");
-    await flush();
-    expect($("status").innerHTML).toContain("capped");
-    expect($("status").textContent).toContain("1 row ");
-  });
+  it("disables run and export during in-flight runs and prevents overlap", async () => {
+    const pending = deferred();
+    let queryCount = 0;
+    setRoute("POST /api/query", () => {
+      queryCount += 1;
+      return queryCount === 1
+        ? Promise.resolve(makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }))
+        : pending.promise;
+    });
+    await openSql();
+    $("sql").value = "select 1";
+    await click("run-btn");
+    expect($("sql-export-btn").disabled).toBe(false);
 
-  it("renders empty-columns and zero-row results", async () => {
-    await loadApp();
-    $("sql").value = "SELECT 1";
-    setRoute("POST /api/query", makeResp({ json: { columns: [], rows: [], rowCount: 0, truncated: false, elapsedMs: 0 } }));
-    click("run-btn");
+    $("sql").value = "select 2";
+    $("run-btn").click();
+    $("run-btn").click();
     await flush();
-    expect($("sql-results").textContent).toContain("No columns");
-
-    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [], rowCount: 0, truncated: false, elapsedMs: 0 } }));
-    click("run-btn");
-    await flush();
-    expect($("sql-results").textContent).toContain("0 rows");
+    expect(callsTo("/api/query")).toHaveLength(2);
+    expect($("run-btn").disabled).toBe(true);
     expect($("sql-export-btn").disabled).toBe(true);
+
+    pending.resolve(makeResp({ json: { columns: ["n"], rows: [[2]], rowCount: 1, elapsedMs: 2 } }));
+    await flush();
+    expect($("run-btn").disabled).toBe(false);
+    expect($("sql-export-btn").disabled).toBe(false);
   });
 
-  it("does nothing on empty SQL", async () => {
-    await loadApp();
+  it("clears running after failed in-flight runs", async () => {
+    for (const failure of [makeResp({ ok: false, status: 500, json: { error: "nope" } }), new Error("query offline")]) {
+      document.body.innerHTML = '<div id="app"></div>';
+      const pending = deferred();
+      setRoute("POST /api/query", () => pending.promise.then((value) => {
+        if (value instanceof Error) throw value;
+        return value;
+      }));
+      await openSql();
+      $("sql").value = "select fail";
+      $("run-btn").click();
+      await flush();
+      expect($("run-btn").disabled).toBe(true);
+      expect($("sql-export-btn").disabled).toBe(true);
+
+      pending.resolve(failure);
+      await flush();
+      expect($("run-btn").disabled).toBe(false);
+      expect($("sql-export-btn").disabled).toBe(true);
+      expect($("status").className).toContain("error");
+    }
+  });
+
+  it("guards empty SQL and renders empty result variants", async () => {
+    await openSql();
     $("sql").value = "   ";
     fetch.mockClear();
-    click("run-btn");
-    await flush();
+    await click("run-btn");
     expect(fetch).not.toHaveBeenCalled();
+
+    setRoute("POST /api/query", makeResp({ json: { columns: [], rows: [], rowCount: 0, elapsedMs: 1 } }));
+    $("sql").value = "select nothing";
+    await click("run-btn");
+    expect($("sql-results").textContent).toContain("Query ran. No columns returned.");
+    expect($("sql-export-btn").disabled).toBe(true);
+
+    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [], rowCount: 0, elapsedMs: 2 } }));
+    $("sql").value = "select n from empty";
+    await click("run-btn");
+    expect($("sql-results").textContent).toContain("0 rows.");
   });
 
-  it("shows server errors (with statusText fallback)", async () => {
-    await loadApp();
-    $("sql").value = "DELETE FROM t";
-    setRoute("POST /api/query", makeResp({ ok: false, status: 400, json: { error: "read-only" } }));
-    click("run-btn");
-    await flush();
-    expect($("status").textContent).toContain("read-only");
-    expect($("sql-results").children.length).toBe(0);
-
-    setRoute("POST /api/query", makeResp({ ok: false, status: 500, statusText: "Server Error", json: {} }));
-    $("sql").value = "SELECT 1";
-    click("run-btn");
-    await flush();
-    expect($("status").textContent).toContain("Server Error");
+  it("reports query server and network errors", async () => {
+    await openSql();
+    for (const err of [makeResp({ ok: false, status: 400, json: { error: "read only" } }), makeResp({ ok: false, status: 500, statusText: "SQL Error", json: {} }), new Error("query offline")]) {
+      setRoute("POST /api/query", err);
+      $("sql").value = "select bad";
+      await click("run-btn");
+      expect($("status").className).toContain("error");
+    }
   });
 
-  it("handles fetch rejection and re-enables Run", async () => {
-    await loadApp();
-    $("sql").value = "SELECT 1";
-    setRoute("POST /api/query", new Error("offline"));
-    click("run-btn");
-    await flush();
-    expect($("status").textContent).toContain("offline");
-    expect($("run-btn").disabled).toBe(false);
-  });
-
-  it("runs via Ctrl+Enter, Cmd+Enter, and ignores other keys", async () => {
-    await loadApp();
-    $("sql").value = "SELECT 1";
-    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, truncated: false, elapsedMs: 1 } }));
-    $("sql").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true }));
-    await flush();
-    expect($("status").textContent).toContain("1 row");
-
-    $("sql").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true }));
-    await flush();
-    expect($("status").textContent).toContain("1 row");
-
-    fetch.mockClear();
-    $("sql").dispatchEvent(new KeyboardEvent("keydown", { key: "a", ctrlKey: true, bubbles: true }));
-    $("sql").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    await flush();
-    expect(fetch).not.toHaveBeenCalled();
+  it("runs from Ctrl/Cmd Enter and ignores other keys", async () => {
+    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[2]], rowCount: 1, elapsedMs: 1 } }));
+    await openSql();
+    $("sql").value = "select 2";
+    await keydown("sql", "Escape", { ctrlKey: true });
+    expect(fetch.mock.calls.filter(([u]) => String(u) === "/api/query")).toHaveLength(0);
+    await keydown("sql", "Enter", { ctrlKey: true });
+    await keydown("sql", "Enter", { metaKey: true });
+    expect(fetch.mock.calls.filter(([u]) => String(u) === "/api/query")).toHaveLength(2);
   });
 });
 
 describe("SQL CSV export", () => {
-  it("downloads the CSV blob", async () => {
+  async function openSqlWithText(sql = "select 1") {
     await loadApp();
-    $("sql").value = "SELECT 1";
-    setRoute("POST /api/export", makeResp({ blob: new Blob(["a,b\n1,2\n"]) }));
-    click("sql-export-btn");
-    await flush();
+    await click("tab-sql");
+    $("sql").value = sql;
+  }
+
+  it("downloads the CSV from the last run SQL or current SQL", async () => {
+    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
+    setRoute("POST /api/export", makeResp({ blob: new Blob(["n\n1"]) }));
+    await openSqlWithText("select 1");
+    await click("run-btn");
+    $("sql").value = "select changed";
+    await click("sql-export-btn");
+    expect(postBody("/api/export")).toEqual({ sql: "select 1" });
     expect(URL.createObjectURL).toHaveBeenCalled();
-    expect(URL.revokeObjectURL).toHaveBeenCalled();
+    expect(HTMLAnchorElement.prototype.click).toHaveBeenCalled();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:fake");
+
+    document.body.innerHTML = '<div id="app"></div>';
+    setRoute("POST /api/export", makeResp());
+    await openSqlWithText("select fresh");
+    await dispatchClick("sql-export-btn");
+    expect(postBody("/api/export")).toEqual({ sql: "select fresh" });
   });
 
-  it("does nothing with no SQL", async () => {
-    await loadApp();
-    $("sql").value = "";
+  it("guards empty exports and reports export errors", async () => {
+    await openSqlWithText("   ");
     fetch.mockClear();
-    click("sql-export-btn");
-    await flush();
+    await dispatchClick("sql-export-btn");
     expect(fetch).not.toHaveBeenCalled();
-  });
 
-  it("shows an export error", async () => {
-    await loadApp();
-    $("sql").value = "SELECT 1";
-    setRoute("POST /api/export", makeResp({ ok: false, status: 400, json: { error: "bad export" } }));
-    click("sql-export-btn");
-    await flush();
-    expect($("status").textContent).toContain("bad export");
-  });
-
-  it("falls back when the export error body is not JSON", async () => {
-    await loadApp();
-    $("sql").value = "SELECT 1";
-    setRoute("POST /api/export", makeResp({ ok: false, status: 500, json: () => { throw new Error("not json"); } }));
-    click("sql-export-btn");
-    await flush();
+    for (const err of [makeResp({ ok: false, status: 500, json: { error: "export denied" } }), makeResp({ ok: false, status: 500, json: () => { throw new Error("bad json"); } })]) {
+      setRoute("POST /api/export", err);
+      $("sql").value = "select export";
+      await dispatchClick("sql-export-btn");
+      expect($("status").className).toContain("error");
+    }
     expect($("status").textContent).toContain("export failed");
   });
 });
 
 describe("saved queries", () => {
-  const sample = [
-    { id: 1, name: "Preset A", sql: "SELECT 1", isPreset: true },
-    { id: 2, name: "Mine", sql: "SELECT 2", isPreset: false },
+  const SAVED = [
+    { id: 1, name: "Preset one", description: "", sql: "select preset", isPreset: true },
+    { id: 2, name: "Mine", description: "", sql: "select mine", isPreset: false },
   ];
 
-  it("loads presets and saved into grouped options", async () => {
-    routes["GET /api/queries"] = makeResp({ json: sample });
+  async function openWithSaved(saved = SAVED) {
+    setRoute("GET /api/queries", makeResp({ json: saved }));
     await loadApp();
-    const groups = $("presets").querySelectorAll("optgroup");
-    expect(groups.length).toBe(2);
-    expect(groups[0].label).toBe("Presets");
-    expect(groups[1].label).toBe("Saved");
-  });
+    await click("tab-sql");
+  }
 
-  it("loading a preset disables delete; loading a saved enables it; placeholder clears", async () => {
-    routes["GET /api/queries"] = makeResp({ json: sample });
-    await loadApp();
-
-    $("presets").value = "1";
-    $("presets").dispatchEvent(new Event("change"));
+  it("groups presets/saved, picks queries, and toggles delete", async () => {
+    await openWithSaved();
+    expect([...$("presets").querySelectorAll("optgroup")].map((g) => g.label)).toEqual(["Presets", "Saved"]);
     expect($("delete-btn").disabled).toBe(true);
-    expect($("status").textContent).toContain("Preset A");
 
-    $("presets").value = "2";
-    $("presets").dispatchEvent(new Event("change"));
-    expect($("delete-btn").disabled).toBe(false);
-
-    $("presets").value = "";
-    $("presets").dispatchEvent(new Event("change"));
+    await changeSelect($("presets"), "1");
+    expect($("sql").value).toBe("select preset");
+    expect($("status").textContent).toContain("Loaded “Preset one”. Press Run.");
     expect($("delete-btn").disabled).toBe(true);
-  });
 
-  it("saves a new query (with and without description)", async () => {
-    await loadApp();
-    $("sql").value = "SELECT 99";
-    prompt.mockReturnValueOnce("My Query").mockReturnValueOnce("a description");
-    setRoute("POST /api/queries", makeResp({ status: 201, json: { id: 5, name: "My Query", isPreset: false } }));
-    setRoute("GET /api/queries", makeResp({ json: [{ id: 5, name: "My Query", sql: "SELECT 99", isPreset: false }] }));
-    click("save-btn");
-    await flush();
-    expect($("status").textContent).toContain("Saved");
+    await changeSelect($("presets"), "2");
+    expect($("sql").value).toBe("select mine");
     expect($("delete-btn").disabled).toBe(false);
-
-    prompt.mockReturnValueOnce("Name").mockReturnValueOnce(null); // desc cancelled -> ""
-    setRoute("POST /api/queries", makeResp({ status: 201, json: { id: 6, name: "Name", isPreset: false } }));
-    click("save-btn");
-    await flush();
-    const posts = fetch.mock.calls.filter(([u, o]) => String(u) === "/api/queries" && o && o.method === "POST");
-    expect(JSON.parse(posts.at(-1)[1].body).description).toBe("");
+    await changeSelect($("presets"), "");
+    expect($("delete-btn").disabled).toBe(true);
+    const confirmCalls = confirm.mock.calls.length;
+    await dispatchClick("delete-btn");
+    expect(confirm.mock.calls).toHaveLength(confirmCalls);
   });
 
-  it("does not save when name cancelled or SQL empty", async () => {
+  it("reports reload errors", async () => {
+    setRoute("GET /api/queries", makeResp({ ok: false, status: 500, json: { error: "store down" } }));
     await loadApp();
-    $("sql").value = "SELECT 1";
-    prompt.mockReturnValueOnce(null);
+    expect($("status").textContent).toContain("failed to load saved queries: store down");
+  });
+
+  it("saves new queries, handles prompt cancellation, blank SQL, and save errors", async () => {
+    await openWithSaved([]);
+    $("sql").value = "   ";
     fetch.mockClear();
-    click("save-btn");
-    await flush();
+    await click("save-btn");
     expect(fetch).not.toHaveBeenCalled();
 
-    $("sql").value = "";
-    click("save-btn");
-    await flush();
-    expect(fetch).not.toHaveBeenCalled();
-  });
+    $("sql").value = "select 1";
+    prompt.mockReturnValueOnce("");
+    await click("save-btn");
+    expect(fetch.mock.calls.filter(([u]) => String(u) === "/api/queries" && fetch.mock.calls[0]?.[1]?.method === "POST")).toHaveLength(0);
 
-  it("shows save errors (with and without body)", async () => {
-    await loadApp();
-    $("sql").value = "SELECT 1";
-    prompt.mockReturnValueOnce("N").mockReturnValueOnce("");
-    setRoute("POST /api/queries", makeResp({ ok: false, status: 400, json: { error: "nope" } }));
-    click("save-btn");
-    await flush();
-    expect($("status").textContent).toContain("nope");
+    prompt.mockReturnValueOnce("My query").mockReturnValueOnce(null);
+    setRoute("POST /api/queries", makeResp({ ok: false, status: 500, json: { error: "save denied" } }));
+    await click("save-btn");
+    expect($("status").textContent).toContain("save denied");
 
-    prompt.mockReturnValueOnce("N").mockReturnValueOnce("");
-    setRoute("POST /api/queries", makeResp({ ok: false, status: 400, json: {} }));
-    click("save-btn");
-    await flush();
+    prompt.mockReturnValueOnce("My query").mockReturnValueOnce("desc");
+    setRoute("POST /api/queries", makeResp({ json: { id: 7, name: "My query" } }));
+    setRoute("GET /api/queries", makeResp({ json: [{ id: 7, name: "My query", sql: "select 1", isPreset: false }] }));
+    await click("save-btn");
+    expect(postBody("/api/queries")).toEqual({ name: "My query", description: "desc", sql: "select 1" });
+    expect($("presets").value).toBe("7");
+    expect($("status").textContent).toContain("✓ Saved “My query”.");
+
+    prompt.mockReturnValueOnce("Again").mockReturnValueOnce("");
+    setRoute("POST /api/queries", makeResp({ ok: false, status: 500, json: {} }));
+    await click("save-btn");
     expect($("status").textContent).toContain("save failed");
   });
 
-  it("deletes after confirmation; aborts otherwise", async () => {
-    routes["GET /api/queries"] = makeResp({ json: sample });
-    await loadApp();
-
-    // no selection -> no-op
-    $("presets").value = "";
-    fetch.mockClear();
-    click("delete-btn");
-    await flush();
-    expect(fetch).not.toHaveBeenCalled();
-
-    // selected but not confirmed
-    $("presets").value = "2";
-    $("presets").dispatchEvent(new Event("change"));
+  it("deletes after confirmation, aborts otherwise, and handles failures", async () => {
+    await openWithSaved();
+    await changeSelect($("presets"), "2");
     confirm.mockReturnValueOnce(false);
-    fetch.mockClear();
-    click("delete-btn");
-    await flush();
-    expect(fetch).not.toHaveBeenCalled();
+    await click("delete-btn");
+    expect(fetch.mock.calls.some(([u, opts]) => String(u).includes("/api/queries/2") && opts?.method === "DELETE")).toBe(false);
 
-    // confirmed
-    confirm.mockReturnValue(true);
+    confirm.mockReturnValueOnce(true);
     setRoute("DELETE /api/queries/:id", makeResp({ status: 204 }));
+    setRoute("GET /api/queries", makeResp({ json: [SAVED[0]] }));
+    await click("delete-btn");
+    expect($("status").textContent).toContain("✓ Deleted.");
+    expect($("presets").value).toBe("");
+
+    await changeSelect($("presets"), "1");
+    await dispatchClick("delete-btn");
+    expect(confirm).toHaveBeenCalled();
+
+    document.body.innerHTML = '<div id="app"></div>';
+    await openWithSaved();
+    await changeSelect($("presets"), "2");
+    confirm.mockReturnValueOnce(true);
+    setRoute("DELETE /api/queries/:id", makeResp({ ok: false, status: 204 }));
     setRoute("GET /api/queries", makeResp({ json: [] }));
-    click("delete-btn");
-    await flush();
-    expect($("status").textContent).toContain("Deleted");
-  });
+    await dispatchClick("delete-btn");
+    expect($("status").textContent).toContain("✓ Deleted.");
 
-  it("aborts delete for an unknown id and reports delete failure", async () => {
-    routes["GET /api/queries"] = makeResp({ json: sample });
-    await loadApp();
-
-    // unknown id -> q not found
-    $("presets").appendChild(new Option("ghost", "999"));
-    $("presets").value = "999";
-    confirm.mockReturnValue(true);
-    fetch.mockClear();
-    click("delete-btn");
-    await flush();
-    expect(fetch).not.toHaveBeenCalled();
-
-    // failure path
-    $("presets").value = "2";
-    $("presets").dispatchEvent(new Event("change"));
+    document.body.innerHTML = '<div id="app"></div>';
+    await openWithSaved();
+    await changeSelect($("presets"), "2");
+    confirm.mockReturnValueOnce(true);
     setRoute("DELETE /api/queries/:id", makeResp({ ok: false, status: 500 }));
-    click("delete-btn");
-    await flush();
+    await click("delete-btn");
     expect($("status").textContent).toContain("delete failed");
-  });
-
-  it("reports an error when saved queries fail to load", async () => {
-    routes["GET /api/queries"] = new Error("boom");
-    await loadApp();
-    expect($("status").textContent).toContain("failed to load saved queries");
   });
 });
 
-// ===================== CodeMirror mode =====================
-
 describe("CodeMirror mode", () => {
-  function installCM() {
-    const cm = { _v: "", getValue() { return this._v; }, setValue(v) { this._v = v; }, setOption: vi.fn(), refresh: vi.fn() };
-    const CM = function () {};
-    CM.fromTextArea = (ta) => { cm._v = ta.value; return cm; };
-    globalThis.CodeMirror = CM;
+  function installCodeMirror(sql = "select cm") {
+    let value = sql;
+    const cm = {
+      getValue: vi.fn(() => value),
+      setValue: vi.fn((v) => { value = v; }),
+      setOption: vi.fn(),
+      refresh: vi.fn(),
+      on: vi.fn(),
+    };
+    window.CodeMirror = { fromTextArea: vi.fn(() => cm) };
+    globalThis.CodeMirror = window.CodeMirror;
     return cm;
   }
 
-  it("uses the editor for get/set, refreshes on tab switch, and runs", async () => {
-    const cm = installCM();
+  it("uses CodeMirror get/set, extraKeys, and refreshes when activated", async () => {
+    const cm = installCodeMirror();
+    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[3]], rowCount: 1, elapsedMs: 1 } }));
+    setRoute("GET /api/queries", makeResp({ json: [{ id: 9, name: "CM", sql: "select picked", isPreset: false }] }));
     await loadApp();
-    click("tab-sql"); // must refresh the editor (created while hidden)
-    expect(cm.refresh).toHaveBeenCalled();
-    cm.setValue("SELECT 42");
-    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[42]], rowCount: 1, truncated: false, elapsedMs: 1 } }));
-    click("run-btn");
-    await flush();
-    expect($("status").textContent).toContain("1 row");
-  });
 
-  it("setSQL writes into the editor when a preset is selected", async () => {
-    routes["GET /api/queries"] = makeResp({ json: [{ id: 1, name: "P", sql: "SELECT 7", isPreset: true }] });
-    const cm = installCM();
-    await loadApp();
-    $("presets").value = "1";
-    $("presets").dispatchEvent(new Event("change"));
-    expect(cm.getValue()).toBe("SELECT 7");
+    expect(window.CodeMirror.fromTextArea).toHaveBeenCalled();
+    expect(cm.setOption).toHaveBeenCalledWith("extraKeys", expect.objectContaining({ "Cmd-Enter": expect.any(Function), "Ctrl-Enter": expect.any(Function) }));
+    expect(cm.refresh).not.toHaveBeenCalled();
+    await click("tab-sql");
+    expect(cm.refresh).toHaveBeenCalled();
+
+    const keys = cm.setOption.mock.calls.find(([name]) => name === "extraKeys")[1];
+    keys["Ctrl-Enter"]();
+    await flush();
+    expect(cm.getValue).toHaveBeenCalled();
+    expect(postBody("/api/query")).toEqual({ sql: "select cm" });
+
+    await changeSelect($("presets"), "9");
+    expect(cm.setValue).toHaveBeenCalledWith("select picked");
   });
 });

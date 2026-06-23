@@ -81,66 +81,10 @@
 </style>
 </head>
 <body>
-<header>
-  <h1>pgpeek</h1>
-  <span class="badge">read-only</span>
-</header>
-
-<div class="body">
-  <aside class="sidebar">
-    <input id="tbl-filter" type="search" placeholder="Filter tables…" autocomplete="off" />
-    <div id="tables"><div class="empty">Loading tables…</div></div>
-  </aside>
-
-  <main>
-    <div class="tabs">
-      <button id="tab-data" class="active">Data</button>
-      <button id="tab-structure">Structure</button>
-      <button id="tab-sql">SQL</button>
-      <span class="title" id="tab-title">Pick a table</span>
-    </div>
-
-    <!-- Data -->
-    <section class="panel" id="panel-data">
-      <div class="toolbar">
-        <input id="data-search" type="search" placeholder="Search all columns…" autocomplete="off" />
-        <button class="ghost" id="data-clear">Clear</button>
-        <span class="sep"></span>
-        <button class="ghost" id="prev-btn" disabled>◀ Prev</button>
-        <button class="ghost" id="next-btn" disabled>Next ▶</button>
-        <span class="page-info" id="page-info">—</span>
-        <button class="ghost" id="data-export-btn" disabled>Export CSV</button>
-      </div>
-      <div class="results" id="data-results"><div class="empty">Select a table to browse its rows.</div></div>
-    </section>
-
-    <!-- Structure -->
-    <section class="panel" id="panel-structure" hidden>
-      <div class="results" id="structure-results"><div class="empty">Select a table to see its structure.</div></div>
-    </section>
-
-    <!-- SQL -->
-    <section class="panel" id="panel-sql" hidden>
-      <div class="editor-wrap">
-        <textarea id="sql" placeholder="SELECT ... -- Ctrl/Cmd+Enter to run">SELECT now();</textarea>
-      </div>
-      <div class="toolbar">
-        <button class="primary" id="run-btn">Run ▶</button>
-        <button class="ghost" id="sql-export-btn" disabled>Export CSV</button>
-        <select id="presets" title="Saved &amp; preset queries"><option value="">Saved queries…</option></select>
-        <button class="ghost" id="save-btn">Save</button>
-        <button class="ghost" id="delete-btn" disabled>Delete</button>
-        <span class="hint">Ctrl/Cmd&nbsp;+&nbsp;Enter to run · single SELECT/WITH only</span>
-      </div>
-      <div class="results" id="sql-results"><div class="empty">Run a query to see results.</div></div>
-    </section>
-  </main>
-</div>
-
-<div class="status ok" id="status">Ready.</div>
+<div id="app"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js"></script>
-<script src="/app.js"></script>
+<script type="module" src="/app.js"></script>
 </body>
 </html>

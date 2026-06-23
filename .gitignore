@@ -14,3 +14,8 @@
 /coverage/
 /web/coverage/
 *.cov
+
+
+# agent / tooling local state (never publish)
+.omo/
+.playwright-mcp/

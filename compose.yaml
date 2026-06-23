@@ -1,0 +1,74 @@
+# Local dev/testing stack for pgpeek — Postgres + the app, with live rebuild.
+#
+#   docker compose up --build        # build + start db and pgpeek
+#   docker compose watch             # same, but rebuild pgpeek on source edits
+#   docker compose down              # stop (keeps volumes / saved queries)
+#   docker compose down -v           # stop and wipe db + saved-query volumes
+#
+# Then open http://localhost:8080
+#
+# `docker compose watch` rebuilds the pgpeek image whenever a Go source file or
+# a web/ asset changes — the front-end is embedded into the binary via
+# go:embed, so a rebuild is what actually ships your edit. Tests, docs, and
+# infra files are ignored so they don't trigger needless rebuilds.
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: pgpeek
+      POSTGRES_PASSWORD: pgpeek
+      POSTGRES_DB: pgpeek
+    # The app reaches Postgres over the compose network (db:5432), so the db
+    # port is NOT published by default — that keeps the stack clash-free. For
+    # ad-hoc queries from your host, either run:
+    #   docker compose exec db psql -U pgpeek pgpeek
+    # or uncomment the mapping below (pick any free host port):
+    # ports:
+    #   - "55432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Seed demo data on first init (fresh volume only). See dev/seed.sql.
+      - ./dev/seed.sql:/docker-entrypoint-initdb.d/10-seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pgpeek -d pgpeek"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  pgpeek:
+    build:
+      context: .
+    # The distroless image defaults to a nonroot user, but the named volume
+    # mounted at /data is root-owned, so the SQLite store can't be created.
+    # Run as root for local dev only (the k8s manifests keep nonroot in prod).
+    user: root
+    environment:
+      # In-network hostname `db` + the container port 5432 (not 55432).
+      DATABASE_URL: postgres://pgpeek:pgpeek@db:5432/pgpeek?sslmode=disable
+      PGPEEK_LISTEN: ":8080"
+      PGPEEK_STORE_PATH: /data/pgpeek.db
+    ports:
+      - "8080:8080"
+    volumes:
+      - pgpeekdata:/data
+    depends_on:
+      db:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: rebuild
+          path: .
+          ignore:
+            - "**/*_test.go"
+            - web/app.test.js
+            - node_modules/
+            - "*.md"
+            - k8s/
+            - .github/
+            - data/
+            - "*.db"
+
+volumes:
+  pgdata:
+  pgpeekdata:

@@ -170,7 +170,8 @@ func (s *Server) handleTables(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	tables, err := s.pool.Tables(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to list tables: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "failed to list tables")
+		s.log.Error("list tables", "err", err)
 		return
 	}
 	if tables == nil {
@@ -184,7 +185,8 @@ func (s *Server) handleColumns(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	cols, err := s.pool.Columns(ctx, r.PathValue("schema"), r.PathValue("table"))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to read columns: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "failed to read columns")
+		s.log.Error("read columns", "err", err)
 		return
 	}
 	if cols == nil {
@@ -198,7 +200,8 @@ func (s *Server) handleForeignKeys(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	fks, err := s.pool.ForeignKeys(ctx, r.PathValue("schema"), r.PathValue("table"))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to read foreign keys: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "failed to read foreign keys")
+		s.log.Error("read foreign keys", "err", err)
 		return
 	}
 	if fks == nil {
@@ -474,6 +477,11 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		// Advertise HSTS only on connections that actually reached us over TLS
+		// (direct TLS or via a TLS-terminating proxy that sets X-Forwarded-Proto).
+		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+			h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

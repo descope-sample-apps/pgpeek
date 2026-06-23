@@ -33,8 +33,15 @@ var allowedStart = map[string]bool{
 	"WITH":    true,
 	"VALUES":  true,
 	"TABLE":   true,
-	"SHOW":    true,
 	"EXPLAIN": true,
+}
+
+// forbiddenRelations are sensitive system catalogs that expose credentials or
+// host topology (config-file paths, HBA rules). The DB role *should* already
+// deny these, but the app blocks them too as defense in depth. Matched as whole
+// words against the masked SQL, so they can't be hidden in strings/comments.
+var forbiddenRelations = []string{
+	"PG_SHADOW", "PG_AUTHID", "PG_HBA_FILE_RULES",
 }
 
 // Validate returns nil if sql is a single read-only statement, or a
@@ -62,6 +69,11 @@ func Validate(sql string) error {
 	for _, kw := range forbidden {
 		if containsWord(upper, kw) {
 			return fmt.Errorf("query contains disallowed keyword %q — this tool is read-only", kw)
+		}
+	}
+	for _, rel := range forbiddenRelations {
+		if containsWord(upper, rel) {
+			return fmt.Errorf("query references restricted system catalog %q", strings.ToLower(rel))
 		}
 	}
 	return nil

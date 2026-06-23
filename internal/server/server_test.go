@@ -350,6 +350,26 @@ func TestSecurityHeaders(t *testing.T) {
 	}
 }
 
+func TestHSTS(t *testing.T) {
+	srv := serverWithStore(t, &fakeQuerier{}, &fakeStore{})
+
+	// No TLS signal -> no HSTS header.
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if h := rec.Header().Get("Strict-Transport-Security"); h != "" {
+		t.Errorf("HSTS set on plaintext request: %q", h)
+	}
+
+	// X-Forwarded-Proto: https (TLS-terminating proxy) -> HSTS present.
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rec = httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if h := rec.Header().Get("Strict-Transport-Security"); h != "max-age=63072000; includeSubDomains" {
+		t.Errorf("HSTS = %q, want max-age=63072000; includeSubDomains", h)
+	}
+}
+
 func TestUIServed(t *testing.T) {
 	ts, _ := newTestServer(t, &fakeQuerier{})
 	resp := mustGet(t, ts, "/")

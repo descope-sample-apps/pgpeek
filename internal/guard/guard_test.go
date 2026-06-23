@@ -44,6 +44,11 @@ func TestValidate_Rejects(t *testing.T) {
 		"COPY users TO '/tmp/x'",             // exfil
 		"CREATE TABLE x (id int)",            // DDL
 		"GRANT ALL ON users TO public",       // privilege
+		"SHOW server_version",                // SHOW no longer allowed
+		"SHOW hba_file",                      // host-topology leak
+		"SELECT * FROM pg_shadow",            // credential catalog
+		"TABLE pg_authid",                    // credential catalog
+		"SELECT * FROM pg_hba_file_rules",    // host topology
 		"select 1; ",                         // wait: trailing semicolon should be OK
 	}
 	// The last entry is intentionally OK; verify trailing-semicolon handling separately.
@@ -92,6 +97,11 @@ func FuzzValidate(f *testing.F) {
 		for _, kw := range forbidden {
 			if containsWord(up, kw) {
 				t.Errorf("accepted input containing forbidden keyword %q: %q", kw, sql)
+			}
+		}
+		for _, rel := range forbiddenRelations {
+			if containsWord(up, rel) {
+				t.Errorf("accepted input referencing restricted catalog %q: %q", rel, sql)
 			}
 		}
 	})

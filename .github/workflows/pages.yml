@@ -4,7 +4,7 @@ name: pages
 # One-time setup: repo Settings → Pages → Build and deployment → Source: "GitHub Actions".
 on:
   push:
-    branches: [main, master]
+    branches: [main]
     paths:
       - "docs/**"
       - ".github/workflows/pages.yml"

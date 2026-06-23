@@ -67,6 +67,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx vitest run --coverage # thresholds enforce 100%
+      - name: verify vendored CodeMirror bundle is up to date
+        run: |
+          npm run vendor
+          git diff --exit-code web/vendor/codemirror6.js \
+            || { echo "::error::Vendored CodeMirror bundle is stale. Run 'make web-vendor' and commit web/vendor/codemirror6.js."; exit 1; }
 
   # Full release packaging in snapshot mode (build everything, publish
   # nothing) on every PR, via the SAME reusable workflow the real release

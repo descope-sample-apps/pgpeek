@@ -7,10 +7,19 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "coverage": "vitest run --coverage"
+    "coverage": "vitest run --coverage",
+    "vendor": "esbuild web/vendor/src/codemirror6.entry.js --bundle --outfile=web/vendor/codemirror6.js --format=esm --minify --platform=browser --target=es2020"
   },
   "devDependencies": {
+    "@codemirror/commands": "6.10.3",
+    "@codemirror/lang-sql": "6.10.0",
+    "@codemirror/language": "6.12.3",
+    "@codemirror/state": "6.6.0",
+    "@codemirror/view": "6.43.1",
+    "@lezer/highlight": "1.2.3",
     "@vitest/coverage-v8": "^3.0.0",
+    "codemirror": "6.0.2",
+    "esbuild": "0.28.1",
     "jsdom": "^29.0.0",
     "vitest": "^3.0.0"
   },

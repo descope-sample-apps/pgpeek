@@ -4,7 +4,6 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>pgpeek — read-only SQL browser</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
 <style>
   :root {
     /* surfaces */
@@ -192,15 +191,15 @@
   .toolbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--panel); flex-wrap: wrap; }
   .toolbar .hint, .toolbar .page-info { color: var(--muted); font-size: 12px; }
   .editor-wrap { border-bottom: 1px solid var(--border); }
-  .CodeMirror { height: 180px; font-size: 13px; background: var(--panel); color: var(--text); }
-  .CodeMirror-gutters { background: var(--elev2); border-right: 1px solid var(--border); }
-  .CodeMirror-linenumber { color: var(--linenum); }
-  .CodeMirror-cursor { border-left: 1px solid var(--text); }
-  .CodeMirror-selected { background: var(--selection) !important; }
-  .cm-s-default .cm-keyword { color: var(--cm-keyword); }
-  .cm-s-default .cm-string { color: var(--cm-string); }
-  .cm-s-default .cm-number { color: var(--cm-number); }
-  .cm-s-default .cm-comment { color: var(--linenum); }
+  .cm-editor { height: 180px; font-size: 13px; background: var(--panel); color: var(--text); }
+  .cm-editor.cm-focused { outline: none; }
+  .cm-editor .cm-scroller { font-family: monospace; line-height: 1.5; }
+  .cm-editor .cm-gutters { background: var(--elev2); color: var(--linenum); border-right: 1px solid var(--border); }
+  .cm-editor .cm-cursor { border-left-color: var(--text); }
+  .cm-editor .cm-activeLine { background: transparent; }
+  .cm-editor .cm-activeLineGutter { background: var(--hover); }
+  .cm-editor .cm-selectionBackground,
+  .cm-editor.cm-focused .cm-selectionBackground { background: var(--selection) !important; }
   textarea#sql { width: 100%; height: 180px; background: var(--panel); color: var(--text); border: 0; padding: 10px; font: 13px/1.5 monospace; resize: vertical; }
   .results { flex: 1; overflow: auto; }
   table { border-collapse: collapse; width: 100%; font-size: 13px; }
@@ -228,8 +227,7 @@
 <body>
 <div id="app"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js"></script>
+<script type="module" src="/vendor/codemirror6.js"></script>
 <script type="module" src="/app.js"></script>
 </body>
 </html>

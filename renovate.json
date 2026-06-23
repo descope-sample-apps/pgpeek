@@ -23,6 +23,22 @@
         "@vitest/ui"
       ],
       "groupName": "vitest monorepo"
+    },
+    {
+      "description": "Keep CodeMirror 6 packages together; they share lockstep peer ranges and are bundled into web/vendor/codemirror6.js, which CI re-checks. Grouping makes one PR that the maintainer regenerates the bundle for with 'make web-vendor'.",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchPackageNames": [
+        "codemirror",
+        "@codemirror/state",
+        "@codemirror/view",
+        "@codemirror/commands",
+        "@codemirror/language",
+        "@codemirror/lang-sql",
+        "@lezer/highlight"
+      ],
+      "groupName": "codemirror 6"
     }
   ]
 }

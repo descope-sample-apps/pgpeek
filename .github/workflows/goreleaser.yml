@@ -3,9 +3,9 @@ name: goreleaser
 # Reusable workflow. Builds the binaries, archives, checksums and SBOMs, and
 # (via ko) the multi-arch distroless images. Called in two modes:
 #
-#   snapshot: true   -> dry run on every PR. Nothing is published. Uses
-#                       --single-target to keep CI fast while still exercising
-#                       packaging and SBOM cataloging via syft.
+#   snapshot: true   -> dry run on every PR. Nothing is published. Uses the
+#                       single-platform snapshot config to keep CI fast while
+#                       still exercising packaging and SBOM cataloging via syft.
 #   snapshot: false  -> real release. Pushes images to GHCR and attaches the
 #                       archives/checksums to the GitHub Release.
 #
@@ -50,7 +50,7 @@ jobs:
         uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7
         with:
           version: "~> v2"
-          args: ${{ inputs.snapshot && 'release --snapshot --clean --single-target' || 'release --clean' }}
+          args: ${{ inputs.snapshot && 'release --snapshot --clean --config .goreleaser.snapshot.yaml' || 'release --clean' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
           # ko reads the docker login above for GHCR auth (release mode only).

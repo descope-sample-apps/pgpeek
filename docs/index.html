@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>pgpeek — a minimal, read-only Postgres browser</title>
+<meta name="description" content="pgpeek is a minimal, read-only, team-shared Postgres browser shipped as a single static Go binary. Page through tables, run SELECTs, export CSV — read-only by design." />
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+
+<!-- Open Graph / social -->
+<meta property="og:type" content="website" />
+<meta property="og:title" content="pgpeek — a minimal, read-only Postgres browser" />
+<meta property="og:description" content="Page through tables, run SELECTs, export CSV. Read-only by design. One static Go binary." />
+<meta property="og:image" content="https://descope.github.io/pgpeek/assets/img/hero.png" />
+<meta property="og:url" content="https://descope.github.io/pgpeek/" />
+<meta name="twitter:card" content="summary_large_image" />
+
+<!-- Fonts: Sora (display/sans) + JetBrains Mono (code) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<!-- ============================ NAV ============================ -->
+<header class="nav">
+  <div class="nav__container">
+    <a class="nav__logo" href="#top" aria-label="pgpeek home">
+      <span class="nav__logo-icon" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <ellipse cx="12" cy="5" rx="7" ry="3" stroke="currentColor" stroke-width="1.8"/>
+          <path d="M5 5v14c0 1.66 3.13 3 7 3s7-1.34 7-3V5" stroke="currentColor" stroke-width="1.8"/>
+          <path d="M5 12c0 1.66 3.13 3 7 3s7-1.34 7-3" stroke="currentColor" stroke-width="1.8"/>
+        </svg>
+      </span>
+      <span class="nav__logo-pg">pgpeek</span>
+    </a>
+
+    <nav class="nav__links" aria-label="Primary">
+      <a href="#features">Features</a>
+      <a href="#security">Read-only</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#quickstart">Quick start</a>
+      <a href="#config">Config</a>
+      <a href="#api">API</a>
+      <a href="#deploy">Deploy</a>
+    </nav>
+
+    <div class="nav__actions">
+      <a class="github" href="https://github.com/descope/pgpeek" target="_blank" rel="noopener" aria-label="pgpeek on GitHub">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.73.5.5 5.74.5 12.02c0 5.1 3.29 9.41 7.86 10.94.58.11.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.2 1.77 1.2 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.12 3.05.74.81 1.18 1.84 1.18 3.1 0 4.42-2.69 5.39-5.25 5.68.41.36.78 1.05.78 2.12v3.14c0 .31.21.68.8.56A11.53 11.53 0 0 0 23.5 12.02C23.5 5.74 18.27.5 12 .5Z"/></svg>
+        <span>GitHub</span>
+      </a>
+      <a class="btn btn--primary btn--sm" href="#quickstart">Quick start</a>
+    </div>
+
+    <button class="nav__hamburger" aria-label="Toggle menu" aria-expanded="false" aria-controls="mobile-nav">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+
+  </header>
+
+<nav class="nav__mobile" id="mobile-nav" aria-label="Mobile">
+  <a href="#features">Features</a>
+  <a href="#security">Read-only by design</a>
+  <a href="#architecture">Architecture</a>
+  <a href="#quickstart">Quick start</a>
+  <a href="#config">Configuration</a>
+  <a href="#api">HTTP API</a>
+  <a href="#deploy">Deploy</a>
+  <a href="#quality">Quality</a>
+  <span class="mobile-divider"></span>
+  <a href="https://github.com/descope/pgpeek" target="_blank" rel="noopener">GitHub ↗</a>
+</nav>
+
+<main id="main">
+<span id="top"></span>
+
+<!-- ============================ HERO ============================ -->
+<section class="hero">
+  <div class="container hero__inner">
+    <div class="hero__text reveal">
+      <div class="hero__badges">
+        <span class="badge badge--success badge--dot">read-only by design</span>
+        <span class="badge badge--muted">single static binary</span>
+      </div>
+      <h1 class="hero__title">The Postgres browser your support team can't break.</h1>
+      <p class="hero__tagline">
+        pgpeek is a minimal, read-only, team-shared Postgres browser — a sidebar of tables,
+        paged row browsing, a SQL scratchpad with saved queries, and CSV export everywhere.
+        Built to replace Adminer, shipped as one ~25&nbsp;MB distroless binary.
+      </p>
+      <div class="hero__actions">
+        <a class="btn btn--primary btn--lg" href="#quickstart">Get started</a>
+        <a class="btn btn--ghost btn--lg" href="https://github.com/descope/pgpeek" target="_blank" rel="noopener">View on GitHub</a>
+      </div>
+      <p class="kbd-hint">Press <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd> to run a query.</p>
+    </div>
+
+    <div class="hero__frame reveal reveal-delay-1">
+      <figure class="frame">
+        <div class="frame__toolbar">
+          <span class="frame__dots">
+            <span class="frame__dot frame__dot--red"></span>
+            <span class="frame__dot frame__dot--yellow"></span>
+            <span class="frame__dot frame__dot--green"></span>
+          </span>
+          <span class="frame__url">localhost:8080</span>
+        </div>
+        <img src="assets/img/hero.png" width="2880" height="1800"
+             alt="pgpeek browsing the public.users table: a schema sidebar, paged rows, and clickable foreign-key links."
+             fetchpriority="high" decoding="async" />
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ WHY ============================ -->
+<section class="section" id="why">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-label">Why pgpeek</span>
+      <h2 class="section-title">Adminer kept falling over. pgpeek won't.</h2>
+      <p class="section-desc">
+        Every failure mode that made the old tool wedge a pod was designed out on purpose.
+      </p>
+    </div>
+
+    <div class="why__grid">
+      <article class="why-card reveal">
+        <div class="why-card__icon" aria-hidden="true">⚡</div>
+        <p class="why-card__vs">connection per request → <strong>pooling</strong></p>
+        <h3 class="why-card__title">Connection pooling</h3>
+        <p class="why-card__text">A single <code>pgx</code>/pgxpool fronts Postgres instead of opening a fresh connection on every click — no connection storms.</p>
+      </article>
+
+      <article class="why-card reveal reveal-delay-1">
+        <div class="why-card__icon" aria-hidden="true">⛔</div>
+        <p class="why-card__vs">OOM on huge results → <strong>row cap</strong></p>
+        <h3 class="why-card__title">Hard row cap</h3>
+        <p class="why-card__text">Results stop at <code>PGPEEK_ROW_CAP</code>; an enormous table is never fully buffered into memory, and the UI tells you when output was capped.</p>
+      </article>
+
+      <article class="why-card reveal reveal-delay-2">
+        <div class="why-card__icon" aria-hidden="true">⏱️</div>
+        <p class="why-card__vs">runaway query → <strong>statement timeout</strong></p>
+        <h3 class="why-card__title">Statement timeout</h3>
+        <p class="why-card__text"><code>statement_timeout</code> is set on every pooled session, so a slow query can't wedge the pod for everyone else.</p>
+      </article>
+
+      <article class="why-card reveal reveal-delay-3">
+        <div class="why-card__icon" aria-hidden="true">📦</div>
+        <p class="why-card__vs">per-pod state → <strong>stateless</strong></p>
+        <h3 class="why-card__title">Stateless pods</h3>
+        <p class="why-card__text">Saved queries live in a tiny SQLite file on a PVC. The query path holds no per-user state, so pods are disposable.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ FEATURES ============================ -->
+<section class="section" id="features">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-label">Features</span>
+      <h2 class="section-title">Everything you need to read a database. Nothing you don't.</h2>
+      <p class="section-desc">No row editing, no schema management, no migrations — browsing and querying, done well.</p>
+    </div>
+
+    <div class="features__grid">
+      <!-- Data tab -->
+      <article class="feature reveal">
+        <div class="feature__figure">
+          <figure class="frame">
+            <div class="frame__toolbar"><span class="frame__dots"><span class="frame__dot frame__dot--red"></span><span class="frame__dot frame__dot--yellow"></span><span class="frame__dot frame__dot--green"></span></span><span class="frame__url">Data</span></div>
+            <img src="assets/img/data-browsing.png" width="2880" height="1800" loading="lazy" decoding="async"
+                 alt="pgpeek Data tab with a global search box, per-column filter row, and a sortable column header showing an active sort arrow." />
+          </figure>
+        </div>
+        <div class="feature__text">
+          <span class="feature__num">01</span>
+          <h3 class="feature__title">Browse &amp; filter any table</h3>
+          <ul class="feature__bullets">
+            <li>Click a table → paged rows (Prev / Next), server-capped.</li>
+            <li>Global search across <em>any</em> column.</li>
+            <li>Per-column filters: <code>=</code>, <code>≠</code>, <code>&lt;</code>, <code>&gt;</code>, <code>≤</code>, <code>≥</code>, <code>ILIKE</code>, <code>LIKE</code>, <code>IS NULL</code>, <code>NOT NULL</code>.</li>
+            <li>Click-to-sort headers; CSV export respects active search, filters, and sort.</li>
+          </ul>
+        </div>
+      </article>
+
+      <!-- Foreign keys -->
+      <article class="feature feature--flip reveal">
+        <div class="feature__figure">
+          <figure class="frame">
+            <div class="frame__toolbar"><span class="frame__dots"><span class="frame__dot frame__dot--red"></span><span class="frame__dot frame__dot--yellow"></span><span class="frame__dot frame__dot--green"></span></span><span class="frame__url">public.companies</span></div>
+            <img src="assets/img/foreign-keys.png" width="2880" height="1800" loading="lazy" decoding="async"
+                 alt="After clicking a foreign-key cell, pgpeek navigates to the referenced companies row, pre-filtered by id." />
+          </figure>
+        </div>
+        <div class="feature__text">
+          <span class="feature__num">02</span>
+          <h3 class="feature__title">Foreign keys you can click through</h3>
+          <ul class="feature__bullets">
+            <li>FK cells render as links straight to the referenced row.</li>
+            <li>Jumping in applies the matching <code>= value</code> filter automatically.</li>
+            <li>Follow relationships across schemas without writing a single join.</li>
+          </ul>
+        </div>
+      </article>
+
+      <!-- Structure -->
+      <article class="feature reveal">
+        <div class="feature__figure">
+          <figure class="frame">
+            <div class="frame__toolbar"><span class="frame__dots"><span class="frame__dot frame__dot--red"></span><span class="frame__dot frame__dot--yellow"></span><span class="frame__dot frame__dot--green"></span></span><span class="frame__url">Structure</span></div>
+            <img src="assets/img/structure.png" width="2880" height="1800" loading="lazy" decoding="async"
+                 alt="pgpeek Structure tab listing each column's name, type, nullability, and default." />
+          </figure>
+        </div>
+        <div class="feature__text">
+          <span class="feature__num">03</span>
+          <h3 class="feature__title">Structure at a glance</h3>
+          <ul class="feature__bullets">
+            <li>Every column: name, type, nullable, default.</li>
+            <li>One click from the data you're looking at to the shape behind it.</li>
+            <li>Views and materialized views included, clearly marked.</li>
+          </ul>
+        </div>
+      </article>
+
+      <!-- SQL -->
+      <article class="feature feature--flip reveal">
+        <div class="feature__figure">
+          <figure class="frame">
+            <div class="frame__toolbar"><span class="frame__dots"><span class="frame__dot frame__dot--red"></span><span class="frame__dot frame__dot--yellow"></span><span class="frame__dot frame__dot--green"></span></span><span class="frame__url">SQL</span></div>
+            <img src="assets/img/sql-editor.png" width="2880" height="1800" loading="lazy" decoding="async"
+                 alt="pgpeek SQL tab: a CodeMirror editor with a syntax-highlighted query, a results table, and a saved-queries dropdown." />
+          </figure>
+        </div>
+        <div class="feature__text">
+          <span class="feature__num">04</span>
+          <h3 class="feature__title">A SQL scratchpad with memory</h3>
+          <ul class="feature__bullets">
+            <li>CodeMirror editor (pgsql mode), gracefully degrades to a textarea.</li>
+            <li>Single <code>SELECT</code> / <code>WITH</code> only — enforced.</li>
+            <li>Saved &amp; preset queries, grouped; CSV export; capped-result warning.</li>
+            <li><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd> runs.</li>
+          </ul>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SECURITY ============================ -->
+<section class="section" id="security">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-label">Read-only by design</span>
+      <h2 class="section-title">Three layers of defense in depth</h2>
+      <p class="section-desc">Read-only isn't a setting you can forget to flip — it's enforced at the role, the session, and the app.</p>
+    </div>
+
+    <div class="layers">
+      <article class="layer reveal">
+        <div class="layer__num">1</div>
+        <div>
+          <h3 class="layer__title">The DB role <span class="layer__subtitle">— the real boundary</span></h3>
+          <p class="layer__text">pgpeek connects with a role that has <strong>no write privileges</strong>. This is what actually keeps your data safe — everything else is belt-and-suspenders.</p>
+        </div>
+      </article>
+
+      <article class="layer reveal reveal-delay-1">
+        <div class="layer__num">2</div>
+        <div>
+          <h3 class="layer__title">Session level <span class="layer__subtitle">— every connection</span></h3>
+          <p class="layer__text">pgpeek sets <code>default_transaction_read_only = on</code> on every pooled connection, so even an accidental write is rejected by Postgres.</p>
+        </div>
+      </article>
+
+      <article class="layer reveal reveal-delay-2">
+        <div class="layer__num">3</div>
+        <div>
+          <h3 class="layer__title">App guardrail <span class="layer__subtitle">— <code>internal/guard</code></span></h3>
+          <p class="layer__text">Rejects anything that isn't a single <code>SELECT</code> / <code>WITH</code> / <code>VALUES</code> / <code>TABLE</code> / <code>EXPLAIN</code> — blocking multiple statements and DML/DDL, and aware of keywords hiding inside comments and string literals.</p>
+        </div>
+      </article>
+    </div>
+
+    <div class="callout callout--warn reveal">
+      <div class="callout__icon" aria-hidden="true">!</div>
+      <div class="callout__body">
+        <strong>The guard is a guardrail, not the security boundary.</strong> It catches fat-fingering — don't rely on it as your only line of defense. The read-only DB role is what protects the data.
+      </div>
+    </div>
+
+    <div class="callout callout--success reveal">
+      <div class="callout__icon" aria-hidden="true">✓</div>
+      <div class="callout__body">
+        <strong>Filtering is safe by construction.</strong> Column names are validated against the relation's real columns and emitted via <code>pgx.Identifier</code>; operators come from a fixed allowlist; values are bound as query parameters; sort is <code>ASC</code>/<code>DESC</code> only. No user input is ever concatenated into SQL.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ ARCHITECTURE ============================ -->
+<section class="section" id="architecture">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-label">Architecture</span>
+      <h2 class="section-title">One binary, two stores, zero surprises</h2>
+      <p class="section-desc">The browsed database stays read-only; a tiny independent SQLite file holds saved queries.</p>
+    </div>
+
+    <div class="arch-diagram-wrap reveal">
+      <div class="arch__inner">
+        <div class="arch__flow">
+          <div class="io io--client">
+            <span class="io__title">Browser</span>
+            <span class="io__sub">Preact + htm UI</span>
+          </div>
+          <div class="io io--arrow" aria-hidden="true">→<span class="io__lbl">HTTP</span></div>
+          <div class="io io--app">
+            <span class="io__title">pgpeek</span>
+            <span class="io__sub">Go static binary</span>
+          </div>
+        </div>
+        <div class="arch__stack">
+          <div class="arch__stack-title">data sources</div>
+          <div class="stack-item">
+            <span class="stack-dot stack-dot--accent" aria-hidden="true"></span>
+            <span class="stack-item__body"><span class="stack-item__label">Postgres</span><span class="stack-item__desc">via pgx pool · read-only role · Aurora-friendly</span></span>
+          </div>
+          <div class="stack-item">
+            <span class="stack-dot stack-dot--success" aria-hidden="true"></span>
+            <span class="stack-item__body"><span class="stack-item__label">SQLite</span><span class="stack-item__desc">saved &amp; preset queries · on a PVC</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stack-items reveal">
+      <div class="stack-item">
+        <span class="stack-dot stack-dot--accent" aria-hidden="true"></span>
+        <span class="stack-item__body"><span class="stack-item__label">Backend</span><span class="stack-item__desc">Go · <code>jackc/pgx/v5</code> · <code>modernc.org/sqlite</code> (pure-Go, no cgo)</span></span>
+      </div>
+      <div class="stack-item">
+        <span class="stack-dot stack-dot--success" aria-hidden="true"></span>
+        <span class="stack-item__body"><span class="stack-item__label">Frontend</span><span class="stack-item__desc">Preact + htm · no build step · vendored &amp; embedded via <code>go:embed</code> · CSP-safe</span></span>
+      </div>
+      <div class="stack-item">
+        <span class="stack-dot stack-dot--warn" aria-hidden="true"></span>
+        <span class="stack-item__body"><span class="stack-item__label">Ships as</span><span class="stack-item__desc">one ~25&nbsp;MB distroless image · multi-arch · reproducible · with SBOMs</span></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ QUICK START ============================ -->
+<section class="section" id="quickstart">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-label">Quick start</span>
+      <h2 class="section-title">Running in under a minute</h2>
+      <p class="section-desc">The bundled Docker Compose stack is the fastest path — Postgres, a demo dataset, and live rebuild.</p>
+    </div>
+
+    <div class="tab-group reveal">
+      <div class="tab-list" role="tablist" aria-label="Quick start options">
+        <button class="tab-btn" role="tab" id="tab-compose" aria-controls="panel-compose">Docker Compose <span class="rec-star" title="Recommended">★</span></button>
+        <button class="tab-btn" role="tab" id="tab-source" aria-controls="panel-source">From source</button>
+        <button class="tab-btn" role="tab" id="tab-build" aria-controls="panel-build">Build</button>
+      </div>
+
+      <div class="tab-panels">
+        <div class="tab-panel qs-block" role="tabpanel" id="panel-compose" aria-labelledby="tab-compose">
+          <p class="qs-block__lead">Spins up Postgres + pgpeek with seeded demo data and rebuilds on every source edit.</p>
+          <div class="code-wrap">
+            <button class="copy-btn" type="button" aria-label="Copy">copy</button>
+            <pre><code><span class="tok-comment"># clone, then from the repo root:</span>
+docker compose watch
+
+<span class="tok-comment"># open the UI</span>
+open http://localhost:8080</code></pre>
+          </div>
+          <p class="kbd-hint">Reset the demo data anytime with <code>docker compose down -v &amp;&amp; docker compose up</code>.</p>
+        </div>
+
+        <div class="tab-panel qs-block" role="tabpanel" id="panel-source" aria-labelledby="tab-source">
+          <p class="qs-block__lead">Point pgpeek at any reachable Postgres with a read-only role.</p>
+          <div class="code-wrap">
+            <button class="copy-btn" type="button" aria-label="Copy">copy</button>
+            <pre><code><span class="tok-key">export</span> DATABASE_URL=<span class="tok-string">'postgres://descoperead:PASSWORD@host:5432/db?sslmode=require'</span>
+<span class="tok-key">export</span> PGPEEK_STORE_PATH=<span class="tok-string">./pgpeek.db</span>
+go run .</code></pre>
+          </div>
+        </div>
+
+        <div class="tab-panel qs-block" role="tabpanel" id="panel-build" aria-labelledby="tab-build">
+          <p class="qs-block__lead">Produce a static binary or a distroless image.</p>
+          <div class="code-wrap">
+            <button class="copy-btn" type="button" aria-label="Copy">copy</button>
+            <pre><code>make build                 <span class="tok-comment"># static binary (CGO disabled)</span>
+make image                 <span class="tok-comment"># distroless image via goreleaser + ko</span>
+docker build -t pgpeek .   <span class="tok-comment"># or the hand-written Dockerfile</span></code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ CONFIG ============================ -->
+<section class="section" id="config">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-label">Configuration</span>
+      <h2 class="section-title">Everything is an environment variable</h2>
+      <p class="section-desc">Any value can also come from a mounted file via <code>&lt;VAR&gt;_FILE</code> — Docker / Kubernetes secrets friendly.</p>
+    </div>
+
+    <div class="table-wrap reveal">
+      <table class="data-table">
+        <thead><tr><th>Variable</th><th>Default</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td class="td-path">DATABASE_URL</td><td><span class="pill-required">required</span></td><td>Postgres DSN. Use the read-only role. Never logged. (<code>DATABASE_URL_FILE</code> reads it from a mounted secret.)</td></tr>
+          <tr><td class="td-path">PGPEEK_LISTEN</td><td><span class="pill-default">:8080</span></td><td>Listen address.</td></tr>
+          <tr><td class="td-path">PGPEEK_ROW_CAP</td><td><span class="pill-default">1000</span></td><td>Max rows returned/exported per query.</td></tr>
+          <tr><td class="td-path">PGPEEK_STATEMENT_TIMEOUT</td><td><span class="pill-default">30s</span></td><td>Per-query DB statement timeout.</td></tr>
+          <tr><td class="td-path">PGPEEK_IDLE_TX_TIMEOUT</td><td><span class="pill-default">30s</span></td><td><code>idle_in_transaction_session_timeout</code>.</td></tr>
+          <tr><td class="td-path">PGPEEK_MAX_CONNS</td><td><span class="pill-default">8</span></td><td>Max pool size (caps DB connection usage).</td></tr>
+          <tr><td class="td-path">PGPEEK_STORE_PATH</td><td><span class="pill-default">/data/pgpeek.db</span></td><td>SQLite file for saved queries.</td></tr>
+          <tr><td class="td-path">PGPEEK_READ_HEADER_TIMEOUT</td><td><span class="pill-default">10s</span></td><td>HTTP read-header timeout.</td></tr>
+          <tr><td class="td-path">PGPEEK_WRITE_TIMEOUT</td><td><span class="pill-default">stmt+30s</span></td><td>HTTP write timeout (must exceed statement timeout for big exports).</td></tr>
+          <tr><td class="td-path">PGPEEK_IDLE_TIMEOUT</td><td><span class="pill-default">120s</span></td><td>HTTP keep-alive idle timeout.</td></tr>
+          <tr><td class="td-path">PGPEEK_SHUTDOWN_TIMEOUT</td><td><span class="pill-default">15s</span></td><td>Graceful-shutdown grace period.</td></tr>
+          <tr><td class="td-path">PGPEEK_TLS_CERT_FILE</td><td><span class="pill-default">—</span></td><td>Enable HTTPS (set with the key file). Otherwise terminate TLS at the ingress.</td></tr>
+          <tr><td class="td-path">PGPEEK_TLS_KEY_FILE</td><td><span class="pill-default">—</span></td><td>TLS private key path.</td></tr>
+          <tr><td class="td-path">PGPEEK_DB_IAM_AUTH</td><td><span class="pill-default">false</span></td><td>Use RDS/Aurora IAM auth instead of a password.</td></tr>
+          <tr><td class="td-path">PGPEEK_AWS_REGION</td><td><span class="pill-default">$AWS_REGION</span></td><td>AWS region for IAM token signing (required when IAM auth is on).</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout--success reveal">
+      <div class="callout__icon" aria-hidden="true">☁</div>
+      <div class="callout__body">
+        <strong>RDS / Aurora IAM auth.</strong> Set <code>PGPEEK_DB_IAM_AUTH=true</code> and a region, drop the password from the DSN, and pgpeek mints a short-lived IAM token from the default AWS credential chain (env / web-identity / IRSA / instance role) before every new connection — no static DB password stored anywhere.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ API ============================ -->
+<section class="section" id="api">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-label">HTTP API</span>
+      <h2 class="section-title">A small, predictable surface</h2>
+      <p class="section-desc">The UI is just a client of these endpoints — script against them directly if you like.</p>
+    </div>
+
+    <div class="table-wrap reveal">
+      <table class="data-table">
+        <thead><tr><th>Method &amp; path</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td class="td-path"><span class="method-badge method-post">POST</span> /api/query</td><td>Run a query → JSON <code>{columns, rows, …}</code>.</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-post">POST</span> /api/export</td><td>Run a query → CSV download.</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/meta</td><td>Server limits the UI needs (<code>{rowCap}</code>).</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/tables</td><td>List browsable tables/views (+ row estimate).</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/tables/{schema}/{table}/columns</td><td>Column structure.</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/tables/{schema}/{table}/fks</td><td>Single-column foreign keys (for click-through).</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/tables/{schema}/{table}/data</td><td>Paged rows: <code>?limit=&amp;offset=&amp;search=&amp;sort=&amp;dir=&amp;f=col:op:val</code> (<code>&amp;format=csv</code>).</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/queries</td><td>List saved/preset queries.</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-post">POST</span> /api/queries</td><td>Create a saved query.</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-put">PUT</span> /api/queries/{id}</td><td>Update a saved query.</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-del">DEL</span> /api/queries/{id}</td><td>Delete a saved query.</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /healthz · /readyz</td><td>Liveness · readiness (pings the DB).</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /</td><td>The UI.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ DEPLOY ============================ -->
+<section class="section" id="deploy">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-label">Deploy</span>
+      <h2 class="section-title">Kubernetes-ready, hardened by default</h2>
+      <p class="section-desc">Manifests live in <code>k8s/</code> — Deployment, Service, PVC, optional Ingress, and a ServiceAccount.</p>
+    </div>
+
+    <div class="deploy__grid">
+      <article class="deploy-card reveal">
+        <span class="deploy-card__label">Runtime</span>
+        <h3 class="deploy-card__title">Locked down</h3>
+        <p class="deploy-card__text">Runs nonroot with a read-only root filesystem (only <code>/data</code> writable), drops all capabilities, and ships liveness <code>/healthz</code> + readiness <code>/readyz</code> probes.</p>
+      </article>
+      <article class="deploy-card reveal reveal-delay-1">
+        <span class="deploy-card__label">Scaling</span>
+        <h3 class="deploy-card__title">Stateless query path</h3>
+        <p class="deploy-card__text">The saved-query store is a SQLite file on a ReadWriteOnce PVC, so the Deployment ships <code>replicas: 1</code> + <code>Recreate</code>. Move it to a shared backend to scale out.</p>
+      </article>
+      <article class="deploy-card reveal reveal-delay-2">
+        <span class="deploy-card__label">Releases</span>
+        <h3 class="deploy-card__title">Signed &amp; reproducible</h3>
+        <p class="deploy-card__text">release-please + goreleaser + ko publish multi-arch distroless images with SBOMs to <code>ghcr.io/descope/pgpeek</code>.</p>
+      </article>
+    </div>
+
+    <div class="callout callout--warn reveal">
+      <div class="callout__icon" aria-hidden="true">!</div>
+      <div class="callout__body">
+        <strong>pgpeek is intentionally auth-thin — put it behind your own SSO.</strong> The example Ingress assumes oauth2-proxy (Entra / Google SAML). Do not expose pgpeek without an auth layer in front of it.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ QUALITY ============================ -->
+<section class="section" id="quality">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-label">Quality &amp; releases</span>
+      <h2 class="section-title">Held to a high bar</h2>
+    </div>
+
+    <div class="quality__stats reveal">
+      <div class="quality-stat"><span class="quality-stat__num">100%</span><span class="quality-stat__label">backend coverage (internal/)</span></div>
+      <div class="quality-stat"><span class="quality-stat__num">100%</span><span class="quality-stat__label">frontend coverage (vitest)</span></div>
+      <div class="quality-stat"><span class="quality-stat__num">~25&nbsp;MB</span><span class="quality-stat__label">distroless image</span></div>
+      <div class="quality-stat"><span class="quality-stat__num">0</span><span class="quality-stat__label">cgo dependencies</span></div>
+    </div>
+
+    <div class="quality__list">
+      <div class="quality-item reveal">
+        <span class="quality-item__icon" aria-hidden="true">✓</span>
+        <div><h3 class="quality-item__title">Tested under race</h3><p class="quality-item__desc">Unit + integration tests run with the race detector against a real Postgres service in CI.</p></div>
+      </div>
+      <div class="quality-item reveal reveal-delay-1">
+        <span class="quality-item__icon" aria-hidden="true">✓</span>
+        <div><h3 class="quality-item__title">Linted &amp; scanned</h3><p class="quality-item__desc">golangci-lint (errcheck, gosec, revive, …) and govulncheck gate every change.</p></div>
+      </div>
+      <div class="quality-item reveal reveal-delay-2">
+        <span class="quality-item__icon" aria-hidden="true">✓</span>
+        <div><h3 class="quality-item__title">Reproducible releases</h3><p class="quality-item__desc">Tagged via release-please; built by goreleaser + ko into signed, multi-arch images with SBOMs.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ============================ FOOTER ============================ -->
+<footer class="footer">
+  <div class="container footer__inner">
+    <div class="footer__top">
+      <div class="footer__brand">
+        <a class="footer__logo" href="#top">
+          <span class="nav__logo-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><ellipse cx="12" cy="5" rx="7" ry="3" stroke="currentColor" stroke-width="1.8"/><path d="M5 5v14c0 1.66 3.13 3 7 3s7-1.34 7-3V5" stroke="currentColor" stroke-width="1.8"/><path d="M5 12c0 1.66 3.13 3 7 3s7-1.34 7-3" stroke="currentColor" stroke-width="1.8"/></svg>
+          </span>
+          pgpeek
+        </a>
+        <p class="footer__tagline">A minimal, read-only, team-shared Postgres browser. One static binary.</p>
+      </div>
+
+      <div class="footer__links">
+        <div class="footer__col-links">
+          <span class="footer__col-title">Docs</span>
+          <a href="#features">Features</a>
+          <a href="#quickstart">Quick start</a>
+          <a href="#config">Configuration</a>
+          <a href="#api">HTTP API</a>
+        </div>
+        <div class="footer__col-links">
+          <span class="footer__col-title">Operate</span>
+          <a href="#security">Read-only design</a>
+          <a href="#architecture">Architecture</a>
+          <a href="#deploy">Deploy</a>
+          <a href="#quality">Quality</a>
+        </div>
+        <div class="footer__col-links">
+          <span class="footer__col-title">Project</span>
+          <a href="https://github.com/descope/pgpeek" target="_blank" rel="noopener">GitHub ↗</a>
+          <a href="https://github.com/descope/pgpeek/issues" target="_blank" rel="noopener">Issues ↗</a>
+          <a href="https://github.com/descope/pgpeek/releases" target="_blank" rel="noopener">Releases ↗</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer__bottom">
+      <p class="footer__copy">Built by the Descope team · open source on GitHub.</p>
+      <a class="back-to-top" href="#top">Back to top ↑</a>
+    </div>
+  </div>
+</footer>
+
+<script src="app.js" defer></script>
+</body>
+</html>

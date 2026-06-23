@@ -840,3 +840,66 @@ describe("CodeMirror mode", () => {
     expect(cm.setValue).toHaveBeenCalledWith("select picked");
   });
 });
+
+describe("theme switcher", () => {
+  function memStorage() {
+    const store = {};
+    return {
+      getItem: (k) => (k in store ? store[k] : null),
+      setItem: (k, v) => { store[k] = String(v); },
+      removeItem: (k) => { delete store[k]; },
+      clear: () => { for (const k of Object.keys(store)) delete store[k]; },
+    };
+  }
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", memStorage());
+    document.documentElement.removeAttribute("data-theme");
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    document.documentElement.removeAttribute("data-theme");
+  });
+
+  it("defaults to no data-theme and lists the available themes", async () => {
+    await loadApp();
+    const sel = $("theme-select");
+    expect(sel).toBeTruthy();
+    expect(sel.value).toBe("");
+    expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
+    const labels = [...sel.options].map((o) => o.textContent);
+    expect(labels).toContain("Default");
+    expect(labels).toContain("Dark+");
+    expect(labels).toContain("Dracula");
+  });
+
+  it("applies and persists a chosen theme", async () => {
+    await loadApp();
+    await changeSelect($("theme-select"), "dracula");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dracula");
+    expect(localStorage.getItem("pgpeek-theme")).toBe("dracula");
+  });
+
+  it("restores the saved theme on load and clears back to default", async () => {
+    localStorage.setItem("pgpeek-theme", "monokai");
+    await loadApp();
+    expect($("theme-select").value).toBe("monokai");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("monokai");
+    await changeSelect($("theme-select"), "");
+    expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
+    expect(localStorage.getItem("pgpeek-theme")).toBe("");
+  });
+
+  it("stays usable when localStorage read and write both throw", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => { throw new Error("blocked"); },
+      setItem: () => { throw new Error("blocked"); },
+      removeItem: () => {},
+      clear: () => {},
+    });
+    await loadApp();
+    const sel = $("theme-select");
+    expect(sel.value).toBe("");
+    await changeSelect(sel, "nord");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("nord");
+  });
+});

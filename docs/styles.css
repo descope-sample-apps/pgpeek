@@ -522,6 +522,28 @@ pre code {
 
 .frame img { display: block; width: 100%; height: auto; }
 
+/* Themes gallery */
+.themes__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--sp-6);
+}
+.themes__card {
+  box-shadow: var(--sh-md);
+  transition: transform var(--t-base), box-shadow var(--t-base), border-color var(--t-base);
+}
+.themes__card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--sh-lg);
+  border-color: var(--c-accent);
+}
+@media (max-width: 900px) {
+  .themes__grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 560px) {
+  .themes__grid { grid-template-columns: 1fr; }
+}
+
 .hero__frame {
   position: relative;
 }

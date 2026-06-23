@@ -7,6 +7,45 @@ import {
 
 const PAGE_SIZE = 100;
 
+const THEME_KEY = "pgpeek-theme";
+// Switchable color themes. id "" = built-in default (the :root palette).
+const THEMES = [
+  ["", "Default"],
+  ["dark-plus", "Dark+"],
+  ["light-plus", "Light+"],
+  ["monokai", "Monokai"],
+  ["dracula", "Dracula"],
+  ["one-dark", "One Dark Pro"],
+  ["nord", "Nord"],
+  ["solarized-dark", "Solarized Dark"],
+  ["solarized-light", "Solarized Light"],
+  ["github-dark", "GitHub Dark"],
+  ["github-light", "GitHub Light"],
+  ["catppuccin-mocha", "Catppuccin Mocha"],
+  ["catppuccin-latte", "Catppuccin Latte"],
+  ["tokyo-night", "Tokyo Night"],
+  ["ayu-dark", "Ayu Dark"],
+  ["ayu-mirage", "Ayu Mirage"],
+  ["night-owl", "Night Owl"],
+  ["houston", "Houston"],
+  ["matcha", "Matcha"],
+  ["dainty", "Dainty"],
+];
+
+function getStoredTheme() {
+  try { return localStorage.getItem(THEME_KEY) || ""; } catch { return ""; }
+}
+
+// applyTheme sets (or clears) the data-theme attribute that selects a palette.
+function applyTheme(id) {
+  const root = document.documentElement;
+  if (id) root.setAttribute("data-theme", id);
+  else root.removeAttribute("data-theme");
+}
+
+// Apply the saved theme at import time to avoid a flash of the default palette.
+applyTheme(getStoredTheme());
+
 // Allowlisted filter operators (key sent to the server, label shown in the UI).
 const OPS = [
   ["", "—"], ["eq", "="], ["ne", "≠"], ["lt", "<"], ["lte", "≤"],
@@ -351,6 +390,21 @@ function SqlTab({ active, saved, reloadSaved, setStatus }) {
     </div>`;
 }
 
+// ---- Theme switcher ----
+function ThemeSelect() {
+  const [theme, setTheme] = useState(getStoredTheme);
+  useEffect(() => {
+    applyTheme(theme);
+    try { localStorage.setItem(THEME_KEY, theme); } catch { /* persistence is best-effort */ }
+  }, [theme]);
+  return html`
+    <label class="theme-select" title="Color theme">Theme
+      <select id="theme-select" value=${theme} onChange=${(e) => setTheme(e.target.value)}>
+        ${THEMES.map(([id, label]) => html`<option value=${id}>${label}</option>`)}
+      </select>
+    </label>`;
+}
+
 // ---- App ----
 function App() {
   const [tables, setTables] = useState([]);
@@ -388,7 +442,7 @@ function App() {
   const title = current ? tableKey(current) : "Pick a table";
 
   return html`
-    <header><h1>pgpeek</h1><span class="badge">read-only</span></header>
+    <header><h1>pgpeek</h1><span class="badge">read-only</span><${ThemeSelect} /></header>
     <div class="body">
       <${Sidebar} tables=${tables} loaded=${tablesLoaded} currentKey=${current && tableKey(current)} onSelect=${(t) => open(t)} />
       <main>

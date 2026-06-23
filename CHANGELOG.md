@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/descope-sample-apps/pgpeek/compare/v0.3.1...v0.3.2) (2026-06-23)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/jackc/pgx/v5 to v5.10.0 ([#27](https://github.com/descope-sample-apps/pgpeek/issues/27)) ([7a2ba1e](https://github.com/descope-sample-apps/pgpeek/commit/7a2ba1ea193cb5c0d8e2c18daaa08e28c4da482a))
+
 ## [0.3.1](https://github.com/descope-sample-apps/pgpeek/compare/v0.3.0...v0.3.1) (2026-06-23)
 
 

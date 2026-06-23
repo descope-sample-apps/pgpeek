@@ -2,5 +2,24 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "local>descope-sample-apps/renovate-config"
+  ],
+  "postUpdateOptions": [
+    "gomodTidy",
+    "gomodUpdateImportPaths"
+  ],
+  "packageRules": [
+    {
+      "description": "Keep vitest and its lockstep-versioned plugins together; @vitest/* declare exact peer deps on vitest, so bumping them apart breaks lockfile resolution (ERESOLVE).",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchPackageNames": [
+        "vitest",
+        "@vitest/coverage-v8",
+        "@vitest/browser",
+        "@vitest/ui"
+      ],
+      "groupName": "vitest monorepo"
+    }
   ]
 }

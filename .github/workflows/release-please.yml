@@ -1,8 +1,9 @@
 name: release-please
 
 # Maintains a release PR from Conventional Commits on main. Merging it tags a
-# version and publishes a GitHub Release, which triggers release.yml (goreleaser
-# + ko) via the new tag.
+# version and publishes a GitHub Release. When that happens, the gated
+# `goreleaser` job below runs (goreleaser + ko) to build and publish the
+# release artifacts in the SAME workflow run.
 on:
   push:
     branches: [main]
@@ -14,6 +15,8 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
     steps:
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: app-token
@@ -22,9 +25,24 @@ jobs:
           private-key: ${{ secrets.MEGA_APP_PEM }}
 
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
+        id: release
         with:
-          # App token (not the default GITHUB_TOKEN) so the pushed tag/release
-          # triggers downstream workflows like release.yml.
+          # App token (not the default GITHUB_TOKEN) so the created release
+          # is attributed to the app and downstream automation behaves.
           token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  # Build + publish release artifacts, but only when release-please actually
+  # cut a release in this run. Runs goreleaser in publish mode via the shared
+  # reusable workflow (the same one CI runs in snapshot mode on every PR).
+  goreleaser:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    permissions:
+      contents: write # attach archives/checksums to the release
+      packages: write # push images to ghcr.io
+      id-token: write # keyless signing / SBOM attestation
+    uses: ./.github/workflows/goreleaser.yml
+    with:
+      snapshot: false

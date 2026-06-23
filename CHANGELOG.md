@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.2.0...v0.3.0) (2026-06-23)
+
+
+### Features
+
+* **web:** switchable color themes + theme gallery on site ([#20](https://github.com/descope-sample-apps/pgpeek/issues/20)) ([ad7eed0](https://github.com/descope-sample-apps/pgpeek/commit/ad7eed0f318cba79f8a97bbbc4cc68dba58e90a0))
+
+
+### Bug Fixes
+
+* **ci:** trigger release.yml via release-please App token + bump checkout to v7 ([#24](https://github.com/descope-sample-apps/pgpeek/issues/24)) ([b320f81](https://github.com/descope-sample-apps/pgpeek/commit/b320f811f57edf04da5bc5592bc85abd93a71301))
+
 ## [0.2.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.1.0...v0.2.0) (2026-06-23)
 
 

@@ -85,14 +85,14 @@ beforeEach(() => {
   globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
   window.requestAnimationFrame = globalThis.requestAnimationFrame;
   window.cancelAnimationFrame = globalThis.cancelAnimationFrame;
-  delete window.CodeMirror;
-  delete globalThis.CodeMirror;
+  delete window.cm6;
+  delete globalThis.cm6;
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
-  delete window.CodeMirror;
-  delete globalThis.CodeMirror;
+  delete window.cm6;
+  delete globalThis.cm6;
 });
 
 const $ = (id) => document.getElementById(id);
@@ -803,41 +803,40 @@ describe("saved queries", () => {
   });
 });
 
-describe("CodeMirror mode", () => {
-  function installCodeMirror(sql = "select cm") {
+describe("CodeMirror 6 mode", () => {
+  function installCM6(sql = "select cm") {
     let value = sql;
-    const cm = {
+    const editor = {
       getValue: vi.fn(() => value),
       setValue: vi.fn((v) => { value = v; }),
-      setOption: vi.fn(),
       refresh: vi.fn(),
-      on: vi.fn(),
     };
-    window.CodeMirror = { fromTextArea: vi.fn(() => cm) };
-    globalThis.CodeMirror = window.CodeMirror;
-    return cm;
+    const mount = vi.fn(() => editor);
+    window.cm6 = { mount };
+    globalThis.cm6 = window.cm6;
+    return { editor, mount };
   }
 
-  it("uses CodeMirror get/set, extraKeys, and refreshes when activated", async () => {
-    const cm = installCodeMirror();
+  it("mounts cm6, runs via the editor keymap callback, and refreshes when activated", async () => {
+    const { editor, mount } = installCM6();
     setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[3]], rowCount: 1, elapsedMs: 1 } }));
     setRoute("GET /api/queries", makeResp({ json: [{ id: 9, name: "CM", sql: "select picked", isPreset: false }] }));
     await loadApp();
 
-    expect(window.CodeMirror.fromTextArea).toHaveBeenCalled();
-    expect(cm.setOption).toHaveBeenCalledWith("extraKeys", expect.objectContaining({ "Cmd-Enter": expect.any(Function), "Ctrl-Enter": expect.any(Function) }));
-    expect(cm.refresh).not.toHaveBeenCalled();
+    expect(mount).toHaveBeenCalledWith(expect.any(HTMLElement), "SELECT now();", expect.any(Function));
+    expect(editor.refresh).not.toHaveBeenCalled();
     await click("tab-sql");
-    expect(cm.refresh).toHaveBeenCalled();
+    expect(editor.refresh).toHaveBeenCalled();
 
-    const keys = cm.setOption.mock.calls.find(([name]) => name === "extraKeys")[1];
-    keys["Ctrl-Enter"]();
+    // The keymap "run" callback handed to mount triggers a query from the editor value.
+    const onRun = mount.mock.calls[0][2];
+    onRun();
     await flush();
-    expect(cm.getValue).toHaveBeenCalled();
+    expect(editor.getValue).toHaveBeenCalled();
     expect(postBody("/api/query")).toEqual({ sql: "select cm" });
 
     await changeSelect($("presets"), "9");
-    expect(cm.setValue).toHaveBeenCalledWith("select picked");
+    expect(editor.setValue).toHaveBeenCalledWith("select picked");
   });
 });
 

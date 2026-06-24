@@ -56,6 +56,10 @@ vulncheck: ## Scan for known vulnerabilities
 web-test: ## Front-end tests (vitest, 100% thresholds)
 	npm ci && npx vitest run --coverage
 
+.PHONY: web-vendor
+web-vendor: ## Regenerate the vendored CodeMirror 6 bundle (esbuild)
+	npm ci && npm run vendor
+
 .PHONY: build
 build: ## Build the static binary
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags="-s -w" -o pgpeek .

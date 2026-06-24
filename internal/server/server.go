@@ -474,12 +474,13 @@ func (w *statusWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
-// contentSecurityPolicy allows the app's own assets plus the CodeMirror CDN. The
-// inline page script lives in /app.js (no 'unsafe-inline' for scripts); styles
-// permit 'unsafe-inline' because CodeMirror injects them.
+// contentSecurityPolicy allows only the app's own assets. CodeMirror 6 is
+// vendored and served from /vendor (no third-party CDN). The page script lives
+// in /app.js (no 'unsafe-inline' for scripts); styles permit 'unsafe-inline'
+// because CodeMirror injects them at runtime.
 const contentSecurityPolicy = "default-src 'self'; " +
-	"script-src 'self' https://cdnjs.cloudflare.com; " +
-	"style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; " +
+	"script-src 'self'; " +
+	"style-src 'self' 'unsafe-inline'; " +
 	"img-src 'self' data:; " +
 	"connect-src 'self'; " +
 	"base-uri 'self'; " +

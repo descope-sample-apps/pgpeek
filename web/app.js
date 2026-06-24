@@ -307,22 +307,23 @@ function SqlTab({ active, saved, reloadSaved, setStatus }) {
     }
   }, []);
 
-  // Init CodeMirror once, into a Preact-stable wrapper it fully owns.
+  // Init the SQL editor once, into a Preact-stable wrapper it fully owns. Uses
+  // the vendored CodeMirror 6 bundle (window.cm6) when present, else degrades
+  // to a plain <textarea>.
   useEffect(() => {
-    const ta = document.createElement("textarea");
-    ta.id = "sql";
-    ta.value = "SELECT now();";
-    wrapRef.current.appendChild(ta);
-    taRef.current = ta;
-    if (window.CodeMirror) {
-      cmRef.current = window.CodeMirror.fromTextArea(ta, { mode: "text/x-pgsql", lineNumbers: true, lineWrapping: true });
-      cmRef.current.setOption("extraKeys", { "Cmd-Enter": run, "Ctrl-Enter": run });
+    if (window.cm6) {
+      cmRef.current = window.cm6.mount(wrapRef.current, "SELECT now();", run);
     } else {
+      const ta = document.createElement("textarea");
+      ta.id = "sql";
+      ta.value = "SELECT now();";
+      wrapRef.current.appendChild(ta);
+      taRef.current = ta;
       ta.addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); run(); } });
     }
   }, []);
 
-  // CodeMirror was created while hidden (zero size); refresh when shown.
+  // Editor created while its tab was hidden (zero size); refresh when shown.
   useEffect(() => { if (active && cmRef.current) cmRef.current.refresh(); }, [active]);
 
   const exportCSV = async () => {

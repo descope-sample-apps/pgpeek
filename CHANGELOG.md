@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3](https://github.com/descope-sample-apps/pgpeek/compare/v0.3.2...v0.3.3) (2026-06-24)
+
+
+### Bug Fixes
+
+* push images to descope-sample-apps org + rename go module to match ([#37](https://github.com/descope-sample-apps/pgpeek/issues/37)) ([d70f804](https://github.com/descope-sample-apps/pgpeek/commit/d70f804b7a7344cc1ffdfe64fc41f2cdd62ce893))
+
 ## [0.3.2](https://github.com/descope-sample-apps/pgpeek/compare/v0.3.1...v0.3.2) (2026-06-23)
 
 

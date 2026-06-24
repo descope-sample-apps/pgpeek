@@ -1,10 +1,13 @@
-# goreleaser config for push-to-main smoke publishes. Snapshot build (no tag /
-# GitHub Release required), but ko DOES push the image to GHCR so we continuously
-# verify the publish path works between real releases.
+# goreleaser config for non-release ko publishes (PR builds + push-to-main smoke
+# publishes). A REAL ko build that PUSHES — ko's --snapshot mode publishes to
+# ko.local (the local Docker daemon) which hangs on the runner, so the calling
+# workflow runs this WITHOUT --snapshot and with --skip=validate instead.
 #
-# Tags are deliberately distinct from the real release config: only `main`,
-# `edge`, and the short commit SHA. It NEVER writes `latest` / `{{.Major}}.{{.Minor}}`
-# / `{{.Version}}`, so a main push can never clobber a real released image.
+# The target registry comes from KO_DOCKER_REPO (set by the workflow): GHCR for
+# main, a throwaway local registry for PRs. Tags are deliberately distinct from
+# the real release config: only `main`, `edge`, and the short commit SHA — it
+# NEVER writes `latest` / `{{.Major}}.{{.Minor}}` / `{{.Version}}`, so it can
+# never clobber a real released image.
 version: 2
 
 project_name: pgpeek
@@ -34,6 +37,9 @@ kos:
     build: pgpeek
     main: .
     base_image: gcr.io/distroless/static-debian12:nonroot
+    # KO_DOCKER_REPO (set by the workflow) overrides this at runtime: GHCR for
+    # main, a throwaway local registry for PRs. The entry below only satisfies
+    # `goreleaser check`, which runs without the env var set.
     repositories:
       - ghcr.io/descope/pgpeek
     platforms:

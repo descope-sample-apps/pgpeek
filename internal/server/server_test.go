@@ -22,17 +22,18 @@ import (
 )
 
 type fakeQuerier struct {
-	result    *db.Result
-	err       error
-	pingErr   error
-	called    bool
-	lastSQL   string
-	tables    []db.TableInfo
-	cols      []db.ColumnInfo
-	fks       []db.ForeignKey
-	catErr    error
-	lastQuery db.TableQuery
-	lastArgs  struct {
+	result          *db.Result
+	err             error
+	pingErr         error
+	called          bool
+	tableRowsCalled bool
+	lastSQL         string
+	tables          []db.TableInfo
+	cols            []db.ColumnInfo
+	fks             []db.ForeignKey
+	catErr          error
+	lastQuery       db.TableQuery
+	lastArgs        struct {
 		schema, table string
 		limit, offset int
 	}
@@ -58,6 +59,7 @@ func (f *fakeQuerier) ForeignKeys(_ context.Context, _, _ string) ([]db.ForeignK
 }
 
 func (f *fakeQuerier) TableRows(_ context.Context, q db.TableQuery) (*db.Result, error) {
+	f.tableRowsCalled = true
 	f.lastQuery = q
 	f.lastArgs.schema, f.lastArgs.table = q.Schema, q.Table
 	f.lastArgs.limit, f.lastArgs.offset = q.Limit, q.Offset
@@ -566,6 +568,27 @@ func TestForeignKeys_Error(t *testing.T) {
 	}
 }
 
+func TestCatalogEndpoints_RejectRestrictedCatalogs(t *testing.T) {
+	q := &fakeQuerier{result: okResult()}
+	ts, _ := newTestServer(t, q)
+
+	paths := []string{
+		"/api/tables/pg_catalog/pg_authid/columns",
+		"/api/tables/pg_catalog/pg_shadow/fks",
+		"/api/tables/pg_catalog/pg_hba_file_rules/data",
+	}
+	for _, path := range paths {
+		resp := mustGet(t, ts, path)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s status = %d, want 400", path, resp.StatusCode)
+		}
+	}
+	if q.tableRowsCalled {
+		t.Error("restricted catalog data request reached TableRows")
+	}
+}
+
 func TestTableData_OK(t *testing.T) {
 	q := &fakeQuerier{result: okResult()}
 	ts, _ := newTestServer(t, q)
@@ -639,9 +662,13 @@ func TestTableData_DefaultsAndBadParams(t *testing.T) {
 func TestTableData_Error(t *testing.T) {
 	ts, _ := newTestServer(t, &fakeQuerier{err: errors.New("no such table")})
 	resp := mustGet(t, ts, "/api/tables/public/nope/data")
+	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", resp.StatusCode)
+	}
+	if strings.Contains(string(body), "no such table") {
+		t.Errorf("table data error leaked database detail: %s", body)
 	}
 }
 

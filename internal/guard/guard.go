@@ -44,6 +44,24 @@ var forbiddenRelations = []string{
 	"PG_SHADOW", "PG_AUTHID", "PG_HBA_FILE_RULES",
 }
 
+// IsRestrictedRelation reports whether name is one of the sensitive catalogs
+// pgpeek blocks as defense in depth across SQL and table-browse endpoints.
+func IsRestrictedRelation(name string) bool {
+	for _, rel := range forbiddenRelations {
+		if strings.EqualFold(name, rel) {
+			return true
+		}
+	}
+	return false
+}
+
+type maskMode int
+
+const (
+	maskKeywords maskMode = iota
+	maskRelations
+)
+
 // Validate returns nil if sql is a single read-only statement, or a
 // human-readable error explaining why it was rejected.
 func Validate(sql string) error {
@@ -71,8 +89,9 @@ func Validate(sql string) error {
 			return fmt.Errorf("query contains disallowed keyword %q — this tool is read-only", kw)
 		}
 	}
+	relationsUpper := strings.ToUpper(relationMask(sql))
 	for _, rel := range forbiddenRelations {
-		if containsWord(upper, rel) {
+		if containsWord(relationsUpper, rel) {
 			return fmt.Errorf("query references restricted system catalog %q", strings.ToLower(rel))
 		}
 	}
@@ -123,6 +142,15 @@ func isWordChar(b byte) bool {
 // top-level statements (semicolons outside strings/comments that are followed by
 // more non-whitespace input count as additional statements).
 func mask(sql string) (string, int) {
+	return maskSQL(sql, maskKeywords)
+}
+
+func relationMask(sql string) string {
+	masked, _ := maskSQL(sql, maskRelations)
+	return masked
+}
+
+func maskSQL(sql string, mode maskMode) (string, int) {
 	var b strings.Builder
 	statements := 1
 	sawCodeAfterSemicolon := true // start: first statement counts when code appears
@@ -178,17 +206,30 @@ func mask(sql string) (string, int) {
 		// double-quoted identifier
 		if c == '"' {
 			i++
+			if mode == maskRelations {
+				b.WriteByte(' ')
+			}
 			for i < n {
 				if sql[i] == '"' {
 					if i+1 < n && sql[i+1] == '"' {
+						if mode == maskRelations {
+							b.WriteByte('"')
+						}
 						i += 2
 						continue
 					}
 					break
 				}
+				if mode == maskRelations {
+					b.WriteByte(sql[i])
+				}
 				i++
 			}
-			b.WriteString(`"x"`)
+			if mode == maskRelations {
+				b.WriteByte(' ')
+			} else {
+				b.WriteString(`"x"`)
+			}
 			continue
 		}
 		// dollar-quoted string: $tag$ ... $tag$

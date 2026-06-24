@@ -67,6 +67,32 @@ func TestValidate_TrailingSemicolon(t *testing.T) {
 	}
 }
 
+func TestValidate_RejectsRestrictedCatalogQuotedIdentifiers(t *testing.T) {
+	queries := []string{
+		`SELECT * FROM "pg_shadow"`,
+		`SELECT * FROM pg_catalog."pg_authid"`,
+		`SELECT * FROM "pg_hba_file_rules"`,
+	}
+	for _, q := range queries {
+		if err := Validate(q); err == nil {
+			t.Errorf("expected restricted catalog error for %q", q)
+		}
+	}
+}
+
+func TestValidate_AllowsRestrictedCatalogNamesInStringsAndComments(t *testing.T) {
+	queries := []string{
+		`SELECT 'pg_shadow' AS note`,
+		"SELECT 1 -- pg_authid\n",
+		`SELECT 1 AS "not "" a catalog"`,
+	}
+	for _, q := range queries {
+		if err := Validate(q); err != nil {
+			t.Errorf("expected OK for %q: %v", q, err)
+		}
+	}
+}
+
 // FuzzValidate asserts the guard never panics on arbitrary input, and that any
 // input it *accepts* really is a single statement beginning with an allowed
 // keyword and containing no forbidden keyword (in masked form). This is the
@@ -99,8 +125,9 @@ func FuzzValidate(f *testing.F) {
 				t.Errorf("accepted input containing forbidden keyword %q: %q", kw, sql)
 			}
 		}
+		relUp := strings.ToUpper(relationMask(sql))
 		for _, rel := range forbiddenRelations {
-			if containsWord(up, rel) {
+			if containsWord(relUp, rel) {
 				t.Errorf("accepted input referencing restricted catalog %q: %q", rel, sql)
 			}
 		}

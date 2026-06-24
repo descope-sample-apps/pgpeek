@@ -181,6 +181,9 @@ func (s *Server) handleTables(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleColumns(w http.ResponseWriter, r *http.Request) {
+	if rejectRestrictedRelation(w, r.PathValue("table")) {
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
 	defer cancel()
 	cols, err := s.pool.Columns(ctx, r.PathValue("schema"), r.PathValue("table"))
@@ -196,6 +199,9 @@ func (s *Server) handleColumns(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleForeignKeys(w http.ResponseWriter, r *http.Request) {
+	if rejectRestrictedRelation(w, r.PathValue("table")) {
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
 	defer cancel()
 	fks, err := s.pool.ForeignKeys(ctx, r.PathValue("schema"), r.PathValue("table"))
@@ -211,6 +217,9 @@ func (s *Server) handleForeignKeys(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTableData(w http.ResponseWriter, r *http.Request) {
+	if rejectRestrictedRelation(w, r.PathValue("table")) {
+		return
+	}
 	q := db.TableQuery{
 		Schema:  r.PathValue("schema"),
 		Table:   r.PathValue("table"),
@@ -226,7 +235,8 @@ func (s *Server) handleTableData(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	res, err := s.pool.TableRows(ctx, q)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to read rows: "+err.Error())
+		writeError(w, http.StatusBadRequest, "failed to read rows")
+		s.log.Error("read rows", "err", err)
 		return
 	}
 
@@ -425,6 +435,14 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func rejectRestrictedRelation(w http.ResponseWriter, table string) bool {
+	if !guard.IsRestrictedRelation(table) {
+		return false
+	}
+	writeError(w, http.StatusBadRequest, "restricted system catalog")
+	return true
 }
 
 // logging is a minimal request logger. It never logs request bodies (which

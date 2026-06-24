@@ -21,7 +21,9 @@ jobs:
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: app-token
         with:
-          app-id: ${{ secrets.MEGA_APP_ID }}
+          # MEGA_APP_ID holds the App's Client ID (the action's app-id input is
+          # deprecated in favour of client-id).
+          client-id: ${{ secrets.MEGA_APP_ID }}
           private-key: ${{ secrets.MEGA_APP_PEM }}
 
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
@@ -46,3 +48,9 @@ jobs:
     uses: ./.github/workflows/goreleaser.yml
     with:
       snapshot: false
+      publish: true
+    secrets:
+      # Pass the App creds so goreleaser mints its own App token and can append
+      # assets to the App-created Release. MEGA_APP_ID holds the Client ID.
+      client-id: ${{ secrets.MEGA_APP_ID }}
+      private-key: ${{ secrets.MEGA_APP_PEM }}

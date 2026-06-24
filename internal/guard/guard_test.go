@@ -44,6 +44,11 @@ func TestValidate_Rejects(t *testing.T) {
 		"COPY users TO '/tmp/x'",             // exfil
 		"CREATE TABLE x (id int)",            // DDL
 		"GRANT ALL ON users TO public",       // privilege
+		"SHOW server_version",                // SHOW no longer allowed
+		"SHOW hba_file",                      // host-topology leak
+		"SELECT * FROM pg_shadow",            // credential catalog
+		"TABLE pg_authid",                    // credential catalog
+		"SELECT * FROM pg_hba_file_rules",    // host topology
 		"select 1; ",                         // wait: trailing semicolon should be OK
 	}
 	// The last entry is intentionally OK; verify trailing-semicolon handling separately.
@@ -58,6 +63,32 @@ func TestValidate_TrailingSemicolon(t *testing.T) {
 	for _, q := range []string{"SELECT 1;", "SELECT 1; ", "SELECT 1;\n\n"} {
 		if err := Validate(q); err != nil {
 			t.Errorf("trailing semicolon should be allowed for %q: %v", q, err)
+		}
+	}
+}
+
+func TestValidate_RejectsRestrictedCatalogQuotedIdentifiers(t *testing.T) {
+	queries := []string{
+		`SELECT * FROM "pg_shadow"`,
+		`SELECT * FROM pg_catalog."pg_authid"`,
+		`SELECT * FROM "pg_hba_file_rules"`,
+	}
+	for _, q := range queries {
+		if err := Validate(q); err == nil {
+			t.Errorf("expected restricted catalog error for %q", q)
+		}
+	}
+}
+
+func TestValidate_AllowsRestrictedCatalogNamesInStringsAndComments(t *testing.T) {
+	queries := []string{
+		`SELECT 'pg_shadow' AS note`,
+		"SELECT 1 -- pg_authid\n",
+		`SELECT 1 AS "not "" a catalog"`,
+	}
+	for _, q := range queries {
+		if err := Validate(q); err != nil {
+			t.Errorf("expected OK for %q: %v", q, err)
 		}
 	}
 }
@@ -92,6 +123,12 @@ func FuzzValidate(f *testing.F) {
 		for _, kw := range forbidden {
 			if containsWord(up, kw) {
 				t.Errorf("accepted input containing forbidden keyword %q: %q", kw, sql)
+			}
+		}
+		relUp := strings.ToUpper(relationMask(sql))
+		for _, rel := range forbiddenRelations {
+			if containsWord(relUp, rel) {
+				t.Errorf("accepted input referencing restricted catalog %q: %q", rel, sql)
 			}
 		}
 	})

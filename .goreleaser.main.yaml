@@ -1,0 +1,67 @@
+# goreleaser config for push-to-main smoke publishes. Snapshot build (no tag /
+# GitHub Release required), but ko DOES push the image to GHCR so we continuously
+# verify the publish path works between real releases.
+#
+# Tags are deliberately distinct from the real release config: only `main`,
+# `edge`, and the short commit SHA. It NEVER writes `latest` / `{{.Major}}.{{.Minor}}`
+# / `{{.Version}}`, so a main push can never clobber a real released image.
+version: 2
+
+project_name: pgpeek
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: pgpeek
+    main: .
+    binary: pgpeek
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+kos:
+  - id: pgpeek
+    build: pgpeek
+    main: .
+    base_image: gcr.io/distroless/static-debian12:nonroot
+    repositories:
+      - ghcr.io/descope/pgpeek
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    tags:
+      - main
+      - edge
+      - "{{ .ShortCommit }}"
+    bare: true
+    preserve_import_paths: false
+    sbom: spdx
+
+# No archives / checksums / GitHub Release: this is an image-only smoke publish.
+archives:
+  - id: pgpeek
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  disable: true
+
+release:
+  disable: true

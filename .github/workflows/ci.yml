@@ -68,19 +68,33 @@ jobs:
       - run: npm ci
       - run: npx vitest run --coverage # thresholds enforce 100%
 
-  # Full release packaging in snapshot mode via the SAME reusable workflow the
-  # real release uses, so release breakage is caught here instead of after a tag.
-  # On PRs: pure dry run (build everything, publish nothing). On push to main:
-  # ko publishes the image to GHCR under non-clobbering tags (main/edge/sha) so
-  # the publish path is continuously smoke-tested between real releases.
+  # Full release packaging via the SAME reusable workflow the real release uses,
+  # so release breakage is caught here instead of after a tag. Split by event so
+  # PRs (untrusted) get read-only perms while only push-to-main gets the elevated
+  # perms needed to publish the smoke image.
+  #
+  # PR: pure dry run (build everything, publish nothing), least privilege.
   goreleaser-snapshot:
     name: image build (snapshot)
+    if: ${{ github.event_name == 'pull_request' }}
     permissions:
       contents: read
-      packages: write # push the main smoke image to ghcr.io (push-to-main only)
+    uses: ./.github/workflows/goreleaser.yml
+    with:
+      snapshot: true
+      publish: false
+
+  # push to main: ko publishes the image to GHCR under non-clobbering tags
+  # (main/edge/sha) so the publish path is continuously smoke-tested between
+  # real releases. Only this event gets packages:write + id-token:write.
+  goreleaser-main-publish:
+    name: image publish (main smoke)
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    permissions:
+      contents: read
+      packages: write # push the main smoke image to ghcr.io
       id-token: write # keyless signing / SBOM attestation
     uses: ./.github/workflows/goreleaser.yml
     with:
       snapshot: true
-      # Publish only on push to main; PRs stay a pure dry run.
-      publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      publish: true

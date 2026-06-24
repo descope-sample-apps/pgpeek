@@ -107,4 +107,4 @@ jobs:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
           # publish:true -> push to GHCR; publish:false (PRs) -> push to the
           # throwaway local registry service so nothing lands in GHCR.
-          KO_DOCKER_REPO: ${{ inputs.publish && 'ghcr.io/descope/pgpeek' || 'localhost:5000/pgpeek' }}
+          KO_DOCKER_REPO: ${{ inputs.publish && 'ghcr.io/descope-sample-apps/pgpeek' || 'localhost:5000/pgpeek' }}

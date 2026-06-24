@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/descope/pgpeek/internal/db"
-	"github.com/descope/pgpeek/internal/guard"
-	"github.com/descope/pgpeek/internal/store"
+	"github.com/descope-sample-apps/pgpeek/internal/db"
+	"github.com/descope-sample-apps/pgpeek/internal/guard"
+	"github.com/descope-sample-apps/pgpeek/internal/store"
 )
 
 // maxBodyBytes caps request bodies. Queries are SQL text, not data, so 1 MiB is

@@ -22,11 +22,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/descope/pgpeek/internal/awsauth"
-	"github.com/descope/pgpeek/internal/config"
-	"github.com/descope/pgpeek/internal/db"
-	"github.com/descope/pgpeek/internal/server"
-	"github.com/descope/pgpeek/internal/store"
+	"github.com/descope-sample-apps/pgpeek/internal/awsauth"
+	"github.com/descope-sample-apps/pgpeek/internal/config"
+	"github.com/descope-sample-apps/pgpeek/internal/db"
+	"github.com/descope-sample-apps/pgpeek/internal/server"
+	"github.com/descope-sample-apps/pgpeek/internal/store"
 )
 
 //go:embed web

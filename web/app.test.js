@@ -434,6 +434,19 @@ describe("data tab", () => {
     await flush();
     expect($("tab-title").textContent).toBe("auth.sessions");
     expect($("data-results").textContent).not.toContain("stale");
+
+    document.body.innerHTML = '<div id="app"></div>';
+    const staleError = deferred();
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/data", (url) => String(url).includes("/public/users/") ? staleError.promise : Promise.resolve(dataResp({ columns: ["sid"], rows: [[9]], rowCount: 1 })));
+    await loadApp();
+    const nextButtons = $("tables").querySelectorAll(".tbl");
+    await click(nextButtons[0]);
+    await click(nextButtons[2]);
+    staleError.resolve(Promise.reject(new Error("stale data failed")));
+    await flush();
+    expect($("tab-title").textContent).toBe("auth.sessions");
+    expect($("status").textContent).not.toContain("stale data failed");
   });
 });
 
@@ -507,6 +520,22 @@ describe("structure tab", () => {
     expect($("structure-results").textContent).toContain("sid");
     expect($("structure-results").textContent).toContain("NO");
     expect($("structure-results").textContent).not.toContain("stale");
+
+    document.body.innerHTML = '<div id="app"></div>';
+    const staleError = deferred();
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/data", rowsResp(1));
+    setRoute("GET /api/tables/*/columns", (url) => String(url).includes("/public/users/")
+      ? staleError.promise
+      : Promise.resolve(makeResp({ json: [{ name: "sid", type: "uuid", nullable: false, default: null }] })));
+    await loadApp();
+    const nextButtons = $("tables").querySelectorAll(".tbl");
+    await click(nextButtons[0]);
+    await click("tab-structure");
+    await click(nextButtons[2]);
+    staleError.resolve(Promise.reject(new Error("stale columns failed")));
+    await flush();
+    expect($("status").textContent).not.toContain("stale columns failed");
   });
 
   it("renders nullable/default variants, empty structures, and errors", async () => {

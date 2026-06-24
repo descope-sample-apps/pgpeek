@@ -16,9 +16,9 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/descope/pgpeek/internal/db"
-	"github.com/descope/pgpeek/internal/guard"
-	"github.com/descope/pgpeek/internal/store"
+	"github.com/descope-sample-apps/pgpeek/internal/db"
+	"github.com/descope-sample-apps/pgpeek/internal/guard"
+	"github.com/descope-sample-apps/pgpeek/internal/store"
 )
 
 type fakeQuerier struct {

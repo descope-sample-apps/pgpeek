@@ -52,4 +52,4 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/descope/pgpeek
+        - github.com/descope-sample-apps/pgpeek

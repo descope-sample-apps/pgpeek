@@ -165,7 +165,7 @@ make cover-check        # uses PGPEEK_TEST_DATABASE_URL (default points at :5543
   `vX.Y.Z` and cuts a GitHub Release.
 - The tag triggers **goreleaser** (`.goreleaser.yaml`), which builds the
   binaries and uses **ko** to publish multi-arch distroless images to
-  `ghcr.io/descope/pgpeek:{version,major.minor,latest}` with SBOMs.
+  `ghcr.io/descope-sample-apps/pgpeek:{version,major.minor,latest}` with SBOMs.
 
 CI (`.github/workflows/ci.yml`) runs lint, vet, race tests with a Postgres
 service, the 100% coverage gate, govulncheck, the vitest suite, and a snapshot

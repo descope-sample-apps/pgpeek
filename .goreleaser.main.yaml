@@ -41,7 +41,7 @@ kos:
     # main, a throwaway local registry for PRs. The entry below only satisfies
     # `goreleaser check`, which runs without the env var set.
     repositories:
-      - ghcr.io/descope/pgpeek
+      - ghcr.io/descope-sample-apps/pgpeek
     platforms:
       - linux/amd64
       - linux/arm64

@@ -26,7 +26,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: pgpeek
-          image: ghcr.io/descope/pgpeek:latest # replace with your registry/tag
+          image: ghcr.io/descope-sample-apps/pgpeek:latest # replace with your registry/tag
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

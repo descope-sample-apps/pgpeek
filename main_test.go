@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/descope/pgpeek/internal/config"
+	"github.com/descope-sample-apps/pgpeek/internal/config"
 )
 
 func testLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }

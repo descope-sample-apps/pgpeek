@@ -1,4 +1,4 @@
-module github.com/descope/pgpeek
+module github.com/descope-sample-apps/pgpeek
 
 go 1.26
 

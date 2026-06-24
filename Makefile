@@ -5,7 +5,10 @@ PROFILE ?= cover.out
 
 # PGPEEK_TEST_DATABASE_URL enables the db/main integration tests. Override as needed:
 #   make test-integration PGPEEK_TEST_DATABASE_URL=postgres://...
-export PGPEEK_TEST_DATABASE_URL ?= postgres://postgres:secret@localhost:55432/testdb?sslmode=disable
+# The default is applied only by integration/coverage targets so `make test`
+# remains unit-only unless the caller exports PGPEEK_TEST_DATABASE_URL.
+PGPEEK_TEST_DATABASE_URL ?= postgres://postgres:secret@localhost:55432/testdb?sslmode=disable
+INTEGRATION_ENV := PGPEEK_TEST_DATABASE_URL="$(PGPEEK_TEST_DATABASE_URL)"
 
 .PHONY: help
 help: ## Show this help
@@ -30,11 +33,11 @@ test: ## Unit tests with race detector
 
 .PHONY: test-integration
 test-integration: ## Tests incl. integration (needs Postgres)
-	$(GO) test -race -tags=integration ./...
+	$(INTEGRATION_ENV) $(GO) test -race -tags=integration ./...
 
 .PHONY: cover
 cover: ## Full coverage profile (incl. integration)
-	$(GO) test -race -tags=integration -coverpkg=./... -coverprofile=$(PROFILE) ./...
+	$(INTEGRATION_ENV) $(GO) test -race -tags=integration -coverpkg=./... -coverprofile=$(PROFILE) ./...
 	$(GO) tool cover -func=$(PROFILE) | tail -1
 
 .PHONY: cover-check

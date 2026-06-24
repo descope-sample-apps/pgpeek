@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/descope/pgpeek/internal/db"
-	"github.com/descope/pgpeek/internal/guard"
-	"github.com/descope/pgpeek/internal/store"
+	"github.com/descope-sample-apps/pgpeek/internal/db"
+	"github.com/descope-sample-apps/pgpeek/internal/guard"
+	"github.com/descope-sample-apps/pgpeek/internal/store"
 )
 
 // maxBodyBytes caps request bodies. Queries are SQL text, not data, so 1 MiB is
@@ -170,7 +170,8 @@ func (s *Server) handleTables(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	tables, err := s.pool.Tables(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to list tables: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "failed to list tables")
+		s.log.Error("list tables", "err", err)
 		return
 	}
 	if tables == nil {
@@ -180,11 +181,15 @@ func (s *Server) handleTables(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleColumns(w http.ResponseWriter, r *http.Request) {
+	if rejectRestrictedRelation(w, r.PathValue("table")) {
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
 	defer cancel()
 	cols, err := s.pool.Columns(ctx, r.PathValue("schema"), r.PathValue("table"))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to read columns: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "failed to read columns")
+		s.log.Error("read columns", "err", err)
 		return
 	}
 	if cols == nil {
@@ -194,11 +199,15 @@ func (s *Server) handleColumns(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleForeignKeys(w http.ResponseWriter, r *http.Request) {
+	if rejectRestrictedRelation(w, r.PathValue("table")) {
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
 	defer cancel()
 	fks, err := s.pool.ForeignKeys(ctx, r.PathValue("schema"), r.PathValue("table"))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to read foreign keys: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "failed to read foreign keys")
+		s.log.Error("read foreign keys", "err", err)
 		return
 	}
 	if fks == nil {
@@ -208,6 +217,9 @@ func (s *Server) handleForeignKeys(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTableData(w http.ResponseWriter, r *http.Request) {
+	if rejectRestrictedRelation(w, r.PathValue("table")) {
+		return
+	}
 	q := db.TableQuery{
 		Schema:  r.PathValue("schema"),
 		Table:   r.PathValue("table"),
@@ -223,7 +235,8 @@ func (s *Server) handleTableData(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	res, err := s.pool.TableRows(ctx, q)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to read rows: "+err.Error())
+		writeError(w, http.StatusBadRequest, "failed to read rows")
+		s.log.Error("read rows", "err", err)
 		return
 	}
 
@@ -424,6 +437,14 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
+func rejectRestrictedRelation(w http.ResponseWriter, table string) bool {
+	if !guard.IsRestrictedRelation(table) {
+		return false
+	}
+	writeError(w, http.StatusBadRequest, "restricted system catalog")
+	return true
+}
+
 // logging is a minimal request logger. It never logs request bodies (which
 // contain SQL) at info level beyond method/path.
 func logging(log *slog.Logger, next http.Handler) http.Handler {
@@ -475,6 +496,11 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		// Advertise HSTS only on connections that actually reached us over TLS
+		// (direct TLS or via a TLS-terminating proxy that sets X-Forwarded-Proto).
+		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+			h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

@@ -33,7 +33,7 @@ kos:
     main: .
     base_image: gcr.io/distroless/static-debian12:nonroot
     repositories:
-      - ghcr.io/descope/pgpeek
+      - ghcr.io/descope-sample-apps/pgpeek
     platforms:
       - linux/amd64
       - linux/arm64
@@ -66,7 +66,7 @@ changelog:
 
 release:
   github:
-    owner: descope
+    owner: descope-sample-apps
     name: pgpeek
   # release-please already created the GitHub Release + tag; just attach assets.
   mode: append

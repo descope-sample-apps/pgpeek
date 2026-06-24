@@ -45,6 +45,9 @@ services:
     user: root
     environment:
       # In-network hostname `db` + the container port 5432 (not 55432).
+      # DEV ONLY: plaintext credentials + sslmode=disable are acceptable on the
+      # local compose network. NEVER copy this DSN to staging/prod — use a
+      # secret-mounted DATABASE_URL_FILE and sslmode=require there.
       DATABASE_URL: postgres://pgpeek:pgpeek@db:5432/pgpeek?sslmode=disable
       PGPEEK_LISTEN: ":8080"
       PGPEEK_STORE_PATH: /data/pgpeek.db

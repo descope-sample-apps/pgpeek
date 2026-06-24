@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.3.3...v0.4.0) (2026-06-24)
+
+
+### Features
+
+* **web:** upgrade CodeMirror 5 → 6 (vendored, Renovate-tracked) ([#34](https://github.com/descope-sample-apps/pgpeek/issues/34)) ([a5e7dcf](https://github.com/descope-sample-apps/pgpeek/commit/a5e7dcf2c952c6650843c730b076e29d976135b4))
+
+
+### Bug Fixes
+
+* **security:** harden guard, catalog errors, headers, and CDN assets ([#29](https://github.com/descope-sample-apps/pgpeek/issues/29)) ([0b71a66](https://github.com/descope-sample-apps/pgpeek/commit/0b71a66ece87d347c48800856f2c91694125ac9c))
+
 ## [0.3.3](https://github.com/descope-sample-apps/pgpeek/compare/v0.3.2...v0.3.3) (2026-06-24)
 
 

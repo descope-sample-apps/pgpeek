@@ -10,6 +10,17 @@ const OPS = [
   ["gt", ">"], ["gte", "≥"], ["ilike", "ILIKE"], ["like", "LIKE"],
   ["is_null", "IS NULL"], ["is_not_null", "NOT NULL"],
 ];
+
+function filterFor(filters, column) {
+  return filters.find((f) => f.column === column) || {};
+}
+
+function setFilterValue(filters, column, patch) {
+  const next = filters.filter((f) => f.column !== column);
+  next.push({ column, ...patch });
+  return next;
+}
+
 function cellText(v) {
   if (v === null || v === undefined) return null;
   return typeof v === "object" ? JSON.stringify(v) : String(v);
@@ -40,8 +51,8 @@ export function DataTab({
   const [offset, setOffset] = useState(initialOffset || 0);
   const [search, setSearch] = useState(initialSearch || "");
   const [searchBox, setSearchBox] = useState(initialSearch || "");
-  const [filters, setFilters] = useState(initialFilters || {});
-  const [draft, setDraft] = useState(initialFilters || {});
+  const [filters, setFilters] = useState(initialFilters || []);
+  const [draft, setDraft] = useState(initialFilters || []);
   const [sort, setSort] = useState(initialSort || null);
   const [data, setData] = useState(null);
   const [fks, setFks] = useState({});
@@ -86,8 +97,7 @@ export function DataTab({
   }, [table, dbId, offset, search, JSON.stringify(filters), sort && sort.col, sort && sort.dir, pageSize]);
 
   const applyDraft = useCallback((next) => {
-    const clean = {};
-    for (const c of Object.keys(next)) if (next[c] && next[c].op) clean[c] = next[c];
+    const clean = next.filter((f) => f.op);
     setFilters(clean);
     setOffset(0);
     notify({ schema: table.schema, table: table.name, offset: 0, search, sort, filters: clean });
@@ -122,16 +132,16 @@ export function DataTab({
           <tr>${data.columns.map((c) => html`<th class="sortable" key=${c} onClick=${() => toggleSort(c)}>
             ${c}${sort && sort.col === c ? (sort.dir === "desc" ? " ▼" : " ▲") : ""}</th>`)}</tr>
           <tr class="filter-row">${data.columns.map((c) => {
-            const d = draft[c] || {};
+            const d = filterFor(draft, c);
             return html`<td key=${c}>
               <select class="f-op" data-col=${c} value=${d.op || ""} onChange=${(e) => {
-                const next = { ...draft, [c]: { op: e.target.value, value: d.value || "" } };
+                const next = setFilterValue(draft, c, { op: e.target.value, value: d.value || "" });
                 setDraft(next); applyDraft(next);
               }}>${OPS.map(([k, label]) => html`<option value=${k}>${label}</option>`)}</select>
               <input class="f-val" data-col=${c} placeholder="filter…" value=${d.value || ""}
-                onInput=${(e) => setDraft({ ...draft, [c]: { op: d.op || "", value: e.target.value } })}
+                onInput=${(e) => setDraft(setFilterValue(draft, c, { op: d.op || "", value: e.target.value }))}
                 onKeyDown=${(e) => {
-                  if (e.key === "Enter") applyDraft({ ...draft, [c]: { op: d.op || "", value: e.target.value } });
+                  if (e.key === "Enter") applyDraft(setFilterValue(draft, c, { op: d.op || "", value: e.target.value }));
                 }} />
             </td>`;
           })}</tr>
@@ -163,8 +173,8 @@ export function DataTab({
           else if (e.key === "Escape") doSearch("");
         }} />
       <button class="ghost" id="data-clear" onClick=${() => {
-        setSearch(""); setSearchBox(""); setFilters({}); setDraft({}); setSort(null); setOffset(0);
-        notify({ schema: table.schema, table: table.name, offset: 0, search: "", sort: null, filters: {} });
+        setSearch(""); setSearchBox(""); setFilters([]); setDraft([]); setSort(null); setOffset(0);
+        notify({ schema: table.schema, table: table.name, offset: 0, search: "", sort: null, filters: [] });
       }}>Clear</button>
       <span class="sep"></span>
       <button class="ghost" id="prev-btn" disabled=${offset === 0}

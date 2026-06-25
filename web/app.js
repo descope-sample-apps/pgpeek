@@ -181,7 +181,7 @@ function App() {
     const s = {
       ...urlStateRef.current, tab: null,
       schema: t.schema, table: t.name,
-      offset: 0, search: "", sort: null, filters: {},
+      offset: 0, search: "", sort: null, filters: [],
     };
     setCurrent(t); setPendingFilters(initFilters || null); setUrlInit(null);
     setNavKey((n) => n + 1); setTabState("data");
@@ -194,12 +194,12 @@ function App() {
       setStatus({ text: "✗ referenced table " + ref.schema + "." + ref.table + " is not browsable", cls: "error" });
       return;
     }
-    open(target, { [ref.column]: { op: "eq", value: String(value) } });
+    open(target, [{ column: ref.column, op: "eq", value: String(value) }]);
   };
 
   const switchDb = (newDb) => {
     if (newDb === currentDb) return;
-    const s = { db: newDb, tab: null, schema: null, table: null, offset: 0, search: "", sort: null, filters: {} };
+    const s = { db: newDb, tab: null, schema: null, table: null, offset: 0, search: "", sort: null, filters: [] };
     setCurrent(null); setPendingFilters(null); setUrlInit(null);
     dbRef.current = newDb; setCurrentDb(newDb);
     pushUrlState(s); urlStateRef.current = s;

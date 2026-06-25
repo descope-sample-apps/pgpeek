@@ -7,6 +7,7 @@ import {
   makeInstallFetch, $, click, changeSelect, loadApp, urlOf,
   readUrlState, buildUrlParams, dbUrl,
 } from "./test-helpers.js";
+import { appendDataParams } from "./api.js";
 
 let routes;
 function setRoute(key, resp) { routes[key] = resp; }
@@ -242,8 +243,8 @@ describe("url-state helpers", () => {
     expect(s.offset).toBe(50);
     expect(s.search).toBe("foo");
     expect(s.sort).toEqual({ col: "id", dir: "desc" });
-    expect(s.filters["id"]).toEqual({ op: "eq", value: "5" });
-    expect(s.filters["name"]).toEqual({ op: "is_null", value: "" });
+    expect(s.filters).toContainEqual({ column: "id", op: "eq", value: "5" });
+    expect(s.filters).toContainEqual({ column: "name", op: "is_null", value: "" });
   });
 
   it("readUrlState falls back to 'data' for an invalid tab value", async () => {
@@ -252,7 +253,7 @@ describe("url-state helpers", () => {
   });
 
   it("buildUrlParams omits tab when data, omits falsy fields", async () => {
-    const p = buildUrlParams({ db: "x", tab: "data", schema: null, table: null, offset: 0, search: "", sort: null, filters: {} });
+    const p = buildUrlParams({ db: "x", tab: "data", schema: null, table: null, offset: 0, search: "", sort: null, filters: [] });
     expect(p.has("tab")).toBe(false);
     expect(p.has("schema")).toBe(false);
     expect(p.get("db")).toBe("x");
@@ -266,7 +267,7 @@ describe("url-state helpers", () => {
 
   it("buildUrlParams encodes is_null filter without value segment", async () => {
     const p = buildUrlParams({ db: null, tab: "data", schema: null, table: null, offset: 0, search: "", sort: null,
-      filters: { col: { op: "is_null", value: "" } } });
+      filters: [{ column: "col", op: "is_null", value: "" }] });
     expect(p.get("f")).toBe("col:is_null");
   });
 });
@@ -286,6 +287,12 @@ describe("api helpers", () => {
     expect(dbUrl("/api/tables", null)).toBe("/api/tables");
     expect(dbUrl("/api/tables", "")).toBe("/api/tables");
   });
+
+  it("appendDataParams skips filter entries without a column", async () => {
+    const params = new URLSearchParams();
+    appendDataParams(params, "", null, [{ op: "eq", value: "x" }]);
+    expect(params.has("f")).toBe(false);
+  });
 });
 
 // ── url-state edge cases (branch coverage) ────────────────────────────────────
@@ -295,14 +302,15 @@ describe("url-state edge cases", () => {
     // Covers url-state.js: 'if (first < 0) continue' branch.
     window.history.replaceState({}, "", "/?f=nocoion&f=col:eq:5");
     const s = readUrlState();
-    expect(s.filters["col"]).toEqual({ op: "eq", value: "5" });
-    expect(Object.keys(s.filters)).not.toContain("nocoion");
+    expect(s.filters).toContainEqual({ column: "col", op: "eq", value: "5" });
+    expect(s.filters.map((f) => f.column)).not.toContain("nocoion");
   });
 
-  it("readUrlState stores filters in a null-prototype object", async () => {
+  it("readUrlState keeps user filter columns out of object keys", async () => {
     window.history.replaceState({}, "", "/?f=__proto__:eq:polluted&f=constructor:eq:polluted");
     const s = readUrlState();
-    expect(Object.getPrototypeOf(s.filters)).toBeNull();
+    expect(s.filters).toContainEqual({ column: "__proto__", op: "eq", value: "polluted" });
+    expect(s.filters).toContainEqual({ column: "constructor", op: "eq", value: "polluted" });
     expect({}.polluted).toBeUndefined();
   });
 
@@ -318,7 +326,7 @@ describe("url-state edge cases", () => {
     const p = buildUrlParams({
       db: null, tab: "data", schema: null, table: null,
       offset: 0, search: "", sort: null,
-      filters: { nullcol: null, emptyop: { op: "", value: "x" } },
+      filters: [null, { column: "emptyop", op: "", value: "x" }],
     });
     expect(p.has("f")).toBe(false);
   });

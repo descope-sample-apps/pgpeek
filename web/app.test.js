@@ -384,23 +384,6 @@ describe("data tab", () => {
     expect(lastDataParams().has("f")).toBe(false);
   });
 
-  it("skips no-op filter entries when data params are appended", async () => {
-    await selectTable(0, dataResp({ columns: ["id"], rows: [[1]], rowCount: 1 }));
-    const realKeys = Object.keys;
-    Object.defineProperty(Object.prototype, "__blankFilter__", { value: { op: "" }, configurable: true });
-    const keysSpy = vi.spyOn(Object, "keys").mockImplementation((obj) => {
-      const keys = realKeys(obj);
-      return (new Error().stack || "").includes("appendDataParams") ? [...keys, "__blankFilter__"] : keys;
-    });
-    try {
-      await click($("data-results").querySelector("th.sortable"));
-      expect(lastDataParams().getAll("f")).toEqual([]);
-    } finally {
-      keysSpy.mockRestore();
-      delete Object.prototype.__blankFilter__;
-    }
-  });
-
   it("resets filters when switching tables and has no clear control before selection", async () => {
     setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
     setRoute("GET /api/tables/*/data", dataResp({ columns: ["id"], rows: [[1]], rowCount: 1 }));

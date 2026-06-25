@@ -3,7 +3,7 @@
 
 export function readUrlState() {
   const p = new URLSearchParams(window.location.search);
-  const filters = Object.create(null);
+  const filters = [];
   for (const f of p.getAll("f")) {
     const first = f.indexOf(":");
     if (first < 0) continue;
@@ -12,7 +12,7 @@ export function readUrlState() {
     const second = rest.indexOf(":");
     const op = second >= 0 ? rest.slice(0, second) : rest;
     const value = second >= 0 ? rest.slice(second + 1) : "";
-    if (col && op) filters[col] = { op, value };
+    if (col && op) filters.push({ column: col, op, value });
   }
   const sort = p.get("sort")
     ? { col: p.get("sort"), dir: p.get("dir") || "asc" }
@@ -39,11 +39,10 @@ export function buildUrlParams(state) {
   if (state.search) p.set("search", state.search);
   if (state.sort) { p.set("sort", state.sort.col); p.set("dir", state.sort.dir); }
   if (state.filters) {
-    for (const col of Object.keys(state.filters)) {
-      const f = state.filters[col];
-      if (!f || !f.op) continue;
+    for (const f of state.filters) {
+      if (!f || !f.column || !f.op) continue;
       const noVal = f.op === "is_null" || f.op === "is_not_null";
-      p.append("f", noVal ? `${col}:${f.op}` : `${col}:${f.op}:${f.value || ""}`);
+      p.append("f", noVal ? `${f.column}:${f.op}` : `${f.column}:${f.op}:${f.value || ""}`);
     }
   }
   return p;

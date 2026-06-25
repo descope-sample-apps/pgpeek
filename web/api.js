@@ -23,11 +23,10 @@ export const tableKey = (t) => t.schema + "." + t.name;
 export function appendDataParams(p, search, sort, filters) {
   if (search) p.set("search", search);
   if (sort) { p.set("sort", sort.col); p.set("dir", sort.dir); }
-  for (const col of Object.keys(filters)) {
-    const f = filters[col];
-    if (!f.op) continue;
+  for (const f of filters) {
+    if (!f.column || !f.op) continue;
     const noVal = f.op === "is_null" || f.op === "is_not_null";
-    if (noVal) p.append("f", col + ":" + f.op);
-    else p.append("f", col + ":" + f.op + ":" + (f.value || ""));
+    if (noVal) p.append("f", f.column + ":" + f.op);
+    else p.append("f", f.column + ":" + f.op + ":" + (f.value || ""));
   }
 }

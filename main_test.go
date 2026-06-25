@@ -174,9 +174,11 @@ func TestRun_StoreOpenError(t *testing.T) {
 	clearAppEnv(t)
 	t.Setenv("DATABASE_URL", dsn)
 	t.Setenv("PGPEEK_LISTEN", "127.0.0.1:0")
-	// Store path inside a non-existent directory -> Open/migrate fails after the
-	// database connects successfully.
-	t.Setenv("PGPEEK_STORE_PATH", filepath.Join(t.TempDir(), "missing", "s.db"))
+	storeParent := filepath.Join(t.TempDir(), "not-dir")
+	if err := os.WriteFile(storeParent, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PGPEEK_STORE_PATH", filepath.Join(storeParent, "s.db"))
 	if err := run(context.Background(), testLogger()); err == nil {
 		t.Fatal("expected store open error")
 	}

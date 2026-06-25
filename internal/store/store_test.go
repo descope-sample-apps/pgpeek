@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -145,12 +146,25 @@ func TestListOrderingPresetsFirst(t *testing.T) {
 	}
 }
 
-func TestOpen_MigrateError(t *testing.T) {
-	// A path inside a non-existent directory can't be created, so the schema
-	// migration fails.
-	bad := filepath.Join(t.TempDir(), "missing-dir", "x.db")
-	if _, err := Open(bad); err == nil {
-		t.Fatal("expected open/migrate error for unwritable path")
+func TestOpen_CreatesParentDir(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing-dir", "x.db")
+	st, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if _, err := os.Stat(filepath.Dir(path)); err != nil {
+		t.Fatalf("parent dir: %v", err)
+	}
+}
+
+func TestOpen_MkdirError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "not-dir")
+	if err := os.WriteFile(path, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(filepath.Join(path, "x.db")); err == nil {
+		t.Fatal("expected mkdir error for path below file")
 	}
 }
 

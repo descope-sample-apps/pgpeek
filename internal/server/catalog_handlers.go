@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/descope/pgpeek/internal/db"
+	"github.com/descope-sample-apps/pgpeek/internal/db"
 )
 
 func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {

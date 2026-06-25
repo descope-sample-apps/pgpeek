@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/descope/pgpeek/internal/db"
+	"github.com/descope-sample-apps/pgpeek/internal/db"
 )
 
 func TestDatabaseRegistryAdapter_delegates_to_db_registry(t *testing.T) {

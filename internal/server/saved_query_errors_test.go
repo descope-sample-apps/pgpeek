@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/descope/pgpeek/internal/db"
+	"github.com/descope-sample-apps/pgpeek/internal/db"
 )
 
 func TestListEmptyReturnsArray(t *testing.T) {

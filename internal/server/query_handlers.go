@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/descope/pgpeek/internal/db"
-	"github.com/descope/pgpeek/internal/guard"
+	"github.com/descope-sample-apps/pgpeek/internal/db"
+	"github.com/descope-sample-apps/pgpeek/internal/guard"
 )
 
 type queryRequest struct {

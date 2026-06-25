@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/descope/pgpeek/internal/store"
+	"github.com/descope-sample-apps/pgpeek/internal/store"
 )
 
 func TestSavedQueries_CRUD(t *testing.T) {

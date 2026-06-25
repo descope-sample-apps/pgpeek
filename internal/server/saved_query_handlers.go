@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/descope/pgpeek/internal/guard"
-	"github.com/descope/pgpeek/internal/store"
+	"github.com/descope-sample-apps/pgpeek/internal/guard"
+	"github.com/descope-sample-apps/pgpeek/internal/store"
 )
 
 func (s *Server) handleListQueries(w http.ResponseWriter, r *http.Request) {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/descope/pgpeek/internal/db"
+	"github.com/descope-sample-apps/pgpeek/internal/db"
 )
 
 func TestSingleDatabaseRegistry_methods_select_default_or_reject_unknown(t *testing.T) {

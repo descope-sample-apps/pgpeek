@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/descope/pgpeek/internal/db"
+	"github.com/descope-sample-apps/pgpeek/internal/db"
 )
 
 const maxBodyBytes = 1 << 20

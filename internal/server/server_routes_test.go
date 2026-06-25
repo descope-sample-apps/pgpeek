@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/descope/pgpeek/internal/guard"
-	"github.com/descope/pgpeek/internal/store"
+	"github.com/descope-sample-apps/pgpeek/internal/guard"
+	"github.com/descope-sample-apps/pgpeek/internal/store"
 )
 
 func TestHealthz(t *testing.T) {

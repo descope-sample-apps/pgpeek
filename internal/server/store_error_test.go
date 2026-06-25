@@ -12,7 +12,7 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/descope/pgpeek/internal/store"
+	"github.com/descope-sample-apps/pgpeek/internal/store"
 )
 
 // --- error-path coverage with a fake store and failing writer ------------

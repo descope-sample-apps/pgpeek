@@ -3,7 +3,7 @@
 
 export function readUrlState() {
   const p = new URLSearchParams(window.location.search);
-  const filters = {};
+  const filters = Object.create(null);
   for (const f of p.getAll("f")) {
     const first = f.indexOf(":");
     if (first < 0) continue;

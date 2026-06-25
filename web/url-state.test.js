@@ -299,6 +299,13 @@ describe("url-state edge cases", () => {
     expect(Object.keys(s.filters)).not.toContain("nocoion");
   });
 
+  it("readUrlState stores filters in a null-prototype object", async () => {
+    window.history.replaceState({}, "", "/?f=__proto__:eq:polluted&f=constructor:eq:polluted");
+    const s = readUrlState();
+    expect(Object.getPrototypeOf(s.filters)).toBeNull();
+    expect({}.polluted).toBeUndefined();
+  });
+
   it("readUrlState defaults sort direction to 'asc' when dir param is absent", async () => {
     // Covers url-state.js: p.get('dir') || 'asc' false branch.
     window.history.replaceState({}, "", "/?sort=id");

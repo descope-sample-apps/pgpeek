@@ -3,11 +3,29 @@ package store
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
+
+var registerMigrateFailDriver sync.Once
+
+type migrateFailDriver struct{}
+
+func (migrateFailDriver) Open(string) (driver.Conn, error) { return migrateFailConn{}, nil }
+
+type migrateFailConn struct{}
+
+func (migrateFailConn) Prepare(string) (driver.Stmt, error) { return nil, errors.New("prepare failed") }
+func (migrateFailConn) Close() error                        { return nil }
+func (migrateFailConn) Begin() (driver.Tx, error)           { return nil, errors.New("begin failed") }
+
+func (migrateFailConn) ExecContext(context.Context, string, []driver.NamedValue) (driver.Result, error) {
+	return nil, errors.New("migrate failed")
+}
 
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
@@ -165,6 +183,17 @@ func TestOpen_MkdirError(t *testing.T) {
 	}
 	if _, err := Open(filepath.Join(path, "x.db")); err == nil {
 		t.Fatal("expected mkdir error for path below file")
+	}
+}
+
+func TestOpen_MigrateError(t *testing.T) {
+	registerMigrateFailDriver.Do(func() { sql.Register("migratefail", migrateFailDriver{}) })
+	orig := sqlOpen
+	sqlOpen = func(string, string) (*sql.DB, error) { return sql.Open("migratefail", "") }
+	t.Cleanup(func() { sqlOpen = orig })
+
+	if _, err := Open(filepath.Join(t.TempDir(), "x.db")); err == nil {
+		t.Fatal("expected migrate error")
 	}
 }
 

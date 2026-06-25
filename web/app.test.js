@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // allow: SIZE_OK — characterization suite pins one frozen component tree end-to-end.
@@ -65,6 +66,9 @@ const SAMPLE_TABLES = [
   { schema: "auth", name: "sessions", type: "table", estRows: 12 },
   { schema: "public", name: "companies", type: "table", estRows: 3 },
 ];
+
+const INDEX_HTML = readFileSync("web/index.html", "utf8");
+const DESIGN_MD = readFileSync("DESIGN.md", "utf8");
 
 beforeEach(() => {
   document.body.innerHTML = '<div id="app"></div>';
@@ -941,5 +945,17 @@ describe("theme switcher", () => {
     expect(sel.value).toBe("");
     await changeSelect(sel, "nord");
     expect(document.documentElement.getAttribute("data-theme")).toBe("nord");
+  });
+});
+
+describe("static design assets", () => {
+  it("keeps light themes aligned with native light controls", () => {
+    for (const theme of ["light-plus", "solarized-light", "github-light", "catppuccin-latte"]) {
+      expect(INDEX_HTML).toMatch(new RegExp(`\\[data-theme="${theme}"\\]\\s*{[^}]*color-scheme:\\s*light;`, "s"));
+    }
+  });
+
+  it("does not leave merge conflict markers in the design system", () => {
+    expect(DESIGN_MD).not.toMatch(/^(<<<<<<<|=======|>>>>>>>) /m);
   });
 });

@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # DESIGN.md — pgpeek docs
 
 Design system for the pgpeek documentation site. Every color, font size,

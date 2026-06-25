@@ -1,4 +1,4 @@
-module github.com/descope-sample-apps/pgpeek
+module github.com/descope/pgpeek
 
 go 1.26
 
@@ -6,6 +6,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.42.0
 	github.com/aws/aws-sdk-go-v2/config v1.32.25
 	github.com/aws/aws-sdk-go-v2/feature/rds/auth v1.6.29
+	github.com/descope-sample-apps/pgpeek v0.4.0
 	github.com/jackc/pgx/v5 v5.10.0
 	modernc.org/sqlite v1.53.0
 )

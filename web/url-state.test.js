@@ -298,6 +298,11 @@ describe("api helpers", () => {
     globalThis.fetch = vi.fn(() => Promise.resolve({ ok: false, statusText: "Bad Gateway", json: async () => { throw new Error("html"); } }));
     await expect(getJSON("/api/tables", "pg1")).rejects.toThrow("Bad Gateway");
   });
+
+  it("getJSON surfaces parse errors on successful non-JSON responses", async () => {
+    globalThis.fetch = vi.fn(() => Promise.resolve({ ok: true, statusText: "OK", json: async () => { throw new Error("bad json"); } }));
+    await expect(getJSON("/api/tables", "pg1")).rejects.toThrow("bad json");
+  });
 });
 
 // ── url-state edge cases (branch coverage) ────────────────────────────────────

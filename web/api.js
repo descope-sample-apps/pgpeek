@@ -6,8 +6,11 @@ export function dbUrl(path, dbId) {
 
 export async function getJSON(url, dbId) {
   const r = await fetch(dbUrl(url, dbId));
-  const body = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(body.error || r.statusText);
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || r.statusText);
+  }
+  const body = await r.json();
   return body;
 }
 

@@ -196,6 +196,8 @@ describe("sidebar and tabs", () => {
   });
 
   it("marks one active table and clears it when another table opens", async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
     setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
     setRoute("GET /api/tables/*/data", rowsResp(1));
     await loadApp();
@@ -207,6 +209,10 @@ describe("sidebar and tabs", () => {
     expect($("table-context").textContent).toContain("public.users");
     expect($("tables").querySelector(".tbl.active").textContent).toBe("users");
     expect($("tables").querySelector(".tbl.active").getAttribute("aria-current")).toBe("true");
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+    await click(buttons[1]);
+    expect($("table-context").textContent).toContain("Current view");
+    expect($("table-context").textContent).toContain("row count unavailable");
     await click(buttons[2]);
     const active = $("tables").querySelectorAll(".tbl.active");
     expect(active).toHaveLength(1);

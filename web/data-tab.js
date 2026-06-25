@@ -48,7 +48,7 @@ export function DataTab({
 
   // Notify App of URL-trackable state so it can replaceState.
   const notify = useCallback((upd) => {
-    if (onStateChange) onStateChange(upd);
+    onStateChange(upd);
   }, [onStateChange]);
 
   useEffect(() => {

@@ -176,6 +176,15 @@ describe("URL state — popstate", () => {
     await flush();
     expect($("database-select").value).toBe("pg1");
   });
+
+  it("removes popstate listener when app unmounts", async () => {
+    await loadApp();
+    const { render } = await import("./vendor/preact-htm.js");
+    render(null, document.getElementById("app"));
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await flush();
+    expect(document.getElementById("status")).toBeNull();
+  });
 });
 
 // ── popstate with table in URL (branch coverage) ──────────────────────────────
@@ -247,6 +256,12 @@ describe("url-state helpers", () => {
     expect(p.has("tab")).toBe(false);
     expect(p.has("schema")).toBe(false);
     expect(p.get("db")).toBe("x");
+  });
+
+  it("buildUrlParams accepts states without filters", async () => {
+    const p = buildUrlParams({ db: "x", tab: "sql", schema: null, table: null, offset: 0, search: "", sort: null });
+    expect(p.get("tab")).toBe("sql");
+    expect(p.has("f")).toBe(false);
   });
 
   it("buildUrlParams encodes is_null filter without value segment", async () => {

@@ -332,6 +332,8 @@ describe("data tab", () => {
     await input("data-search", " ignored ");
     await keydown("data-search", "Escape");
     expect(lastDataParams().has("search")).toBe(false);
+    await keydown("data-search", "Tab");
+    expect(lastDataParams().has("search")).toBe(false);
     await keydown("data-search", "Enter");
     expect(lastDataParams().get("search")).toBe("ignored");
 

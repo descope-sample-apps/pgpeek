@@ -93,6 +93,15 @@ func TestValidate_AllowsRestrictedCatalogNamesInStringsAndComments(t *testing.T)
 	}
 }
 
+func TestIsRestrictedRelation(t *testing.T) {
+	if !IsRestrictedRelation("pg_shadow") || !IsRestrictedRelation("PG_AUTHID") {
+		t.Fatal("expected sensitive catalogs to be restricted")
+	}
+	if IsRestrictedRelation("users") {
+		t.Fatal("ordinary table should not be restricted")
+	}
+}
+
 // FuzzValidate asserts the guard never panics on arbitrary input, and that any
 // input it *accepts* really is a single statement beginning with an allowed
 // keyword and containing no forbidden keyword (in masked form). This is the

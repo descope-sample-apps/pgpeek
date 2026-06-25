@@ -77,7 +77,10 @@ func TestSavedQueries_NotFoundAndBadID(t *testing.T) {
 	ts, _ := newTestServer(t, &fakeQuerier{})
 
 	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/queries/999", nil)
-	resp, _ := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("delete missing status = %d, want 404", resp.StatusCode)
 	}
@@ -85,7 +88,10 @@ func TestSavedQueries_NotFoundAndBadID(t *testing.T) {
 
 	req, _ = http.NewRequest(http.MethodPut, ts.URL+"/api/queries/abc",
 		strings.NewReader(`{"name":"x","sql":"SELECT 1"}`))
-	resp, _ = http.DefaultClient.Do(req)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("bad id status = %d, want 400", resp.StatusCode)
 	}

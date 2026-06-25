@@ -117,6 +117,45 @@ func TestLoad_DatabasesJSONFile(t *testing.T) {
 	}
 }
 
+func TestLoad_DatabasesJSONFileInheritsGlobalIAMAuth(t *testing.T) {
+	clearEnv(t)
+	configPath := filepath.Join(t.TempDir(), "databases.json")
+	body := `{"databases":[{"id":"prod","url":"postgres://u@h/prod"}]}`
+	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PGPEEK_DATABASES_FILE", configPath)
+	t.Setenv("PGPEEK_DB_IAM_AUTH", "true")
+	t.Setenv("PGPEEK_AWS_REGION", "us-east-1")
+
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !c.Databases[0].IAMAuth || c.Databases[0].Region != "us-east-1" {
+		t.Fatalf("file database did not inherit global IAM config: %+v", c.Databases[0])
+	}
+}
+
+func TestLoad_DatabasesJSONFileItemIAMAuthOverridesGlobalFalse(t *testing.T) {
+	clearEnv(t)
+	configPath := filepath.Join(t.TempDir(), "databases.json")
+	body := `{"databases":[{"id":"prod","url":"postgres://u@h/prod","iamAuth":true}]}`
+	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PGPEEK_DATABASES_FILE", configPath)
+	t.Setenv("PGPEEK_AWS_REGION", "us-east-1")
+
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !c.Databases[0].IAMAuth {
+		t.Fatalf("file database item IAM setting lost: %+v", c.Databases[0])
+	}
+}
+
 func TestLoad_DatabaseValidationErrors(t *testing.T) {
 	cases := []struct {
 		name      string

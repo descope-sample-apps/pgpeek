@@ -45,10 +45,13 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus }) {
     }
   }, [dbId]);
 
+  const runRef = useRef(run);
+  useEffect(() => { runRef.current = run; }, [run]);
+
   // Init CodeMirror once into a Preact-stable wrapper it fully owns.
   useEffect(() => {
     if (window.cm6) {
-      editorRef.current = window.cm6.mount(wrapRef.current, "SELECT now();", run);
+      editorRef.current = window.cm6.mount(wrapRef.current, "SELECT now();", () => runRef.current());
       return;
     }
     const ta = document.createElement("textarea");
@@ -57,7 +60,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus }) {
     wrapRef.current.appendChild(ta);
     taRef.current = ta;
     ta.addEventListener("keydown", (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); run(); }
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); runRef.current(); }
     });
   }, []);
 
@@ -79,7 +82,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus }) {
     }
     const url = URL.createObjectURL(await r.blob());
     const a = document.createElement("a"); a.href = url; a.download = "pgpeek-export.csv"; a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
   const onPick = (e) => {
@@ -145,8 +148,8 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus }) {
                 ? html`<div class="empty">0 rows.</div>`
                 : html`<table>
                     <thead><tr>${result.columns.map((c) => html`<th key=${c}>${c}</th>`)}</tr></thead>
-                    <tbody>${result.rows.map((row) =>
-                      html`<tr>${row.map((v, i) => html`<td key=${i}>${v === null ? html`<span class="null">NULL</span>` : (typeof v === "object" ? JSON.stringify(v) : String(v))}</td>`)}</tr>`)}</tbody>
+                    <tbody>${result.rows.map((row, rowIndex) =>
+                      html`<tr key=${rowIndex}>${row.map((v, i) => html`<td key=${i}>${v === null ? html`<span class="null">NULL</span>` : (typeof v === "object" ? JSON.stringify(v) : String(v))}</td>`)}</tr>`)}</tbody>
                   </table>`))
         : html`<div class="empty">Run a query to see results.</div>`}
     </div>`;

@@ -34,7 +34,7 @@ func TestAppendDatabaseFileEntries_uses_default_database_id_when_present(t *test
 	entries := []DatabaseEntry{}
 
 	// When: database entries are loaded from the file.
-	defaultID, err := appendDatabaseFileEntries(&entries, "us-east-1")
+	defaultID, err := appendDatabaseFileEntries(&entries, false, "us-east-1")
 
 	// Then: defaultDatabaseID takes precedence over legacy default.
 	if err != nil {

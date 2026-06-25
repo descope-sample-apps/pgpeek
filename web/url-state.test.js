@@ -3,11 +3,11 @@
 // url-state and api module helpers, and coverage-completion edge cases.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
-  flush, makeResp, TWO_DBS, NO_DBS, SAMPLE_TABLES,
-  makeInstallFetch, $, click, changeSelect, loadApp, urlOf,
+  flush, makeResp, TWO_DBS, SAMPLE_TABLES,
+  makeInstallFetch, $, click, changeSelect, loadApp,
   readUrlState, buildUrlParams, dbUrl,
 } from "./test-helpers.js";
-import { appendDataParams } from "./api.js";
+import { appendDataParams, getJSON } from "./api.js";
 
 let routes;
 function setRoute(key, resp) { routes[key] = resp; }
@@ -293,6 +293,11 @@ describe("api helpers", () => {
     appendDataParams(params, "", null, [{ op: "eq", value: "x" }]);
     expect(params.has("f")).toBe(false);
   });
+
+  it("getJSON reports status text when error response is not JSON", async () => {
+    globalThis.fetch = vi.fn(() => Promise.resolve({ ok: false, statusText: "Bad Gateway", json: async () => { throw new Error("html"); } }));
+    await expect(getJSON("/api/tables", "pg1")).rejects.toThrow("Bad Gateway");
+  });
 });
 
 // ── url-state edge cases (branch coverage) ────────────────────────────────────
@@ -319,6 +324,11 @@ describe("url-state edge cases", () => {
     window.history.replaceState({}, "", "/?sort=id");
     const s = readUrlState();
     expect(s.sort).toEqual({ col: "id", dir: "asc" });
+  });
+
+  it("readUrlState defaults sort direction to 'asc' when dir param is invalid", async () => {
+    window.history.replaceState({}, "", "/?sort=id&dir=sideways");
+    expect(readUrlState().sort).toEqual({ col: "id", dir: "asc" });
   });
 
   it("buildUrlParams skips filter entries with no op (null or falsy)", async () => {

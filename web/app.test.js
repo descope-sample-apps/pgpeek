@@ -495,6 +495,19 @@ describe("structure tab", () => {
     expect($("structure-results").textContent).toContain("id");
   });
 
+  it("updates status while loading structure", async () => {
+    const pending = deferred();
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/data", rowsResp(1));
+    setRoute("GET /api/tables/*/columns", () => pending.promise);
+    await loadApp();
+    await click($("tables").querySelector(".tbl"));
+    await click("tab-structure");
+    expect($("status").textContent).toContain("Loading structure for public.users");
+    pending.resolve(makeResp({ json: [] }));
+    await flush();
+  });
+
   it("shows loading, renders columns, and ignores stale column responses", async () => {
     const stale = deferred();
     setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
@@ -696,6 +709,7 @@ describe("SQL CSV export", () => {
     expect(postBody("/api/export")).toEqual({ sql: "select 1" });
     expect(URL.createObjectURL).toHaveBeenCalled();
     expect(HTMLAnchorElement.prototype.click).toHaveBeenCalled();
+    await flush();
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:fake");
 
     document.body.innerHTML = '<div id="app"></div>';

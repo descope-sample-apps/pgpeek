@@ -78,7 +78,7 @@ supplied from mounted files so they do not live in manifests.
 
 | Variable                     | Default              | Notes                                                                 |
 | ---------------------------- | -------------------- | --------------------------------------------------------------------- |
-| `DATABASE_URL`               | _(required)_         | Postgres DSN. Use the read-only role. **Never logged.** Aurora: include `?sslmode=require`. |
+| `DATABASE_URL`               | single-DB required   | Postgres DSN for single-database installs. Use the read-only role. **Never logged.** Aurora: include `?sslmode=require`. |
 | `DATABASE_URL_FILE`          | —                    | Path to a file holding the DSN (mounted-secret alternative).          |
 | `PGPEEK_DATABASE_URLS`       | —                    | Comma- or semicolon-separated DSNs for multiple databases. Quoted CSV values are supported. |
 | `PGPEEK_DATABASE_IDS`        | `db1`, `db2`, …      | Optional comma/semicolon IDs matching `PGPEEK_DATABASE_URLS`; URL-safe (`A-Z`, `a-z`, `0-9`, `_`, `-`, `.`). |

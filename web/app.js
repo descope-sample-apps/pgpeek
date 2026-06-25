@@ -126,13 +126,12 @@ function App() {
       setTabState(s.tab);
       setCurrentDb(s.db);
       if (!sameDb) {
+        setCurrent(null);
         // Tables effect will reload; queue table restore if URL has a table.
         if (s.schema && s.table) {
           setUrlInit({ schema: s.schema, table: s.table,
             offset: s.offset, search: s.search, sort: s.sort, filters: s.filters });
-        } else {
-          setCurrent(null); setUrlInit(null);
-        }
+        } else setUrlInit(null);
       } else if (s.schema && s.table) {
         const found = tablesRef.current.find((x) => x.schema === s.schema && x.name === s.table);
         if (found) { setCurrent(found); setNavKey((k) => k + 1); setUrlInit(s); }
@@ -148,6 +147,7 @@ function App() {
   // Phase 2: reload tables + meta whenever the resolved db changes.
   useEffect(() => {
     if (!dbsLoaded) return;
+    let live = true;
     setTablesLoaded(false);
     tablesRef.current = [];
     setTables([]);
@@ -155,6 +155,7 @@ function App() {
     (async () => {
       try {
         const t = await getJSON("/api/tables", db);
+        if (!live) return;
         tablesRef.current = t;
         setTables(t);
         // Consume pending URL table-restore (set during initial load or popstate).
@@ -165,16 +166,17 @@ function App() {
           return null;
         });
       } catch (e) {
-        setStatus({ text: "✗ failed to load tables: " + e.message, cls: "error" });
-      } finally { setTablesLoaded(true); }
+        if (live) setStatus({ text: "✗ failed to load tables: " + e.message, cls: "error" });
+      } finally { if (live) setTablesLoaded(true); }
     })();
     (async () => {
       try {
         const m = await getJSON("/api/meta", db);
-        if (m && m.rowCap > 0) setRowCap(m.rowCap);
+        if (live && m && m.rowCap > 0) setRowCap(m.rowCap);
       } catch { /* keep default */ }
     })();
     reloadSaved();
+    return () => { live = false; };
   }, [currentDb, dbsLoaded]);
 
   const open = (t, initFilters) => {
@@ -201,6 +203,7 @@ function App() {
     if (newDb === currentDb) return;
     const s = { db: newDb, tab: null, schema: null, table: null, offset: 0, search: "", sort: null, filters: [] };
     setCurrent(null); setPendingFilters(null); setUrlInit(null);
+    setTabState("data");
     dbRef.current = newDb; setCurrentDb(newDb);
     pushUrlState(s); urlStateRef.current = s;
   };

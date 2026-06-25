@@ -16,38 +16,16 @@ type queryRequest struct {
 }
 
 func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
-	pool, ok := s.poolForRequest(w, r)
+	res, ok := s.readOnlyResult(w, r)
 	if !ok {
-		return
-	}
-	sql, ok := decodeReadOnlyQuery(w, r)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
-	defer cancel()
-	res, err := pool.Query(ctx, sql)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "query failed: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
 }
 
 func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
-	pool, ok := s.poolForRequest(w, r)
+	res, ok := s.readOnlyResult(w, r)
 	if !ok {
-		return
-	}
-	sql, ok := decodeReadOnlyQuery(w, r)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
-	defer cancel()
-	res, err := pool.Query(ctx, sql)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "query failed: "+err.Error())
 		return
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
@@ -55,6 +33,26 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	if err := writeCSV(w, res); err != nil {
 		s.log.Error("csv export", "err", err)
 	}
+}
+
+func (s *Server) readOnlyResult(w http.ResponseWriter, r *http.Request) (*db.Result, bool) {
+	pool, ok := s.poolForRequest(w, r)
+	if !ok {
+		return nil, false
+	}
+	sql, ok := decodeReadOnlyQuery(w, r)
+	if !ok {
+		return nil, false
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
+	defer cancel()
+	res, err := pool.Query(ctx, sql)
+	if err != nil {
+		s.log.Error("query", "err", err)
+		writeError(w, http.StatusBadRequest, "query failed")
+		return nil, false
+	}
+	return res, true
 }
 
 func decodeReadOnlyQuery(w http.ResponseWriter, r *http.Request) (string, bool) {

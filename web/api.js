@@ -1,6 +1,3 @@
-// API helpers that inject the active db id as ?db=<id> on every DB-bound
-// GET request and include it in JSON bodies for POST requests.
-
 export function dbUrl(path, dbId) {
   if (!dbId) return path;
   const sep = path.includes("?") ? "&" : "?";
@@ -9,7 +6,7 @@ export function dbUrl(path, dbId) {
 
 export async function getJSON(url, dbId) {
   const r = await fetch(dbUrl(url, dbId));
-  const body = await r.json();
+  const body = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(body.error || r.statusText);
   return body;
 }

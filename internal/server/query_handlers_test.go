@@ -57,11 +57,15 @@ func TestQuery_UnknownField(t *testing.T) {
 }
 
 func TestQuery_DBError(t *testing.T) {
-	q := &fakeQuerier{err: errors.New("boom")}
+	q := &fakeQuerier{err: errors.New("postgres://secret-host/hidden: boom")}
 	ts, _ := newTestServer(t, q)
 	resp := post(t, ts, "/api/query", `{"sql":"SELECT 1"}`)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+	got := decode[map[string]string](t, resp)
+	if got["error"] != "query failed" {
+		t.Fatalf("error = %q, want sanitized query failed", got["error"])
 	}
 }
 
@@ -116,7 +120,7 @@ func TestExport_GuardRejects(t *testing.T) {
 
 func TestExport_DBError(t *testing.T) {
 	// Given: CSV export receives a read-only query but database execution fails.
-	q := &fakeQuerier{err: errors.New("boom")}
+	q := &fakeQuerier{err: errors.New("postgres://secret-host/hidden: boom")}
 	ts, _ := newTestServer(t, q)
 
 	// When: export is requested.
@@ -126,5 +130,9 @@ func TestExport_DBError(t *testing.T) {
 	// Then: handler returns the same bad-request contract as query execution.
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+	got := decode[map[string]string](t, resp)
+	if got["error"] != "query failed" {
+		t.Fatalf("error = %q, want sanitized query failed", got["error"])
 	}
 }

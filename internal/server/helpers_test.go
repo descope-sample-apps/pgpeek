@@ -49,7 +49,8 @@ func (f *fakeQuerier) Columns(_ context.Context, schema, table string) ([]db.Col
 	return f.cols, f.catErr
 }
 
-func (f *fakeQuerier) ForeignKeys(_ context.Context, _, _ string) ([]db.ForeignKey, error) {
+func (f *fakeQuerier) ForeignKeys(_ context.Context, schema, table string) ([]db.ForeignKey, error) {
+	f.lastArgs.schema, f.lastArgs.table = schema, table
 	return f.fks, f.catErr
 }
 

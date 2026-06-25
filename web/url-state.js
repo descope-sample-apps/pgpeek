@@ -15,7 +15,7 @@ export function readUrlState() {
     if (col && op) filters.push({ column: col, op, value });
   }
   const sort = p.get("sort")
-    ? { col: p.get("sort"), dir: p.get("dir") || "asc" }
+    ? { col: p.get("sort"), dir: p.get("dir") === "desc" ? "desc" : "asc" }
     : null;
   return {
     db: p.get("db") || null,

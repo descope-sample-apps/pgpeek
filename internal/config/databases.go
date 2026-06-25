@@ -22,7 +22,7 @@ type DatabaseEntry struct {
 
 func loadDatabases(globalIAMAuth bool, globalRegion string) ([]DatabaseEntry, string, error) {
 	entries := make([]DatabaseEntry, 0, 4)
-	fileDefault, err := appendDatabaseFileEntries(&entries, globalRegion)
+	fileDefault, err := appendDatabaseFileEntries(&entries, globalIAMAuth, globalRegion)
 	if err != nil {
 		return nil, "", err
 	}
@@ -49,7 +49,7 @@ func loadDatabases(globalIAMAuth bool, globalRegion string) ([]DatabaseEntry, st
 	return entries, defaultID, nil
 }
 
-func appendDatabaseFileEntries(entries *[]DatabaseEntry, globalRegion string) (string, error) {
+func appendDatabaseFileEntries(entries *[]DatabaseEntry, globalIAMAuth bool, globalRegion string) (string, error) {
 	if os.Getenv("PGPEEK_DATABASES_FILE") == "" {
 		return "", nil
 	}
@@ -73,7 +73,7 @@ func appendDatabaseFileEntries(entries *[]DatabaseEntry, globalRegion string) (s
 		if err != nil {
 			return "", err
 		}
-		*entries = append(*entries, DatabaseEntry{ID: item.ID, Name: entryName(item.Name, i+1), DSN: dsn, IAMAuth: item.IAMAuth, Region: pick(item.Region, globalRegion)})
+		*entries = append(*entries, DatabaseEntry{ID: item.ID, Name: entryName(item.Name, i+1), DSN: dsn, IAMAuth: item.IAMAuth || globalIAMAuth, Region: pick(item.Region, globalRegion)})
 	}
 	if file.DefaultDatabaseID != "" {
 		return file.DefaultDatabaseID, nil

@@ -22,6 +22,12 @@ function defaultRoutes() {
   };
 }
 
+function deferred() {
+  let resolve;
+  const promise = new Promise((r) => { resolve = r; });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   document.body.innerHTML = '<div id="app"></div>';
   window.history.replaceState({}, "", "/");
@@ -39,6 +45,8 @@ beforeEach(() => {
   window.cancelAnimationFrame  = globalThis.cancelAnimationFrame;
   delete window.CodeMirror;
   delete globalThis.CodeMirror;
+  delete window.cm6;
+  delete globalThis.cm6;
 });
 
 afterEach(() => {
@@ -46,6 +54,8 @@ afterEach(() => {
   window.history.replaceState({}, "", "/");
   delete window.CodeMirror;
   delete globalThis.CodeMirror;
+  delete window.cm6;
+  delete globalThis.cm6;
 });
 
 // ── database selector ────────────────────────────────────────────────────────
@@ -108,6 +118,31 @@ describe("database selector", () => {
     expect($("tab-title").textContent).toBe("public.users");
     await changeSelect($("database-select"), "pg2");
     expect($("tab-title").textContent).toBe("Pick a table");
+  });
+
+  it("ignores stale table responses from the previous database", async () => {
+    const firstTables = deferred();
+    setRoute("GET /api/tables", (url) => String(url).includes("db=pg1")
+      ? firstTables.promise
+      : Promise.resolve(makeResp({ json: [{ schema: "analytics", name: "events", type: "table", estRows: 1 }] })));
+    await loadApp();
+    await changeSelect($("database-select"), "pg2");
+    firstTables.resolve(makeResp({ json: [{ schema: "public", name: "users", type: "table", estRows: 1 }] }));
+    await flush();
+    expect($("tables").textContent).toContain("events");
+    expect($("tables").textContent).not.toContain("users");
+  });
+
+  it("ignores stale table errors from the previous database", async () => {
+    const firstTables = deferred();
+    setRoute("GET /api/tables", (url) => String(url).includes("db=pg1")
+      ? firstTables.promise
+      : Promise.resolve(makeResp({ json: [{ schema: "analytics", name: "events", type: "table", estRows: 1 }] })));
+    await loadApp();
+    await changeSelect($("database-select"), "pg2");
+    firstTables.resolve(Promise.reject(new Error("stale db down")));
+    await flush();
+    expect($("status").textContent).not.toContain("stale db down");
   });
 });
 
@@ -226,6 +261,25 @@ describe("API db params — POST requests", () => {
     const call = postCall("/api/query");
     expect(urlOf(call[0]).searchParams.has("db")).toBe(false);
     expect(JSON.parse(call[1].body)).toEqual({ sql: "select 1" });
+  });
+
+  it("runs CodeMirror shortcut against the latest selected database", async () => {
+    let value = "select cm";
+    const editor = { getValue: vi.fn(() => value), setValue: vi.fn((v) => { value = v; }), refresh: vi.fn() };
+    const mount = vi.fn(() => editor);
+    window.cm6 = { mount };
+    globalThis.cm6 = window.cm6;
+    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
+    await loadApp();
+    await click("tab-sql");
+    await changeSelect($("database-select"), "pg2");
+
+    mount.mock.calls[0][2]();
+    await flush();
+
+    const call = postCall("/api/query");
+    expect(urlOf(call[0]).searchParams.get("db")).toBe("pg2");
+    expect(JSON.parse(call[1].body)).toEqual({ sql: "select cm" });
   });
 });
 

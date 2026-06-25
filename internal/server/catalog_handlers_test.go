@@ -61,11 +61,14 @@ func TestTables_EmptyReturnsArray(t *testing.T) {
 }
 
 func TestTables_Error(t *testing.T) {
-	ts, _ := newTestServer(t, &fakeQuerier{catErr: errors.New("boom")})
+	ts, _ := newTestServer(t, &fakeQuerier{catErr: errors.New("postgres://secret-host/hidden: boom")})
 	resp := mustGet(t, ts, "/api/tables")
-	resp.Body.Close()
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", resp.StatusCode)
+	}
+	got := decode[map[string]string](t, resp)
+	if got["error"] != "failed to list tables" {
+		t.Fatalf("error = %q, want sanitized tables error", got["error"])
 	}
 }
 
@@ -92,11 +95,14 @@ func TestColumns_EmptyReturnsArray(t *testing.T) {
 }
 
 func TestColumns_Error(t *testing.T) {
-	ts, _ := newTestServer(t, &fakeQuerier{catErr: errors.New("boom")})
+	ts, _ := newTestServer(t, &fakeQuerier{catErr: errors.New("postgres://secret-host/hidden: boom")})
 	resp := mustGet(t, ts, "/api/tables/public/users/columns")
-	resp.Body.Close()
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", resp.StatusCode)
+	}
+	got := decode[map[string]string](t, resp)
+	if got["error"] != "failed to read columns" {
+		t.Fatalf("error = %q, want sanitized columns error", got["error"])
 	}
 }
 
@@ -107,6 +113,9 @@ func TestForeignKeys_OK(t *testing.T) {
 	got := decode[[]db.ForeignKey](t, resp)
 	if len(got) != 1 || got[0].RefTable != "companies" {
 		t.Errorf("fks = %+v", got)
+	}
+	if q.lastArgs.schema != "public" || q.lastArgs.table != "users" {
+		t.Errorf("path values not passed: %+v", q.lastArgs)
 	}
 }
 
@@ -120,11 +129,14 @@ func TestForeignKeys_EmptyReturnsArray(t *testing.T) {
 }
 
 func TestForeignKeys_Error(t *testing.T) {
-	ts, _ := newTestServer(t, &fakeQuerier{catErr: errors.New("boom")})
+	ts, _ := newTestServer(t, &fakeQuerier{catErr: errors.New("postgres://secret-host/hidden: boom")})
 	resp := mustGet(t, ts, "/api/tables/public/users/fks")
-	resp.Body.Close()
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", resp.StatusCode)
+	}
+	got := decode[map[string]string](t, resp)
+	if got["error"] != "failed to read foreign keys" {
+		t.Fatalf("error = %q, want sanitized foreign-key error", got["error"])
 	}
 }
 
@@ -199,11 +211,14 @@ func TestTableData_DefaultsAndBadParams(t *testing.T) {
 }
 
 func TestTableData_Error(t *testing.T) {
-	ts, _ := newTestServer(t, &fakeQuerier{err: errors.New("no such table")})
+	ts, _ := newTestServer(t, &fakeQuerier{err: errors.New("postgres://secret-host/hidden: no such table")})
 	resp := mustGet(t, ts, "/api/tables/public/nope/data")
-	resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", resp.StatusCode)
+	}
+	got := decode[map[string]string](t, resp)
+	if got["error"] != "failed to read rows" {
+		t.Fatalf("error = %q, want sanitized row error", got["error"])
 	}
 }
 

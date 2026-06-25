@@ -531,7 +531,7 @@ docker build -t pgpeek .   <span class="tok-comment"># or the hand-written Docke
       <table class="data-table">
         <thead><tr><th>Variable</th><th>Default</th><th>Notes</th></tr></thead>
         <tbody>
-          <tr><td class="td-path">DATABASE_URL</td><td><span class="pill-required">required</span></td><td>Postgres DSN. Use the read-only role. Never logged. (<code>DATABASE_URL_FILE</code> reads it from a mounted secret.)</td></tr>
+          <tr><td class="td-path">DATABASE_URL</td><td><span class="pill-required">single-DB required</span></td><td>Postgres DSN for single-database installs. Use the read-only role. Never logged. (<code>DATABASE_URL_FILE</code> reads it from a mounted secret.)</td></tr>
           <tr><td class="td-path">PGPEEK_DATABASE_URLS</td><td><span class="pill-default">—</span></td><td>Comma/semicolon-separated DSNs for multiple databases. Pair with <code>PGPEEK_DATABASE_IDS</code> and <code>PGPEEK_DATABASE_NAMES</code>.</td></tr>
           <tr><td class="td-path">PGPEEK_DATABASE_URL_1</td><td><span class="pill-default">—</span></td><td>Numbered multi-DB form; continue with <code>_2</code>, <code>_3</code>, … and use <code>_FILE</code> for mounted secrets.</td></tr>
           <tr><td class="td-path">PGPEEK_DATABASES_FILE</td><td><span class="pill-default">—</span></td><td>Mounted JSON config file with <code>{default, databases:[{id,name,urlFile}]}</code>.</td></tr>

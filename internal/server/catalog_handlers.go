@@ -25,7 +25,8 @@ func (s *Server) handleTables(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	tables, err := pool.Tables(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to list tables: "+err.Error())
+		s.log.Error("list tables", "err", err)
+		writeError(w, http.StatusInternalServerError, "failed to list tables")
 		return
 	}
 	if tables == nil {
@@ -43,7 +44,8 @@ func (s *Server) handleColumns(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	cols, err := pool.Columns(ctx, r.PathValue("schema"), r.PathValue("table"))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to read columns: "+err.Error())
+		s.log.Error("read columns", "err", err)
+		writeError(w, http.StatusInternalServerError, "failed to read columns")
 		return
 	}
 	if cols == nil {
@@ -61,7 +63,8 @@ func (s *Server) handleForeignKeys(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	fks, err := pool.ForeignKeys(ctx, r.PathValue("schema"), r.PathValue("table"))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to read foreign keys: "+err.Error())
+		s.log.Error("read foreign keys", "err", err)
+		writeError(w, http.StatusInternalServerError, "failed to read foreign keys")
 		return
 	}
 	if fks == nil {
@@ -89,7 +92,8 @@ func (s *Server) handleTableData(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	res, err := pool.TableRows(ctx, q)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to read rows: "+err.Error())
+		s.log.Error("read rows", "err", err)
+		writeError(w, http.StatusBadRequest, "failed to read rows")
 		return
 	}
 	if r.URL.Query().Get("format") == "csv" {

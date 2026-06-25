@@ -69,6 +69,7 @@ const SAMPLE_TABLES = [
 
 const INDEX_HTML = readFileSync("web/index.html", "utf8");
 const DESIGN_MD = readFileSync("DESIGN.md", "utf8");
+const ORIGINAL_SCROLL_INTO_VIEW = HTMLElement.prototype.scrollIntoView;
 
 beforeEach(() => {
   document.body.innerHTML = '<div id="app"></div>';
@@ -95,6 +96,11 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  if (ORIGINAL_SCROLL_INTO_VIEW) {
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: ORIGINAL_SCROLL_INTO_VIEW });
+  } else {
+    delete HTMLElement.prototype.scrollIntoView;
+  }
   delete window.cm6;
   delete globalThis.cm6;
 });

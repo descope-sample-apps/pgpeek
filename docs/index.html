@@ -11,8 +11,8 @@
 <meta property="og:type" content="website" />
 <meta property="og:title" content="pgpeek — a minimal, read-only Postgres browser" />
 <meta property="og:description" content="Page through tables, run SELECTs, export CSV. Read-only by design. One static Go binary." />
-<meta property="og:image" content="https://descope.github.io/pgpeek/assets/img/hero.png" />
-<meta property="og:url" content="https://descope.github.io/pgpeek/" />
+<meta property="og:image" content="https://descope-sample-apps.github.io/pgpeek/assets/img/hero.png" />
+<meta property="og:url" content="https://descope-sample-apps.github.io/pgpeek/" />
 <meta name="twitter:card" content="summary_large_image" />
 
 <!-- Fonts: Sora (display/sans) + JetBrains Mono (code) -->
@@ -464,7 +464,7 @@
     <div class="section-header reveal">
       <span class="section-label">Quick start</span>
       <h2 class="section-title">Running in under a minute</h2>
-      <p class="section-desc">The bundled Docker Compose stack is the fastest path — Postgres, a demo dataset, and live rebuild.</p>
+      <p class="section-desc">The bundled Docker Compose stack is the fastest path — Postgres, a demo dataset, and pgpeek up in seconds.</p>
     </div>
 
     <div class="tab-group reveal">
@@ -476,16 +476,36 @@
 
       <div class="tab-panels">
         <div class="tab-panel qs-block" role="tabpanel" id="panel-compose" aria-labelledby="tab-compose">
-          <p class="qs-block__lead">Spins up Postgres + pgpeek with seeded demo data and rebuilds on every source edit.</p>
+          <p class="qs-block__lead">Pull the published image and start Postgres with demo data — no build step, no source clone.</p>
           <div class="code-wrap">
             <button class="copy-btn" type="button" aria-label="Copy">copy</button>
-            <pre><code><span class="tok-comment"># clone, then from the repo root:</span>
-docker compose watch
-
-<span class="tok-comment"># open the UI</span>
-open http://localhost:8080</code></pre>
+            <pre><code><span class="tok-comment"># compose.yml — save locally, then: docker compose up</span>
+services:
+  db:
+    image: <span class="tok-string">postgres:16</span>
+    environment:
+      POSTGRES_USER: pgpeek
+      POSTGRES_PASSWORD: pgpeek
+      POSTGRES_DB: pgpeek
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pgpeek -d pgpeek"]
+      interval: 5s
+      retries: 12
+  pgpeek:
+    image: <span class="tok-string">ghcr.io/descope/pgpeek:latest</span>
+    user: root
+    environment:
+      DATABASE_URL: postgres://pgpeek:pgpeek@db:5432/pgpeek?sslmode=disable
+    ports: ["8080:8080"]
+    volumes: [pgpeekdata:/data]
+    depends_on:
+      db: {condition: service_healthy}
+volumes:
+  pgdata:
+  pgpeekdata:</code></pre>
           </div>
-          <p class="kbd-hint">Reset the demo data anytime with <code>docker compose down -v &amp;&amp; docker compose up</code>.</p>
+          <p class="kbd-hint">Open <code>http://localhost:8080</code>. Reset: <code>docker compose down -v &amp;&amp; docker compose up</code></p>
         </div>
 
         <div class="tab-panel qs-block" role="tabpanel" id="panel-source" aria-labelledby="tab-source">

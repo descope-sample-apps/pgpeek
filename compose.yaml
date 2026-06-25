@@ -1,16 +1,16 @@
-# Local dev/testing stack for pgpeek — Postgres + the app, with live rebuild.
+# Docker Compose stack for pgpeek — Postgres with seeded demo data + the app.
 #
-#   docker compose up --build        # build + start db and pgpeek
-#   docker compose watch             # same, but rebuild pgpeek on source edits
-#   docker compose down              # stop (keeps volumes / saved queries)
-#   docker compose down -v           # stop and wipe db + saved-query volumes
+# Usage:
+#   docker compose up        # pull image, start db and pgpeek
+#   docker compose up -d     # same, detached
+#   docker compose down       # stop (keeps volumes / saved queries)
+#   docker compose down -v    # stop and wipe db + saved-query volumes
 #
 # Then open http://localhost:8080
 #
-# `docker compose watch` rebuilds the pgpeek image whenever a Go source file or
-# a web/ asset changes — the front-end is embedded into the binary via
-# go:embed, so a rebuild is what actually ships your edit. Tests, docs, and
-# infra files are ignored so they don't trigger needless rebuilds.
+# The pgpeek service uses the published image (ghcr.io/descope/pgpeek:latest).
+# For local development (build from source), see:
+# https://github.com/descope/pgpeek#run-locally
 
 services:
   db:
@@ -37,11 +37,9 @@ services:
       retries: 12
 
   pgpeek:
-    build:
-      context: .
-    # The distroless image defaults to a nonroot user, but the named volume
-    # mounted at /data is root-owned, so the SQLite store can't be created.
-    # Run as root for local dev only (the k8s manifests keep nonroot in prod).
+    image: ghcr.io/descope/pgpeek:latest
+    # Named volumes start root-owned; run as root so the SQLite store can
+    # be written to /data. (k8s manifests use a nonroot PVC in prod.)
     user: root
     environment:
       # In-network hostname `db` + the container port 5432 (not 55432).
@@ -58,19 +56,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    develop:
-      watch:
-        - action: rebuild
-          path: .
-          ignore:
-            - "**/*_test.go"
-            - web/app.test.js
-            - node_modules/
-            - "*.md"
-            - k8s/
-            - .github/
-            - data/
-            - "*.db"
 
 volumes:
   pgdata:

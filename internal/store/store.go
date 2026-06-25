@@ -9,6 +9,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -37,9 +39,12 @@ var sqlOpen = sql.Open
 
 // Open opens (and migrates) the SQLite store at path.
 func Open(path string) (*Store, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, fmt.Errorf("create store directory: %w", err)
+	}
 	db, err := sqlOpen("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open store: %w", err)
 	}
 	db.SetMaxOpenConns(1) // SQLite: serialize writers, avoids "database is locked"
 	if _, err := db.Exec(`

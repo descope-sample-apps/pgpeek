@@ -14,6 +14,7 @@ import (
 	"context"
 	"embed"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -50,32 +51,47 @@ func run(ctx context.Context, log *slog.Logger) error {
 		return err
 	}
 
-	dbCfg := db.Config{
-		DSN:              cfg.DB.DSN,
-		MaxConns:         cfg.DB.MaxConns,
-		StatementTimeout: cfg.DB.StatementTimeout,
-		IdleTxTimeout:    cfg.DB.IdleTxTimeout,
-		RowCap:           cfg.RowCap,
-	}
-	if cfg.DB.IAMAuth {
-		provider, perr := awsauth.New(ctx, cfg.DB.Region)
-		if perr != nil {
-			return perr
-		}
-		dbCfg.BeforeConnect = provider.BeforeConnect
-		log.Info("RDS IAM authentication enabled", "region", cfg.DB.Region)
-	}
-
 	signalCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := db.New(signalCtx, dbCfg)
-	if err != nil {
-		return err
+	entries := make([]db.RegistryEntry, 0, len(cfg.Databases))
+	closeEntries := func() {
+		for i := len(entries) - 1; i >= 0; i-- {
+			entries[i].Pool.Close()
+		}
 	}
-	defer pool.Close()
-	log.Info("connected to database", "maxConns", cfg.DB.MaxConns, "rowCap", cfg.RowCap,
-		"statementTimeout", cfg.DB.StatementTimeout.String(), "iamAuth", cfg.DB.IAMAuth)
+	for _, entry := range cfg.Databases {
+		dbCfg := db.Config{
+			DSN:              entry.DSN,
+			MaxConns:         cfg.DB.MaxConns,
+			StatementTimeout: cfg.DB.StatementTimeout,
+			IdleTxTimeout:    cfg.DB.IdleTxTimeout,
+			RowCap:           cfg.RowCap,
+		}
+		if entry.IAMAuth {
+			provider, perr := awsauth.New(signalCtx, entry.Region)
+			if perr != nil {
+				closeEntries()
+				return fmt.Errorf("create IAM auth provider for database %q: %w", entry.ID, perr)
+			}
+			dbCfg.BeforeConnect = provider.BeforeConnect
+			log.Info("RDS IAM authentication enabled", "databaseID", entry.ID, "databaseName", entry.Name)
+		}
+		log.Info("connecting database", "databaseID", entry.ID, "databaseName", entry.Name, "default", entry.ID == cfg.DefaultDatabaseID)
+		pool, perr := db.New(signalCtx, dbCfg)
+		if perr != nil {
+			closeEntries()
+			return fmt.Errorf("connect database %q: %w", entry.ID, perr)
+		}
+		entries = append(entries, db.RegistryEntry{ID: entry.ID, Name: entry.Name, Pool: pool, Default: entry.ID == cfg.DefaultDatabaseID})
+	}
+	registry, err := db.NewRegistry(entries)
+	if err != nil {
+		closeEntries()
+		return fmt.Errorf("create database registry: %w", err)
+	}
+	defer registry.Close()
+	log.Info("database registry ready", "databaseCount", len(entries), "defaultDatabaseID", registry.DefaultID())
 
 	st, err := store.Open(cfg.StorePath)
 	if err != nil {
@@ -87,7 +103,7 @@ func run(ctx context.Context, log *slog.Logger) error {
 	}
 
 	web := mustSubFS(webFiles, "web")
-	srv := server.New(pool, st, web, log, cfg.DB.StatementTimeout+5*time.Second)
+	srv := server.NewWithRegistry(server.NewDatabaseRegistry(registry), st, web, log, cfg.DB.StatementTimeout+5*time.Second)
 	httpSrv := &http.Server{
 		Addr:              cfg.Server.Listen,
 		Handler:           srv.Routes(),

@@ -524,7 +524,7 @@ docker build -t pgpeek .   <span class="tok-comment"># or the hand-written Docke
     <div class="section-header reveal">
       <span class="section-label">Configuration</span>
       <h2 class="section-title">Everything is an environment variable</h2>
-      <p class="section-desc">Any value can also come from a mounted file via <code>&lt;VAR&gt;_FILE</code> — Docker / Kubernetes secrets friendly.</p>
+      <p class="section-desc">Single-database installs keep using <code>DATABASE_URL</code>. Multi-database installs can use URL lists, numbered env vars, or a mounted JSON config file.</p>
     </div>
 
     <div class="table-wrap reveal">
@@ -532,6 +532,10 @@ docker build -t pgpeek .   <span class="tok-comment"># or the hand-written Docke
         <thead><tr><th>Variable</th><th>Default</th><th>Notes</th></tr></thead>
         <tbody>
           <tr><td class="td-path">DATABASE_URL</td><td><span class="pill-required">required</span></td><td>Postgres DSN. Use the read-only role. Never logged. (<code>DATABASE_URL_FILE</code> reads it from a mounted secret.)</td></tr>
+          <tr><td class="td-path">PGPEEK_DATABASE_URLS</td><td><span class="pill-default">—</span></td><td>Comma/semicolon-separated DSNs for multiple databases. Pair with <code>PGPEEK_DATABASE_IDS</code> and <code>PGPEEK_DATABASE_NAMES</code>.</td></tr>
+          <tr><td class="td-path">PGPEEK_DATABASE_URL_1</td><td><span class="pill-default">—</span></td><td>Numbered multi-DB form; continue with <code>_2</code>, <code>_3</code>, … and use <code>_FILE</code> for mounted secrets.</td></tr>
+          <tr><td class="td-path">PGPEEK_DATABASES_FILE</td><td><span class="pill-default">—</span></td><td>Mounted JSON config file with <code>{default, databases:[{id,name,urlFile}]}</code>.</td></tr>
+          <tr><td class="td-path">PGPEEK_DEFAULT_DATABASE</td><td><span class="pill-default">first DB</span></td><td>Default database ID when the URL has no <code>db=</code>.</td></tr>
           <tr><td class="td-path">PGPEEK_LISTEN</td><td><span class="pill-default">:8080</span></td><td>Listen address.</td></tr>
           <tr><td class="td-path">PGPEEK_ROW_CAP</td><td><span class="pill-default">1000</span></td><td>Max rows returned/exported per query.</td></tr>
           <tr><td class="td-path">PGPEEK_STATEMENT_TIMEOUT</td><td><span class="pill-default">30s</span></td><td>Per-query DB statement timeout.</td></tr>
@@ -556,6 +560,13 @@ docker build -t pgpeek .   <span class="tok-comment"># or the hand-written Docke
         <strong>RDS / Aurora IAM auth.</strong> Set <code>PGPEEK_DB_IAM_AUTH=true</code> and a region, drop the password from the DSN, and pgpeek mints a short-lived IAM token from the default AWS credential chain (env / web-identity / IRSA / instance role) before every new connection — no static DB password stored anywhere.
       </div>
     </div>
+
+    <div class="callout callout--success reveal">
+      <div class="callout__icon" aria-hidden="true">db</div>
+      <div class="callout__body">
+        <strong>Multiple clusters are bookmarkable.</strong> The UI writes the selected database into the URL as <code>?db=prod</code>, alongside table, tab, filter, sort, and pagination params. For Kubernetes, mount a ConfigMap at <code>/config/pgpeek/databases.json</code> and Secret files at <code>/secrets/*</code>; for Compose, mount local directories with <code>./pgpeek-config:/config/pgpeek:ro</code> and <code>./pgpeek-secrets:/secrets:ro</code>. These are examples only — no extra deploy files are required.
+      </div>
+    </div>
   </div>
 </section>
 
@@ -572,13 +583,14 @@ docker build -t pgpeek .   <span class="tok-comment"># or the hand-written Docke
       <table class="data-table">
         <thead><tr><th>Method &amp; path</th><th>Purpose</th></tr></thead>
         <tbody>
-          <tr><td class="td-path"><span class="method-badge method-post">POST</span> /api/query</td><td>Run a query → JSON <code>{columns, rows, …}</code>.</td></tr>
-          <tr><td class="td-path"><span class="method-badge method-post">POST</span> /api/export</td><td>Run a query → CSV download.</td></tr>
-          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/meta</td><td>Server limits the UI needs (<code>{rowCap}</code>).</td></tr>
-          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/tables</td><td>List browsable tables/views (+ row estimate).</td></tr>
-          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/tables/{schema}/{table}/columns</td><td>Column structure.</td></tr>
-          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/tables/{schema}/{table}/fks</td><td>Single-column foreign keys (for click-through).</td></tr>
-          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/tables/{schema}/{table}/data</td><td>Paged rows: <code>?limit=&amp;offset=&amp;search=&amp;sort=&amp;dir=&amp;f=col:op:val</code> (<code>&amp;format=csv</code>).</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/databases</td><td>List configured databases → <code>{defaultId, databases:[{id,name}]}</code>.</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-post">POST</span> /api/query?db=&lt;id&gt;</td><td>Run a query → JSON <code>{columns, rows, …}</code>.</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-post">POST</span> /api/export?db=&lt;id&gt;</td><td>Run a query → CSV download.</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/meta?db=&lt;id&gt;</td><td>Server limits the UI needs (<code>{rowCap}</code>).</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/tables?db=&lt;id&gt;</td><td>List browsable tables/views (+ row estimate).</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/tables/{schema}/{table}/columns?db=&lt;id&gt;</td><td>Column structure.</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/tables/{schema}/{table}/fks?db=&lt;id&gt;</td><td>Single-column foreign keys (for click-through).</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/tables/{schema}/{table}/data?db=&lt;id&gt;</td><td>Paged rows: <code>&amp;limit=&amp;offset=&amp;search=&amp;sort=&amp;dir=&amp;f=col:op:val</code> (<code>&amp;format=csv</code>).</td></tr>
           <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/queries</td><td>List saved/preset queries.</td></tr>
           <tr><td class="td-path"><span class="method-badge method-post">POST</span> /api/queries</td><td>Create a saved query.</td></tr>
           <tr><td class="td-path"><span class="method-badge method-put">PUT</span> /api/queries/{id}</td><td>Update a saved query.</td></tr>

@@ -99,9 +99,16 @@ function BodyRows({ rows, fkByCol, onNavigate }) {
 // ---- Sidebar ----
 function Sidebar({ tables, loaded, currentKey, onSelect }) {
   const [filter, setFilter] = useState("");
+  const listRef = useRef();
   const f = filter.toLowerCase();
   const items = [];
   let schema = null;
+
+  useEffect(() => {
+    const active = listRef.current && listRef.current.querySelector(".tbl.active");
+    if (active && active.scrollIntoView) active.scrollIntoView({ block: "nearest" });
+  }, [currentKey, filter]);
+
   for (const t of tables) {
     const label = tableKey(t);
     if (f && !label.toLowerCase().includes(f)) continue;
@@ -109,27 +116,46 @@ function Sidebar({ tables, loaded, currentKey, onSelect }) {
       schema = t.schema;
       items.push(html`<div class="schema" key=${"s:" + schema}>${schema}</div>`);
     }
-    const cls = "tbl" + (t.type === "view" ? " view" : "") + (label === currentKey ? " active" : "");
+    const active = label === currentKey;
+    const cls = "tbl" + (t.type === "view" ? " view" : "") + (active ? " active" : "");
     items.push(html`<button class=${cls} key=${label}
       title=${label + (t.estRows >= 0 ? " (~" + t.estRows + " rows)" : "")}
+      aria-current=${active ? "true" : undefined}
       onClick=${() => onSelect(t)}>${t.name}</button>`);
   }
   return html`
-    <aside class="sidebar">
+    <aside class="sidebar" aria-label="Database tables">
+      <div class="side-head"><span>Tables</span><span>${tables.length}</span></div>
+      <label class="sr-only" for="tbl-filter">Filter tables</label>
       <input id="tbl-filter" type="search" placeholder="Filter tables…" autocomplete="off"
         value=${filter} onInput=${(e) => setFilter(e.target.value)} />
-      <div id="tables">${items.length ? items : html`<div class="empty">${tables.length ? "No tables match." : (loaded ? "No tables." : "Loading tables…")}</div>`}</div>
+      <div id="tables" ref=${listRef}>${items.length ? items : html`<div class="empty">${tables.length ? "No tables match." : (loaded ? "No tables." : "Loading tables…")}</div>`}</div>
     </aside>`;
 }
 
 // ---- Tabs ----
 function Tabs({ tab, setTab, title }) {
-  const btn = (id, label) => html`<button id=${"tab-" + id} class=${tab === id ? "active" : ""} onClick=${() => setTab(id)}>${label}</button>`;
+  const btn = (id, label) => html`<button id=${"tab-" + id} role="tab" aria-selected=${tab === id ? "true" : "false"}
+    aria-controls=${"panel-" + id} class=${tab === id ? "active" : ""} onClick=${() => setTab(id)}>${label}</button>`;
   return html`
-    <div class="tabs">
+    <div class="tabs" role="tablist" aria-label="Table views">
       ${btn("data", "Data")} ${btn("structure", "Structure")} ${btn("sql", "SQL")}
       <span class="title" id="tab-title">${title}</span>
     </div>`;
+}
+
+function TableContext({ table }) {
+  if (!table) {
+    return html`<div class="context-bar empty-context" id="table-context" aria-live="polite">
+      <span class="context-kicker">No table selected</span>
+      <strong>Choose a table from the left to browse rows, structure, or SQL.</strong>
+    </div>`;
+  }
+  return html`<div class="context-bar" id="table-context" aria-live="polite">
+    <span class="context-kicker">Current ${table.type === "view" ? "view" : "table"}</span>
+    <strong>${table.schema}<span>.</span>${table.name}</strong>
+    ${table.estRows >= 0 ? html`<span class="context-meta">~${table.estRows} rows</span>` : html`<span class="context-meta">row count unavailable</span>`}
+  </div>`;
 }
 
 // ---- Data tab ----
@@ -241,7 +267,7 @@ function DataTab({ table, pageSize, initialFilters, onNavigate, setStatus }) {
       <button class="ghost" id="prev-btn" disabled=${offset === 0} onClick=${() => setOffset(Math.max(0, offset - pageSize))}>◀ Prev</button>
       <button class="ghost" id="next-btn" disabled=${rowCount < pageSize} onClick=${() => setOffset(offset + pageSize)}>Next ▶</button>
       <span class="page-info" id="page-info">${from}–${offset + rowCount}</span>
-      <a class="ghost btn" id="data-export-btn" role="button" href=${exportURL()} download=${table.name + ".csv"}>Export CSV</a>
+      <a class="action secondary" id="data-export-btn" role="button" href=${exportURL()} download=${table.name + ".csv"}>Export CSV</a>
     </div>
     <div class="results" id="data-results">${grid}</div>`;
 }
@@ -443,23 +469,25 @@ function App() {
   const title = current ? tableKey(current) : "Pick a table";
 
   return html`
+    <a class="skip-link" href="#main">Skip to data browser</a>
     <header><h1>pgpeek</h1><span class="badge">read-only</span><${ThemeSelect} /></header>
     <div class="body">
       <${Sidebar} tables=${tables} loaded=${tablesLoaded} currentKey=${current && tableKey(current)} onSelect=${(t) => open(t)} />
-      <main>
+      <main id="main">
         <${Tabs} tab=${tab} setTab=${setTab} title=${title} />
-        <section class="panel" id="panel-data" hidden=${tab !== "data"}>
+        <${TableContext} table=${current} />
+        <section class="panel" id="panel-data" role="tabpanel" aria-labelledby="tab-data" hidden=${tab !== "data"}>
           ${current
             ? html`<${DataTab} key=${navKey} table=${current} pageSize=${pageSize}
                 initialFilters=${pendingFilters} onNavigate=${onNavigate} setStatus=${setStatus} />`
             : html`<div class="results"><div class="empty">Select a table to browse its rows.</div></div>`}
         </section>
-        <section class="panel" id="panel-structure" hidden=${tab !== "structure"}>
+        <section class="panel" id="panel-structure" role="tabpanel" aria-labelledby="tab-structure" hidden=${tab !== "structure"}>
           ${current && tab === "structure"
             ? html`<${StructureTab} key=${"s" + navKey} table=${current} setStatus=${setStatus} />`
             : html`<div class="results"><div class="empty">Select a table to see its structure.</div></div>`}
         </section>
-        <section class="panel" id="panel-sql" hidden=${tab !== "sql"}>
+        <section class="panel" id="panel-sql" role="tabpanel" aria-labelledby="tab-sql" hidden=${tab !== "sql"}>
           <${SqlTab} active=${tab === "sql"} saved=${saved} reloadSaved=${reloadSaved} setStatus=${setStatus} />
         </section>
       </main>

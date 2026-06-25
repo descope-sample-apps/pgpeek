@@ -203,11 +203,15 @@ describe("sidebar and tabs", () => {
     const buttons = $("tables").querySelectorAll(".tbl");
     await click(buttons[0]);
     expect($("tab-title").textContent).toBe("public.users");
+    expect($("table-context").textContent).toContain("Current table");
+    expect($("table-context").textContent).toContain("public.users");
     expect($("tables").querySelector(".tbl.active").textContent).toBe("users");
+    expect($("tables").querySelector(".tbl.active").getAttribute("aria-current")).toBe("true");
     await click(buttons[2]);
     const active = $("tables").querySelectorAll(".tbl.active");
     expect(active).toHaveLength(1);
     expect(active[0].textContent).toBe("sessions");
+    expect($("table-context").textContent).toContain("auth.sessions");
   });
 
   it("reports table load errors", async () => {
@@ -231,6 +235,8 @@ describe("data tab", () => {
     expect($("data-results").textContent).toContain('{"a":1}');
     expect($("data-results").querySelector("td.null").textContent).toBe("NULL");
     expect($("data-export-btn").tagName).toBe("A");
+    expect($("data-export-btn").className).toContain("secondary");
+    expect($("data-export-btn").getAttribute("role")).toBe("button");
     expect($("data-export-btn").getAttribute("download")).toBe("users.csv");
   });
 

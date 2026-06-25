@@ -9,12 +9,14 @@ RUN go mod download
 COPY . .
 # Pure-Go build (modernc.org/sqlite + pgx) → static binary, no cgo.
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /pgpeek .
+RUN mkdir /data
 
 # --- runtime stage -------------------------------------------------------
 # distroless: no shell, minimal attack surface; nonroot user.
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:d093aa3e30dbadd3efe1310db061a14da60299baff8450a17fe0ccc514a16639
 WORKDIR /
 COPY --from=build /pgpeek /pgpeek
+COPY --from=build --chown=nonroot:nonroot /data /data
 
 ENV PGPEEK_LISTEN=:8080 \
     PGPEEK_STORE_PATH=/data/pgpeek.db

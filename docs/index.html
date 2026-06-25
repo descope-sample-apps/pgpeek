@@ -476,13 +476,22 @@
 
       <div class="tab-panels">
         <div class="tab-panel qs-block" role="tabpanel" id="panel-compose" aria-labelledby="tab-compose">
-          <p class="qs-block__lead">Start pgpeek from the repo root.</p>
+          <p class="qs-block__lead">Create a pgpeek-only compose file and start it.</p>
           <div class="code-wrap">
             <button class="copy-btn" type="button" aria-label="Copy">copy</button>
-            <pre><code>docker compose up
-open http://localhost:8080</code></pre>
+            <pre><code>cat &gt; compose.yml &lt;&lt;<span class="tok-string">'YAML'</span>
+services:
+  pgpeek:
+    image: <span class="tok-string">ghcr.io/descope-sample-apps/pgpeek:latest</span>
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    ports: ["8080:8080"]
+YAML
+
+<span class="tok-key">export</span> DATABASE_URL=<span class="tok-string">'postgres://descoperead:PASSWORD@host:5432/db?sslmode=require'</span>
+docker compose up</code></pre>
           </div>
-          <p class="kbd-hint">Stop with <code>docker compose down</code>.</p>
+          <p class="kbd-hint">Open <code>http://localhost:8080</code>. Stop with <code>docker compose down</code>.</p>
         </div>
 
         <div class="tab-panel qs-block" role="tabpanel" id="panel-source" aria-labelledby="tab-source">

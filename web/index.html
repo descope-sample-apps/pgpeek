@@ -4,6 +4,8 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>pgpeek — read-only SQL browser</title>
+<link rel="icon" href="data:," />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
 <style>
   :root {
     color-scheme: dark;
@@ -30,7 +32,6 @@
     --cm-keyword:#569cd6; --cm-string:#ce9178; --cm-number:#b5cea8;
   }
   [data-theme="light-plus"] {
-    color-scheme: light;
     --bg:#ffffff; --panel:#f3f3f3; --elev:#ffffff; --elev2:#f5f5f5; --border:#e5e5e5; --hover:#e8e8e8;
     --text:#1f1f1f; --muted:#6e6e6e; --linenum:#237893;
     --accent:#005fb8; --accent-hover:#0066bf; --on-accent:#ffffff;
@@ -73,7 +74,6 @@
     --cm-keyword:#859900; --cm-string:#2aa198; --cm-number:#d33682;
   }
   [data-theme="solarized-light"] {
-    color-scheme: light;
     --bg:#fdf6e3; --panel:#eee8d5; --elev:#eee8d5; --elev2:#f5efdc; --border:#ddd6c1; --hover:#e3ddc8;
     --text:#586e75; --muted:#93a1a1; --linenum:#93a1a1;
     --accent:#268bd2; --accent-hover:#1a6fad; --on-accent:#ffffff;
@@ -88,7 +88,6 @@
     --cm-keyword:#ff7b72; --cm-string:#a5d6ff; --cm-number:#79c0ff;
   }
   [data-theme="github-light"] {
-    color-scheme: light;
     --bg:#ffffff; --panel:#f6f8fa; --elev:#ffffff; --elev2:#f6f8fa; --border:#d0d7de; --hover:#eaeef2;
     --text:#1f2328; --muted:#57606a; --linenum:#8c959f;
     --accent:#0969da; --accent-hover:#0860c9; --on-accent:#ffffff;
@@ -103,7 +102,6 @@
     --cm-keyword:#cba6f7; --cm-string:#a6e3a1; --cm-number:#fab387;
   }
   [data-theme="catppuccin-latte"] {
-    color-scheme: light;
     --bg:#eff1f5; --panel:#e6e9ef; --elev:#ffffff; --elev2:#dce0e8; --border:#ccd0da; --hover:#dce0e8;
     --text:#4c4f69; --muted:#6c6f85; --linenum:#9ca0b0;
     --accent:#1e66f5; --accent-hover:#04a5e5; --on-accent:#ffffff;
@@ -168,8 +166,9 @@
   header { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); background: var(--panel); }
   header h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .3px; }
   header .badge { font-size: 11px; color: var(--ok); border: 1px solid var(--border); padding: 2px var(--space-2); border-radius: 999px; background: var(--elev2); }
-  header .theme-select { margin-left: auto; display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
-  header .theme-select select { padding: 4px 8px; }
+  header .db-select, header .theme-select { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+  header .theme-select { margin-left: auto; }
+  header .db-select select, header .theme-select select { padding: 4px 8px; }
   .body { flex: 1; display: flex; min-height: 0; }
 
   /* sidebar */
@@ -203,7 +202,7 @@
 
   select, button, input { font: inherit; color: var(--text); background: var(--elev); border: 1px solid var(--border); border-radius: var(--radius-1); padding: 6px 10px; }
   button, a[role="button"] { cursor: pointer; }
-  button.primary, .action.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
   button:disabled { opacity: .5; cursor: default; }
   button.ghost { background: transparent; transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease; }
   button.ghost:hover:not(:disabled), .tabs button:hover { background: var(--hover); color: var(--text); }
@@ -214,20 +213,20 @@
   .action.secondary:active { transform: translateY(1px); }
   :is(a, button, input, select, th[tabindex]):focus-visible { outline: 2px solid var(--accent-hover); outline-offset: 2px; }
 
-  .toolbar { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); background: var(--panel); flex-wrap: wrap; }
+  .toolbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--panel); flex-wrap: wrap; }
   .toolbar .hint, .toolbar .page-info { color: var(--muted); font-size: 12px; }
   .editor-wrap { border-bottom: 1px solid var(--border); }
-  .cm-editor { height: 180px; font-size: 13px; background: var(--panel); color: var(--text); }
-  .cm-editor.cm-focused { outline: none; }
-  .cm-editor .cm-scroller { font-family: monospace; line-height: 1.5; }
-  .cm-editor .cm-gutters { background: var(--elev2); color: var(--linenum); border-right: 1px solid var(--border); }
-  .cm-editor .cm-cursor { border-left-color: var(--text); }
-  .cm-editor .cm-activeLine { background: transparent; }
-  .cm-editor .cm-activeLineGutter { background: var(--hover); }
-  .cm-editor .cm-selectionBackground,
-  .cm-editor.cm-focused .cm-selectionBackground { background: var(--selection) !important; }
+  .CodeMirror { height: 180px; font-size: 13px; background: var(--panel); color: var(--text); }
+  .CodeMirror-gutters { background: var(--elev2); border-right: 1px solid var(--border); }
+  .CodeMirror-linenumber { color: var(--linenum); }
+  .CodeMirror-cursor { border-left: 1px solid var(--text); }
+  .CodeMirror-selected { background: var(--selection) !important; }
+  .cm-s-default .cm-keyword { color: var(--cm-keyword); }
+  .cm-s-default .cm-string { color: var(--cm-string); }
+  .cm-s-default .cm-number { color: var(--cm-number); }
+  .cm-s-default .cm-comment { color: var(--linenum); }
   textarea#sql { width: 100%; height: 180px; background: var(--panel); color: var(--text); border: 0; padding: 10px; font: 13px/1.5 monospace; resize: vertical; }
-  .results { flex: 1; overflow: auto; background: var(--bg); }
+  .results { flex: 1; overflow: auto; }
   table { border-collapse: collapse; width: 100%; font-size: 13px; }
   th, td { border: 1px solid var(--border); padding: 5px 9px; text-align: left; white-space: pre; max-width: 460px; overflow: hidden; text-overflow: ellipsis; }
   th { position: sticky; top: 0; background: var(--elev); z-index: 1; }
@@ -249,7 +248,11 @@
   .status.ok { color: var(--muted); }
   .status .warn { color: var(--warn); }
   @media (max-width: 760px) {
-    body { height: auto; min-height: 100vh; }
+    body { height: auto; min-height: 100vh; overflow-x: hidden; }
+    header { flex-wrap: wrap; }
+    header .db-select, header .theme-select { flex: 1 1 150px; min-width: 0; }
+    header .theme-select { margin-left: 0; }
+    header .db-select select, header .theme-select select { min-width: 0; width: 100%; }
     .body { flex-direction: column; }
     .sidebar { width: 100%; max-height: 36vh; border-right: 0; border-bottom: 1px solid var(--border); }
     .tabs, .toolbar, .context-bar { align-items: stretch; }
@@ -262,7 +265,8 @@
 <body>
 <div id="app"></div>
 
-<script type="module" src="/vendor/codemirror6.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js"></script>
 <script type="module" src="/app.js"></script>
 </body>
 </html>

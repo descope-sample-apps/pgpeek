@@ -5,15 +5,15 @@ import { dbUrl } from "./api.js";
 export function SqlTab({ active, saved, reloadSaved, dbId, setStatus }) {
   const wrapRef = useRef();
   const taRef = useRef();
-  const cmRef = useRef();
+  const editorRef = useRef();
   const [result, setResult] = useState(null);
   const [lastSQL, setLastSQL] = useState("");
   const [selected, setSelected] = useState("");
   const [running, setRunning] = useState(false);
   const runningRef = useRef(false);
 
-  const getSQL = () => (cmRef.current ? cmRef.current.getValue() : taRef.current.value).trim();
-  const setSQL = (v) => { if (cmRef.current) cmRef.current.setValue(v); else taRef.current.value = v; };
+  const getSQL = () => (editorRef.current ? editorRef.current.getValue() : taRef.current.value).trim();
+  const setSQL = (v) => { if (editorRef.current) editorRef.current.setValue(v); else taRef.current.value = v; };
 
   const run = useCallback(async () => {
     const sql = getSQL();
@@ -47,25 +47,22 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus }) {
 
   // Init CodeMirror once into a Preact-stable wrapper it fully owns.
   useEffect(() => {
+    if (window.cm6) {
+      editorRef.current = window.cm6.mount(wrapRef.current, "SELECT now();", run);
+      return;
+    }
     const ta = document.createElement("textarea");
     ta.id = "sql";
     ta.value = "SELECT now();";
     wrapRef.current.appendChild(ta);
     taRef.current = ta;
-    if (window.CodeMirror) {
-      cmRef.current = window.CodeMirror.fromTextArea(ta, {
-        mode: "text/x-pgsql", lineNumbers: true, lineWrapping: true,
-      });
-      cmRef.current.setOption("extraKeys", { "Cmd-Enter": run, "Ctrl-Enter": run });
-    } else {
-      ta.addEventListener("keydown", (e) => {
-        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); run(); }
-      });
-    }
+    ta.addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); run(); }
+    });
   }, []);
 
   // CodeMirror was created while hidden (zero size); refresh when shown.
-  useEffect(() => { if (active && cmRef.current) cmRef.current.refresh(); }, [active]);
+  useEffect(() => { if (active && editorRef.current) editorRef.current.refresh(); }, [active]);
 
   const exportCSV = async () => {
     const sql = lastSQL || getSQL();

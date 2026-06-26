@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // allow: SIZE_OK — characterization suite pins one frozen component tree end-to-end.
@@ -66,6 +67,10 @@ const SAMPLE_TABLES = [
   { schema: "public", name: "companies", type: "table", estRows: 3 },
 ];
 
+const INDEX_HTML = readFileSync("web/index.html", "utf8");
+const DESIGN_MD = readFileSync("DESIGN.md", "utf8");
+const ORIGINAL_SCROLL_INTO_VIEW = HTMLElement.prototype.scrollIntoView;
+
 beforeEach(() => {
   document.body.innerHTML = '<div id="app"></div>';
   routes = {
@@ -91,6 +96,11 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  if (ORIGINAL_SCROLL_INTO_VIEW) {
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: ORIGINAL_SCROLL_INTO_VIEW });
+  } else {
+    delete HTMLElement.prototype.scrollIntoView;
+  }
   delete window.cm6;
   delete globalThis.cm6;
 });
@@ -196,6 +206,8 @@ describe("sidebar and tabs", () => {
   });
 
   it("marks one active table and clears it when another table opens", async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
     setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
     setRoute("GET /api/tables/*/data", rowsResp(1));
     await loadApp();
@@ -203,11 +215,19 @@ describe("sidebar and tabs", () => {
     const buttons = $("tables").querySelectorAll(".tbl");
     await click(buttons[0]);
     expect($("tab-title").textContent).toBe("public.users");
+    expect($("table-context").textContent).toContain("Current table");
+    expect($("table-context").textContent).toContain("public.users");
     expect($("tables").querySelector(".tbl.active").textContent).toBe("users");
+    expect($("tables").querySelector(".tbl.active").getAttribute("aria-current")).toBe("true");
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+    await click(buttons[1]);
+    expect($("table-context").textContent).toContain("Current view");
+    expect($("table-context").textContent).toContain("row count unavailable");
     await click(buttons[2]);
     const active = $("tables").querySelectorAll(".tbl.active");
     expect(active).toHaveLength(1);
     expect(active[0].textContent).toBe("sessions");
+    expect($("table-context").textContent).toContain("auth.sessions");
   });
 
   it("reports table load errors", async () => {
@@ -231,6 +251,8 @@ describe("data tab", () => {
     expect($("data-results").textContent).toContain('{"a":1}');
     expect($("data-results").querySelector("td.null").textContent).toBe("NULL");
     expect($("data-export-btn").tagName).toBe("A");
+    expect($("data-export-btn").className).toContain("secondary");
+    expect($("data-export-btn").getAttribute("role")).toBe("button");
     expect($("data-export-btn").getAttribute("download")).toBe("users.csv");
   });
 
@@ -929,5 +951,17 @@ describe("theme switcher", () => {
     expect(sel.value).toBe("");
     await changeSelect(sel, "nord");
     expect(document.documentElement.getAttribute("data-theme")).toBe("nord");
+  });
+});
+
+describe("static design assets", () => {
+  it("keeps light themes aligned with native light controls", () => {
+    for (const theme of ["light-plus", "solarized-light", "github-light", "catppuccin-latte"]) {
+      expect(INDEX_HTML).toMatch(new RegExp(`\\[data-theme="${theme}"\\]\\s*{[^}]*color-scheme:\\s*light;`, "s"));
+    }
+  });
+
+  it("does not leave merge conflict markers in the design system", () => {
+    expect(DESIGN_MD).not.toMatch(/^(<<<<<<<|=======|>>>>>>>) /m);
   });
 });

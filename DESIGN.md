@@ -192,3 +192,25 @@ adds `.revealed` to transition to visible. Stagger: `.reveal-delay-1` through
 3. `--c-panel` — cards, tab panel body, selected tab
 4. `--c-panel-hi` — hover rows / highlighted surfaces
 5. Nav (sticky, `backdrop-filter: blur(16px)`, `--c-nav-bg`)
+
+---
+
+## 8. App Console Addendum
+
+The embedded `web/` app reuses the same dark developer-tool atmosphere, but its
+tokens live in `web/index.html` because the app ships as static embedded files
+without a build step.
+
+- Use `--bg`, `--panel`, `--elev`, `--elev2`, `--border`, `--hover`, `--text`,
+  `--muted`, `--accent`, `--accent-hover`, `--on-accent`, and semantic status
+  tokens for all console surfaces.
+- Current database/table context must be visible in the main pane, not only in a
+  scrollable sidebar selection.
+- Data-export actions use an accent-outline `.action.secondary` treatment for
+  readable contrast across themes.
+- Every interactive control needs hover, pressed, disabled, and visible
+  `:focus-visible` states.
+- Sidebar table selection uses `aria-current="true"` and must scroll into view
+  when changed.
+- Mobile layout stacks the sidebar above the main pane and must avoid horizontal
+  page overflow; result tables may scroll inside their own results container.

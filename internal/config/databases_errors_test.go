@@ -152,6 +152,46 @@ func TestAppendNumberedDatabaseEntries_returns_file_error_when_url_file_missing(
 	}
 }
 
+func TestLoadDatabasesRejectsMultipleMultiDatabaseSources(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(t *testing.T)
+	}{
+		{name: "file and list", setup: func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "databases.json")
+			if err := os.WriteFile(configPath, []byte(`{"databases":[]}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PGPEEK_DATABASES_FILE", configPath)
+			t.Setenv("PGPEEK_DATABASE_URLS", "postgres://u:p@h/db")
+		}},
+		{name: "list and numbered", setup: func(t *testing.T) {
+			t.Setenv("PGPEEK_DATABASE_URLS", "postgres://u:p@h/db")
+			t.Setenv("PGPEEK_DATABASE_URL_1", "postgres://u:p@h/other")
+		}},
+		{name: "file and numbered file", setup: func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "databases.json")
+			if err := os.WriteFile(configPath, []byte(`{"databases":[]}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PGPEEK_DATABASES_FILE", configPath)
+			t.Setenv("PGPEEK_DATABASE_URL_1_FILE", filepath.Join(t.TempDir(), "db-url"))
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearEnv(t)
+			tt.setup(t)
+
+			_, _, err := loadDatabases(false, "")
+
+			if err == nil || !strings.Contains(err.Error(), "configure only one multi-database source") {
+				t.Fatalf("loadDatabases error = %v", err)
+			}
+		})
+	}
+}
+
 func TestValidateDatabases_rejects_empty_or_incomplete_entries(t *testing.T) {
 	tests := []struct {
 		name string

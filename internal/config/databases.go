@@ -21,6 +21,9 @@ type DatabaseEntry struct {
 }
 
 func loadDatabases(globalIAMAuth bool, globalRegion string) ([]DatabaseEntry, string, error) {
+	if err := validateDatabaseSourceFamily(); err != nil {
+		return nil, "", err
+	}
 	entries := make([]DatabaseEntry, 0, 4)
 	fileDefault, err := appendDatabaseFileEntries(&entries, globalIAMAuth, globalRegion)
 	if err != nil {
@@ -47,6 +50,27 @@ func loadDatabases(globalIAMAuth bool, globalRegion string) ([]DatabaseEntry, st
 		defaultID = entries[0].ID
 	}
 	return entries, defaultID, nil
+}
+
+func validateDatabaseSourceFamily() error {
+	sources := 0
+	if os.Getenv("PGPEEK_DATABASES_FILE") != "" {
+		sources++
+	}
+	if strings.TrimSpace(os.Getenv("PGPEEK_DATABASE_URLS")) != "" {
+		sources++
+	}
+	for i := 1; i <= maxNumberedDatabases; i++ {
+		key := fmt.Sprintf("PGPEEK_DATABASE_URL_%d", i)
+		if os.Getenv(key) != "" || os.Getenv(key+"_FILE") != "" {
+			sources++
+			break
+		}
+	}
+	if sources > 1 {
+		return errors.New("configure only one multi-database source: PGPEEK_DATABASES_FILE, PGPEEK_DATABASE_URLS, or PGPEEK_DATABASE_URL_N")
+	}
+	return nil
 }
 
 func appendDatabaseFileEntries(entries *[]DatabaseEntry, globalIAMAuth bool, globalRegion string) (string, error) {

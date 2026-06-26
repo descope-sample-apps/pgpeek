@@ -216,8 +216,27 @@
         </div>
       </article>
 
-      <!-- Structure -->
       <article class="feature reveal">
+        <div class="feature__figure">
+          <figure class="frame">
+            <div class="frame__toolbar"><span class="frame__dots"><span class="frame__dot frame__dot--red"></span><span class="frame__dot frame__dot--yellow"></span><span class="frame__dot frame__dot--green"></span></span><span class="frame__url">?db=analytics&amp;schema=public&amp;table=users</span></div>
+            <img src="assets/img/multi-database.png" width="1440" height="900" loading="lazy" decoding="async"
+                 alt="pgpeek with the database selector set to Analytics cluster while browsing public.users, with the selected database encoded in the URL." />
+          </figure>
+        </div>
+        <div class="feature__text">
+          <span class="feature__num">03</span>
+          <h3 class="feature__title">Switch databases without losing the link</h3>
+          <ul class="feature__bullets">
+            <li>Pick from named databases or clusters in the header.</li>
+            <li>The selected database is encoded as <code>db=...</code> in the URL.</li>
+            <li>Table, tab, search, filter, sort, and pagination state remain bookmarkable.</li>
+          </ul>
+        </div>
+      </article>
+
+      <!-- Structure -->
+      <article class="feature feature--flip reveal">
         <div class="feature__figure">
           <figure class="frame">
             <div class="frame__toolbar"><span class="frame__dots"><span class="frame__dot frame__dot--red"></span><span class="frame__dot frame__dot--yellow"></span><span class="frame__dot frame__dot--green"></span></span><span class="frame__url">Structure</span></div>
@@ -226,7 +245,7 @@
           </figure>
         </div>
         <div class="feature__text">
-          <span class="feature__num">03</span>
+          <span class="feature__num">04</span>
           <h3 class="feature__title">Structure at a glance</h3>
           <ul class="feature__bullets">
             <li>Every column: name, type, nullable, default.</li>
@@ -237,7 +256,7 @@
       </article>
 
       <!-- SQL -->
-      <article class="feature feature--flip reveal">
+      <article class="feature reveal">
         <div class="feature__figure">
           <figure class="frame">
             <div class="frame__toolbar"><span class="frame__dots"><span class="frame__dot frame__dot--red"></span><span class="frame__dot frame__dot--yellow"></span><span class="frame__dot frame__dot--green"></span></span><span class="frame__url">SQL</span></div>
@@ -246,7 +265,7 @@
           </figure>
         </div>
         <div class="feature__text">
-          <span class="feature__num">04</span>
+          <span class="feature__num">05</span>
           <h3 class="feature__title">A SQL scratchpad with memory</h3>
           <ul class="feature__bullets">
             <li>CodeMirror editor (pgsql mode), gracefully degrades to a textarea.</li>

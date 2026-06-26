@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   flush, makeResp, TWO_DBS, NO_DBS,
-  makeInstallFetch, $, click, changeSelect, loadApp, callsTo, urlOf,
+  makeInstallFetch, $, click, changeSelect, loadApp, urlOf,
 } from "./test-helpers.js";
 
 let routes;

@@ -5,10 +5,11 @@
   "type": "module",
   "description": "Front-end tests for the pgpeek UI (web/app.js).",
   "scripts": {
+    "build": "npm run vendor",
     "test": "vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
-    "vendor": "esbuild web/vendor/src/codemirror6.entry.js --bundle --outfile=web/vendor/codemirror6.js --format=esm --minify --platform=browser --target=es2020"
+    "vendor": "esbuild web/vendor/src/codemirror6.entry.js --bundle --outfile=web/vendor/codemirror6.js --format=esm --minify --platform=browser --target=es2020 && esbuild web/vendor/src/preact-htm.entry.js --bundle --outfile=web/vendor/preact-htm.js --format=esm --minify --platform=browser --target=es2020"
   },
   "devDependencies": {
     "@codemirror/commands": "6.10.3",
@@ -21,6 +22,8 @@
     "codemirror": "6.0.2",
     "esbuild": "0.28.1",
     "jsdom": "^29.0.0",
+    "htm": "3.1.1",
+    "preact": "10.29.3",
     "vitest": "^4.0.0"
   },
   "constraints": {

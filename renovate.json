@@ -1,21 +1,14 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "local>descope-sample-apps/renovate-config"
-  ],
-  "postUpdateOptions": [
-    "gomodTidy",
-    "gomodUpdateImportPaths"
-  ],
+  "extends": ["local>descope-sample-apps/renovate-config"],
+  "postUpdateOptions": ["gomodTidy", "gomodUpdateImportPaths"],
   "constraints": {
     "go": "1.26"
   },
   "packageRules": [
     {
       "description": "Keep vitest and its lockstep-versioned plugins together; @vitest/* declare exact peer deps on vitest, so bumping them apart breaks lockfile resolution (ERESOLVE).",
-      "matchManagers": [
-        "npm"
-      ],
+      "matchManagers": ["npm"],
       "matchPackageNames": [
         "vitest",
         "@vitest/coverage-v8",
@@ -25,10 +18,8 @@
       "groupName": "vitest monorepo"
     },
     {
-      "description": "Keep CodeMirror 6 packages together; they share lockstep peer ranges and are bundled into web/vendor/codemirror6.js, which CI re-checks. Grouping makes one PR that the maintainer regenerates the bundle for with 'make web-vendor'.",
-      "matchManagers": [
-        "npm"
-      ],
+      "description": "Keep CodeMirror 6 packages together; they share lockstep peer ranges and are bundled into web/vendor/codemirror6.js during builds.",
+      "matchManagers": ["npm"],
       "matchPackageNames": [
         "codemirror",
         "@codemirror/state",

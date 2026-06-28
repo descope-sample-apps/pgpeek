@@ -13,6 +13,7 @@
 /node_modules/
 /coverage/
 /web/coverage/
+/web/vendor/*.js
 *.cov
 
 

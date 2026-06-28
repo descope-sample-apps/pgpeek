@@ -66,12 +66,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm run vendor
       - run: npx vitest run --coverage # thresholds enforce 100%
-      - name: verify vendored CodeMirror bundle is up to date
-        run: |
-          npm run vendor
-          git diff --exit-code web/vendor/codemirror6.js \
-            || { echo "::error::Vendored CodeMirror bundle is stale. Run 'make web-vendor' and commit web/vendor/codemirror6.js."; exit 1; }
 
   # Full image build via the SAME reusable workflow the real release uses, so
   # release breakage is caught here instead of after a tag. Split by event so

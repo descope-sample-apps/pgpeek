@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Front-end tests for the pgpeek UI (web/app.js).",
   "scripts": {
+    "build": "npm run vendor",
     "test": "vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",

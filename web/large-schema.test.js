@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import {
-  flush, makeResp, ONE_DB, makeInstallFetch, $, click, loadApp,
+  makeResp, ONE_DB, makeInstallFetch, $, click, loadApp,
 } from "./test-helpers.js";
 
 let routes;

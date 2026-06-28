@@ -13,7 +13,7 @@
 /node_modules/
 /coverage/
 /web/coverage/
-/web/vendor/codemirror6.js
+/web/vendor/*.js
 *.cov
 
 

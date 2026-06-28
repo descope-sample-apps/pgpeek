@@ -71,15 +71,23 @@ browser ── HTTP ──> pgpeek (Go, single static binary)
 
 ## Configuration (env vars)
 
-Everything is configured via the environment. Any value can also be supplied
-from a **mounted file** by setting `<VAR>_FILE` to a path (Docker secrets / k8s
-projected volumes); the file's trimmed contents become the value. This is wired
-for the secret-bearing `DATABASE_URL` (use `DATABASE_URL_FILE`).
+Everything is configured via the environment. Single-database deployments can
+keep using `DATABASE_URL`; multi-database deployments can use a URL list,
+numbered env vars, or a mounted JSON config file. Secret-bearing URLs can be
+supplied from mounted files so they do not live in manifests.
 
 | Variable                     | Default              | Notes                                                                 |
 | ---------------------------- | -------------------- | --------------------------------------------------------------------- |
-| `DATABASE_URL`               | _(required)_         | Postgres DSN. Use the read-only role. **Never logged.** Aurora: include `?sslmode=require`. |
+| `DATABASE_URL`               | single-DB required   | Postgres DSN for single-database installs. Use the read-only role. **Never logged.** Aurora: include `?sslmode=require`. |
 | `DATABASE_URL_FILE`          | —                    | Path to a file holding the DSN (mounted-secret alternative).          |
+| `PGPEEK_DATABASE_URLS`       | —                    | Comma- or semicolon-separated DSNs for multiple databases. Quoted CSV values are supported. |
+| `PGPEEK_DATABASE_IDS`        | `db1`, `db2`, …      | Optional comma/semicolon IDs matching `PGPEEK_DATABASE_URLS`; URL-safe (`A-Z`, `a-z`, `0-9`, `_`, `-`, `.`). |
+| `PGPEEK_DATABASE_NAMES`      | `Database N`         | Optional display names matching `PGPEEK_DATABASE_URLS`.               |
+| `PGPEEK_DATABASE_URL_1`      | —                    | Numbered DSN form. Continue with `_2`, `_3`, …; each also supports `_FILE`. |
+| `PGPEEK_DATABASE_ID_1`       | `db1`                | Optional ID for numbered database 1.                                  |
+| `PGPEEK_DATABASE_NAME_1`     | `Database 1`         | Optional display name for numbered database 1.                        |
+| `PGPEEK_DATABASES_FILE`      | —                    | Path to a mounted JSON config file with database entries.             |
+| `PGPEEK_DEFAULT_DATABASE`    | first configured DB  | Default database ID when the URL has no `db=` parameter.              |
 | `PGPEEK_LISTEN`              | `:8080`              | Listen address.                                                       |
 | `PGPEEK_ROW_CAP`             | `1000`               | Max rows returned/exported per query.                                 |
 | `PGPEEK_STATEMENT_TIMEOUT`   | `30s`                | Per-query DB statement timeout.                                       |
@@ -94,6 +102,79 @@ for the secret-bearing `DATABASE_URL` (use `DATABASE_URL_FILE`).
 | `PGPEEK_TLS_KEY_FILE`        | —                    | TLS private key path.                                                 |
 | `PGPEEK_DB_IAM_AUTH`         | `false`              | Use RDS/Aurora IAM auth instead of a password (see below).            |
 | `PGPEEK_AWS_REGION`          | `$AWS_REGION`        | AWS region for IAM token signing (required when IAM auth is on).      |
+
+### Multiple databases / clusters
+
+The UI shows a database selector. The selected ID is kept in the URL as
+`?db=<id>` alongside table, tab, filter, sort, and pagination state, so links are
+bookmarkable and shareable.
+
+Same-env list form:
+
+```bash
+export PGPEEK_DATABASE_URLS='postgres://reader:PASSWORD@prod:5432/app?sslmode=require;postgres://reader:PASSWORD@analytics:5432/warehouse?sslmode=require'
+export PGPEEK_DATABASE_IDS='prod;analytics'
+export PGPEEK_DATABASE_NAMES='Production;Analytics'
+export PGPEEK_DEFAULT_DATABASE=prod
+```
+
+Numbered env var form:
+
+```bash
+export PGPEEK_DATABASE_URL_1_FILE=/run/secrets/prod-url
+export PGPEEK_DATABASE_ID_1=prod
+export PGPEEK_DATABASE_NAME_1=Production
+export PGPEEK_DATABASE_URL_2_FILE=/run/secrets/analytics-url
+export PGPEEK_DATABASE_ID_2=analytics
+export PGPEEK_DATABASE_NAME_2=Analytics
+```
+
+Mounted config file form (`PGPEEK_DATABASES_FILE=/config/pgpeek/databases.json`):
+
+```json
+{
+  "default": "prod",
+  "databases": [
+    { "id": "prod", "name": "Production", "urlFile": "/secrets/prod-url" },
+    { "id": "analytics", "name": "Analytics", "urlFile": "/secrets/analytics-url" }
+  ]
+}
+```
+
+Kubernetes example (ConfigMap-mounted config + Secret-mounted DSNs; illustrative
+only, not an extra manifest to commit):
+
+```yaml
+env:
+  - name: PGPEEK_DATABASES_FILE
+    value: /config/pgpeek/databases.json
+volumeMounts:
+  - name: pgpeek-db-config
+    mountPath: /config/pgpeek
+    readOnly: true
+  - name: pgpeek-db-urls
+    mountPath: /secrets
+    readOnly: true
+volumes:
+  - name: pgpeek-db-config
+    configMap:
+      name: pgpeek-db-config
+  - name: pgpeek-db-urls
+    secret:
+      secretName: pgpeek-db-urls
+```
+
+Docker Compose example (volume-mounted JSON + secret files; illustrative only):
+
+```yaml
+services:
+  pgpeek:
+    environment:
+      PGPEEK_DATABASES_FILE: /config/pgpeek/databases.json
+    volumes:
+      - ./pgpeek-config:/config/pgpeek:ro
+      - ./pgpeek-secrets:/secrets:ro
+```
 
 ### RDS / Aurora IAM authentication
 
@@ -218,13 +299,14 @@ Two ways:
 
 | Method & path                                 | Purpose                                        |
 | --------------------------------------------- | ---------------------------------------------- |
-| `POST /api/query`                             | Run a query → JSON `{columns, rows, …}`.       |
-| `POST /api/export`                            | Run a query → CSV download.                    |
-| `GET /api/meta`                               | Server limits the UI needs (`{rowCap}`).       |
-| `GET /api/tables`                             | List browsable tables/views (+ row estimate).  |
-| `GET /api/tables/{schema}/{table}/columns`    | Column structure (name, type, nullable, default). |
-| `GET /api/tables/{schema}/{table}/fks`        | Single-column foreign keys (for click-through).   |
-| `GET /api/tables/{schema}/{table}/data`       | Paged rows; `?limit=&offset=&search=&sort=&dir=&f=col:op:val` (`&format=csv`). |
+| `GET /api/databases`                          | List configured databases → `{defaultId, databases:[{id,name}]}`. |
+| `POST /api/query?db=<id>`                     | Run a query → JSON `{columns, rows, …}`.       |
+| `POST /api/export?db=<id>`                    | Run a query → CSV download.                    |
+| `GET /api/meta?db=<id>`                       | Server limits the UI needs (`{rowCap}`).       |
+| `GET /api/tables?db=<id>`                     | List browsable tables/views (+ row estimate).  |
+| `GET /api/tables/{schema}/{table}/columns?db=<id>` | Column structure (name, type, nullable, default). |
+| `GET /api/tables/{schema}/{table}/fks?db=<id>` | Single-column foreign keys (for click-through).   |
+| `GET /api/tables/{schema}/{table}/data?db=<id>` | Paged rows; `&limit=&offset=&search=&sort=&dir=&f=col:op:val` (`&format=csv`). |
 | `GET /api/queries`                            | List saved/preset queries.                     |
 | `POST /api/queries`         | Create a saved query.                     |
 | `PUT /api/queries/{id}`     | Update a saved query.                     |

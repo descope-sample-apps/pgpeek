@@ -14,10 +14,12 @@ import (
 
 // Config is the fully-resolved application configuration.
 type Config struct {
-	Server    Server
-	DB        DB
-	StorePath string
-	RowCap    int
+	Server            Server
+	DB                DB
+	Databases         []DatabaseEntry
+	DefaultDatabaseID string
+	StorePath         string
+	RowCap            int
 }
 
 // Server holds HTTP server settings.
@@ -51,15 +53,13 @@ type DB struct {
 
 // Load reads and validates configuration from the environment.
 func Load() (*Config, error) {
-	dsn, err := envOrFile("DATABASE_URL")
+	stmtTimeout := envDur("PGPEEK_STATEMENT_TIMEOUT", 30*time.Second)
+	iamAuth := envBool("PGPEEK_DB_IAM_AUTH", false)
+	region := env("PGPEEK_AWS_REGION", os.Getenv("AWS_REGION"))
+	databases, defaultDatabaseID, err := loadDatabases(iamAuth, region)
 	if err != nil {
 		return nil, err
 	}
-	if dsn == "" {
-		return nil, errors.New("DATABASE_URL (or DATABASE_URL_FILE) is required")
-	}
-
-	stmtTimeout := envDur("PGPEEK_STATEMENT_TIMEOUT", 30*time.Second)
 
 	c := &Config{
 		Server: Server{
@@ -72,15 +72,20 @@ func Load() (*Config, error) {
 			TLSKeyFile:        os.Getenv("PGPEEK_TLS_KEY_FILE"),
 		},
 		DB: DB{
-			DSN:              dsn,
+			DSN:              "",
 			MaxConns:         int32(envInt("PGPEEK_MAX_CONNS", 8)),
 			StatementTimeout: stmtTimeout,
 			IdleTxTimeout:    envDur("PGPEEK_IDLE_TX_TIMEOUT", 30*time.Second),
-			IAMAuth:          envBool("PGPEEK_DB_IAM_AUTH", false),
-			Region:           env("PGPEEK_AWS_REGION", os.Getenv("AWS_REGION")),
+			IAMAuth:          iamAuth,
+			Region:           region,
 		},
-		StorePath: env("PGPEEK_STORE_PATH", "/data/pgpeek.db"),
-		RowCap:    envInt("PGPEEK_ROW_CAP", 1000),
+		Databases:         databases,
+		DefaultDatabaseID: defaultDatabaseID,
+		StorePath:         env("PGPEEK_STORE_PATH", "/data/pgpeek.db"),
+		RowCap:            envInt("PGPEEK_ROW_CAP", 1000),
+	}
+	if err := applyDefaultDatabase(c); err != nil {
+		return nil, err
 	}
 	if err := c.validate(); err != nil {
 		return nil, err
@@ -97,6 +102,9 @@ func (c *Config) validate() error {
 	}
 	if c.DB.IAMAuth && c.DB.Region == "" {
 		return errors.New("PGPEEK_DB_IAM_AUTH requires PGPEEK_AWS_REGION (or AWS_REGION)")
+	}
+	if err := validateDatabases(c.Databases); err != nil {
+		return err
 	}
 	if (c.Server.TLSCertFile == "") != (c.Server.TLSKeyFile == "") {
 		return errors.New("PGPEEK_TLS_CERT_FILE and PGPEEK_TLS_KEY_FILE must be set together")

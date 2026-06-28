@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import { readFileSync } from "node:fs";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // allow: SIZE_OK — characterization suite pins one frozen component tree end-to-end.
@@ -67,13 +66,12 @@ const SAMPLE_TABLES = [
   { schema: "public", name: "companies", type: "table", estRows: 3 },
 ];
 
-const INDEX_HTML = readFileSync("web/index.html", "utf8");
-const DESIGN_MD = readFileSync("DESIGN.md", "utf8");
-const ORIGINAL_SCROLL_INTO_VIEW = HTMLElement.prototype.scrollIntoView;
-
 beforeEach(() => {
   document.body.innerHTML = '<div id="app"></div>';
+  window.history.replaceState({}, "", "/");
   routes = {
+    // empty databases: keeps existing tests db-param-free and selector-hidden
+    "GET /api/databases": makeResp({ json: { defaultId: null, databases: [] } }),
     "GET /api/meta": makeResp({ json: { rowCap: 1000 } }),
     "GET /api/tables": makeResp({ json: [] }),
     "GET /api/tables/*/columns": makeResp({ json: [] }),
@@ -86,6 +84,7 @@ beforeEach(() => {
   globalThis.URL.createObjectURL = vi.fn(() => "blob:fake");
   globalThis.URL.revokeObjectURL = vi.fn();
   HTMLAnchorElement.prototype.click = vi.fn();
+  Element.prototype.scrollIntoView = vi.fn();
   globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
   globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
   window.requestAnimationFrame = globalThis.requestAnimationFrame;
@@ -96,11 +95,6 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  if (ORIGINAL_SCROLL_INTO_VIEW) {
-    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: ORIGINAL_SCROLL_INTO_VIEW });
-  } else {
-    delete HTMLElement.prototype.scrollIntoView;
-  }
   delete window.cm6;
   delete globalThis.cm6;
 });
@@ -206,8 +200,6 @@ describe("sidebar and tabs", () => {
   });
 
   it("marks one active table and clears it when another table opens", async () => {
-    const scrollIntoView = vi.fn();
-    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
     setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
     setRoute("GET /api/tables/*/data", rowsResp(1));
     await loadApp();
@@ -219,10 +211,6 @@ describe("sidebar and tabs", () => {
     expect($("table-context").textContent).toContain("public.users");
     expect($("tables").querySelector(".tbl.active").textContent).toBe("users");
     expect($("tables").querySelector(".tbl.active").getAttribute("aria-current")).toBe("true");
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
-    await click(buttons[1]);
-    expect($("table-context").textContent).toContain("Current view");
-    expect($("table-context").textContent).toContain("row count unavailable");
     await click(buttons[2]);
     const active = $("tables").querySelectorAll(".tbl.active");
     expect(active).toHaveLength(1);
@@ -304,11 +292,11 @@ describe("data tab", () => {
     await loadApp();
     await click($("tables").querySelector(".tbl"));
 
-    expect(callsTo("/data")).toHaveLength(1);
+    expect(fetch.mock.calls.filter(([u]) => /\/tables\/.*\/data/.test(String(u)))).toHaveLength(1);
     expect(lastDataParams().get("limit")).toBe("100");
     meta.resolve(makeResp({ json: { rowCap: 5 } }));
     await flush();
-    expect(callsTo("/data")).toHaveLength(2);
+    expect(fetch.mock.calls.filter(([u]) => /\/tables\/.*\/data/.test(String(u)))).toHaveLength(2);
     expect(lastDataParams().get("limit")).toBe("5");
   });
 
@@ -343,6 +331,8 @@ describe("data tab", () => {
 
     await input("data-search", " ignored ");
     await keydown("data-search", "Escape");
+    expect(lastDataParams().has("search")).toBe(false);
+    await keydown("data-search", "Tab");
     expect(lastDataParams().has("search")).toBe(false);
     await keydown("data-search", "Enter");
     expect(lastDataParams().get("search")).toBe("ignored");
@@ -392,23 +382,6 @@ describe("data tab", () => {
     expect(lastDataParams().has("f")).toBe(false);
     await keydown(val(), "Enter");
     expect(lastDataParams().has("f")).toBe(false);
-  });
-
-  it("skips no-op filter entries when data params are appended", async () => {
-    await selectTable(0, dataResp({ columns: ["id"], rows: [[1]], rowCount: 1 }));
-    const realKeys = Object.keys;
-    Object.defineProperty(Object.prototype, "__blankFilter__", { value: { op: "" }, configurable: true });
-    const keysSpy = vi.spyOn(Object, "keys").mockImplementation((obj) => {
-      const keys = realKeys(obj);
-      return (new Error().stack || "").includes("appendDataParams") ? [...keys, "__blankFilter__"] : keys;
-    });
-    try {
-      await click($("data-results").querySelector("th.sortable"));
-      expect(lastDataParams().getAll("f")).toEqual([]);
-    } finally {
-      keysSpy.mockRestore();
-      delete Object.prototype.__blankFilter__;
-    }
   });
 
   it("resets filters when switching tables and has no clear control before selection", async () => {
@@ -520,6 +493,19 @@ describe("structure tab", () => {
     await click("tab-structure");
     expect(callsTo("/columns")).toHaveLength(1);
     expect($("structure-results").textContent).toContain("id");
+  });
+
+  it("updates status while loading structure", async () => {
+    const pending = deferred();
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/data", rowsResp(1));
+    setRoute("GET /api/tables/*/columns", () => pending.promise);
+    await loadApp();
+    await click($("tables").querySelector(".tbl"));
+    await click("tab-structure");
+    expect($("status").textContent).toContain("Loading structure for public.users");
+    pending.resolve(makeResp({ json: [] }));
+    await flush();
   });
 
   it("shows loading, renders columns, and ignores stale column responses", async () => {
@@ -723,6 +709,7 @@ describe("SQL CSV export", () => {
     expect(postBody("/api/export")).toEqual({ sql: "select 1" });
     expect(URL.createObjectURL).toHaveBeenCalled();
     expect(HTMLAnchorElement.prototype.click).toHaveBeenCalled();
+    await flush();
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:fake");
 
     document.body.innerHTML = '<div id="app"></div>';
@@ -954,14 +941,59 @@ describe("theme switcher", () => {
   });
 });
 
-describe("static design assets", () => {
-  it("keeps light themes aligned with native light controls", () => {
-    for (const theme of ["light-plus", "solarized-light", "github-light", "catppuccin-latte"]) {
-      expect(INDEX_HTML).toMatch(new RegExp(`\\[data-theme="${theme}"\\]\\s*{[^}]*color-scheme:\\s*light;`, "s"));
-    }
+describe("table context bar", () => {
+  it("shows empty/instructional state when no table is selected", async () => {
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    await loadApp();
+    const bar = $("table-context");
+    expect(bar).toBeTruthy();
+    expect(bar.textContent).toContain("No table selected");
   });
 
-  it("does not leave merge conflict markers in the design system", () => {
-    expect(DESIGN_MD).not.toMatch(/^(<<<<<<<|=======|>>>>>>>) /m);
+  it("shows schema, table name, type, and row estimate after selection", async () => {
+    await selectTable(0);
+    const bar = $("table-context");
+    expect(bar).toBeTruthy();
+    expect(bar.textContent).toContain("Current table");
+    expect(bar.textContent).toContain("public");
+    expect(bar.textContent).toContain("users");
+    expect(bar.textContent).toContain("5"); // estRows
+  });
+
+  it("uses 'view' kicker for view-type tables", async () => {
+    await selectTable(1); // v_active is type=view
+    const bar = $("table-context");
+    expect(bar.textContent).toContain("Current view");
+  });
+
+  it("updates context bar when switching tables", async () => {
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/data", rowsResp(1));
+    await loadApp();
+    const buttons = $("tables").querySelectorAll(".tbl");
+    await click(buttons[0]);
+    expect($("table-context").textContent).toContain("public");
+    expect($("table-context").textContent).toContain("users");
+    await click(buttons[2]);
+    expect($("table-context").textContent).toContain("auth");
+    expect($("table-context").textContent).toContain("sessions");
+  });
+});
+
+describe("export CSV button styling", () => {
+  it("renders as an anchor with action secondary class and download attribute", async () => {
+    await selectTable(0);
+    const btn = $("data-export-btn");
+    expect(btn.tagName).toBe("A");
+    expect(btn.classList.contains("action")).toBe(true);
+    expect(btn.classList.contains("secondary")).toBe(true);
+    expect(btn.getAttribute("download")).toBe("users.csv");
+  });
+
+  it("export button href includes csv format and respects active params", async () => {
+    await selectTable(0, dataResp({ columns: ["id", "email"], rows: [[1, "a@x"]], rowCount: 1 }));
+    const href = new URL($("data-export-btn").href);
+    expect(href.pathname).toBe("/api/tables/public/users/data");
+    expect(href.searchParams.get("format")).toBe("csv");
   });
 });

@@ -14,6 +14,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,8 +31,36 @@ func clearAppEnv(t *testing.T) {
 		"PGPEEK_ROW_CAP", "PGPEEK_MAX_CONNS", "PGPEEK_STATEMENT_TIMEOUT",
 		"PGPEEK_DB_IAM_AUTH", "PGPEEK_AWS_REGION", "AWS_REGION",
 		"PGPEEK_TLS_CERT_FILE", "PGPEEK_TLS_KEY_FILE",
+		"PGPEEK_DATABASE_URLS", "PGPEEK_DATABASE_IDS", "PGPEEK_DATABASE_NAMES",
+		"PGPEEK_DATABASES_FILE", "PGPEEK_DEFAULT_DATABASE",
 	} {
 		t.Setenv(k, "")
+	}
+	for i := 1; i <= 64; i++ {
+		suffix := strconv.Itoa(i)
+		t.Setenv("PGPEEK_DATABASE_URL_"+suffix, "")
+		t.Setenv("PGPEEK_DATABASE_URL_"+suffix+"_FILE", "")
+		t.Setenv("PGPEEK_DATABASE_ID_"+suffix, "")
+		t.Setenv("PGPEEK_DATABASE_NAME_"+suffix, "")
+	}
+}
+
+func TestClearAppEnv_clearsMultiDatabaseVars(t *testing.T) {
+	// Given
+	t.Setenv("PGPEEK_DATABASE_URLS", "postgres://u:p@127.0.0.1:1/one")
+	t.Setenv("PGPEEK_DATABASE_IDS", "one")
+	t.Setenv("PGPEEK_DATABASE_URL_1", "postgres://u:p@127.0.0.1:1/two")
+	t.Setenv("PGPEEK_DATABASE_ID_1", "two")
+	t.Setenv("PGPEEK_DEFAULT_DATABASE", "one")
+
+	// When
+	clearAppEnv(t)
+
+	// Then
+	for _, key := range []string{"PGPEEK_DATABASE_URLS", "PGPEEK_DATABASE_IDS", "PGPEEK_DATABASE_URL_1", "PGPEEK_DATABASE_ID_1", "PGPEEK_DEFAULT_DATABASE"} {
+		if got := os.Getenv(key); got != "" {
+			t.Fatalf("%s=%q, want empty", key, got)
+		}
 	}
 }
 
@@ -109,6 +139,27 @@ func TestRun_DBConnectError(t *testing.T) {
 	t.Setenv("PGPEEK_STORE_PATH", filepath.Join(t.TempDir(), "s.db"))
 	if err := run(context.Background(), testLogger()); err == nil {
 		t.Fatal("expected db connect error")
+	}
+}
+
+func TestRun_MultiDatabaseConnectError(t *testing.T) {
+	clearAppEnv(t)
+	// Given: two configured database entries, second selected as default.
+	t.Setenv("PGPEEK_DATABASE_URLS", "postgres://u:p@127.0.0.1:1/one?connect_timeout=1&sslmode=disable,postgres://u:p@127.0.0.1:2/two?connect_timeout=1&sslmode=disable")
+	t.Setenv("PGPEEK_DATABASE_IDS", "one,two")
+	t.Setenv("PGPEEK_DATABASE_NAMES", "One,Two")
+	t.Setenv("PGPEEK_DEFAULT_DATABASE", "two")
+	t.Setenv("PGPEEK_STORE_PATH", filepath.Join(t.TempDir(), "s.db"))
+
+	// When
+	err := run(context.Background(), testLogger())
+
+	// Then
+	if err == nil {
+		t.Fatal("expected multi-database connect error")
+	}
+	if !strings.Contains(err.Error(), `database "one"`) {
+		t.Fatalf("error %q, want first database id", err)
 	}
 }
 

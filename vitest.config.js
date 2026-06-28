@@ -6,7 +6,7 @@ export default defineConfig({
     include: ["web/**/*.test.js"],
     coverage: {
       provider: "v8",
-      include: ["web/app.js"],
+      include: ["web/app.js", "web/api.js", "web/url-state.js", "web/theme.js", "web/sidebar.js", "web/data-tab.js", "web/structure-tab.js", "web/sql-tab.js"],
       reporter: ["text", "html"],
       thresholds: {
         lines: 100,

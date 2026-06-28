@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -18,8 +19,16 @@ func clearEnv(t *testing.T) {
 		"PGPEEK_MAX_CONNS", "PGPEEK_STATEMENT_TIMEOUT", "PGPEEK_IDLE_TX_TIMEOUT",
 		"PGPEEK_DB_IAM_AUTH", "PGPEEK_AWS_REGION", "AWS_REGION",
 		"PGPEEK_STORE_PATH", "PGPEEK_ROW_CAP",
+		"PGPEEK_DATABASE_URLS", "PGPEEK_DATABASE_IDS", "PGPEEK_DATABASE_NAMES",
+		"PGPEEK_DATABASES_FILE", "PGPEEK_DEFAULT_DATABASE",
 	} {
 		t.Setenv(k, "")
+	}
+	for i := 1; i <= maxNumberedDatabases; i++ {
+		t.Setenv("PGPEEK_DATABASE_URL_"+strconv.Itoa(i), "")
+		t.Setenv("PGPEEK_DATABASE_URL_"+strconv.Itoa(i)+"_FILE", "")
+		t.Setenv("PGPEEK_DATABASE_ID_"+strconv.Itoa(i), "")
+		t.Setenv("PGPEEK_DATABASE_NAME_"+strconv.Itoa(i), "")
 	}
 }
 
@@ -52,6 +61,12 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if c.Server.TLSEnabled() {
 		t.Error("TLS should be disabled by default")
+	}
+	if c.DefaultDatabaseID != "default" || len(c.Databases) != 1 {
+		t.Fatalf("default database registry = %q/%d", c.DefaultDatabaseID, len(c.Databases))
+	}
+	if c.Databases[0].ID != "default" || c.Databases[0].Name != "Default" || c.Databases[0].DSN != c.DB.DSN {
+		t.Errorf("default database entry = %+v", c.Databases[0])
 	}
 }
 

@@ -6,9 +6,12 @@ RUN apk add --no-cache nodejs npm
 # Cache deps first.
 COPY go.mod go.sum ./
 RUN go mod download
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY web/vendor/src ./web/vendor/src
+RUN npm run vendor
 
 COPY . .
-RUN npm ci --ignore-scripts && npm run vendor
 # Pure-Go build (modernc.org/sqlite + pgx) → static binary, no cgo.
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /pgpeek .
 RUN mkdir /data

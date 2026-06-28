@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.4.0...v0.5.0) (2026-06-28)
+
+
+### Features
+
+* support multiple databases ([#44](https://github.com/descope-sample-apps/pgpeek/issues/44)) ([17433e8](https://github.com/descope-sample-apps/pgpeek/commit/17433e8f0992d7025837ac5c93eec12c168343fb))
+
+
+### Bug Fixes
+
+* **web:** contain large schema overflow ([#47](https://github.com/descope-sample-apps/pgpeek/issues/47)) ([02a28a6](https://github.com/descope-sample-apps/pgpeek/commit/02a28a63b60701d1b895ff916534069523111ae1))
+* **web:** remove CodeMirror 5 stylesheet ([#48](https://github.com/descope-sample-apps/pgpeek/issues/48)) ([e630a12](https://github.com/descope-sample-apps/pgpeek/commit/e630a1224bbc08324867f0bf5c2c6cc7558b3d26))
+
 ## [0.4.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.3.3...v0.4.0) (2026-06-24)
 
 

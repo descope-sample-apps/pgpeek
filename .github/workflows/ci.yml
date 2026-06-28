@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -56,8 +57,159 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
 
+  renovate-codemirror-vendor:
+    name: prepare CodeMirror vendor bundle
+    if: >-
+      ${{
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.user.login == 'renovate[bot]' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        startsWith(github.event.pull_request.head.ref, 'renovate/')
+      }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      eligible: ${{ steps.eligible.outputs.eligible }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24
+          cache: npm
+      - name: verify this is only a CodeMirror update
+        id: eligible
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "${BASE_SHA}"
+          node <<'NODE'
+          import { execFileSync } from "node:child_process";
+          import { readFileSync, appendFileSync } from "node:fs";
+
+          const allowedFiles = new Set(["package.json", "package-lock.json", "web/vendor/codemirror6.js"]);
+          const allowedPackages = new Set([
+            "codemirror",
+            "@codemirror/state",
+            "@codemirror/view",
+            "@codemirror/commands",
+            "@codemirror/language",
+            "@codemirror/lang-sql",
+            "@lezer/highlight",
+          ]);
+          const sections = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"];
+          const baseRef = process.env.BASE_SHA;
+          const output = process.env.GITHUB_OUTPUT;
+
+          const changedFiles = execFileSync("git", ["diff", "--name-only", `${baseRef}...HEAD`], { encoding: "utf8" })
+            .trim()
+            .split("\n")
+            .filter(Boolean);
+          const badFiles = changedFiles.filter((file) => !allowedFiles.has(file));
+
+          const basePackage = JSON.parse(execFileSync("git", ["show", `${baseRef}:package.json`], { encoding: "utf8" }));
+          const headPackage = JSON.parse(readFileSync("package.json", "utf8"));
+          const changedPackages = new Set();
+          for (const section of sections) {
+            const names = new Set([...Object.keys(basePackage[section] ?? {}), ...Object.keys(headPackage[section] ?? {})]);
+            for (const name of names) {
+              if ((basePackage[section] ?? {})[name] !== (headPackage[section] ?? {})[name]) {
+                changedPackages.add(name);
+              }
+            }
+          }
+          const badPackages = [...changedPackages].filter((name) => !allowedPackages.has(name));
+          const baseWithoutCodeMirror = JSON.parse(JSON.stringify(basePackage));
+          const headWithoutCodeMirror = JSON.parse(JSON.stringify(headPackage));
+          for (const section of sections) {
+            for (const name of allowedPackages) {
+              delete baseWithoutCodeMirror[section]?.[name];
+              delete headWithoutCodeMirror[section]?.[name];
+            }
+          }
+          const packageJsonOnlyChangesCodeMirror = JSON.stringify(baseWithoutCodeMirror) === JSON.stringify(headWithoutCodeMirror);
+          const eligible = badFiles.length === 0 && badPackages.length === 0 && packageJsonOnlyChangesCodeMirror && changedPackages.size > 0;
+          if (!eligible) {
+            console.log(
+              `Skipping vendor prepare. badFiles=${badFiles.join(",") || "-"} badPackages=${badPackages.join(",") || "-"} packageJsonOnlyChangesCodeMirror=${packageJsonOnlyChangesCodeMirror}`,
+            );
+          }
+          appendFileSync(output, `eligible=${eligible}\n`);
+          NODE
+      - name: regenerate vendored CodeMirror bundle
+        if: steps.eligible.outputs.eligible == 'true'
+        run: npm ci --ignore-scripts && npm run vendor
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: steps.eligible.outputs.eligible == 'true'
+        with:
+          name: codemirror-vendor
+          path: web/vendor/codemirror6.js
+
+  renovate-codemirror-vendor-commit:
+    name: commit CodeMirror vendor bundle
+    needs: renovate-codemirror-vendor
+    if: needs.renovate-codemirror-vendor.outputs.eligible == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    outputs:
+      committed: ${{ steps.commit.outputs.committed }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: codemirror-vendor
+          path: codemirror-vendor
+      - name: commit regenerated bundle
+        id: commit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ ! "$HEAD_REF" =~ ^renovate/[A-Za-z0-9._/-]+$ ]]; then
+            echo "unexpected Renovate branch ref: $HEAD_REF"
+            exit 1
+          fi
+          remote_sha="$(git ls-remote --heads origin "$HEAD_REF" | cut -f1)"
+          if [[ "$remote_sha" != "$HEAD_SHA" ]]; then
+            echo "committed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cp codemirror-vendor/codemirror6.js web/vendor/codemirror6.js
+          if git diff --quiet -- web/vendor/codemirror6.js; then
+            echo "committed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/vendor/codemirror6.js
+          git commit -m "chore: regenerate CodeMirror bundle"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${HEAD_REF}"
+          gh workflow run ci.yml --ref "$HEAD_REF"
+          echo "committed=true" >> "$GITHUB_OUTPUT"
+
   web:
     name: web (vitest 100%)
+    needs: [renovate-codemirror-vendor, renovate-codemirror-vendor-commit]
+    if: >-
+      ${{
+        always() &&
+        needs.renovate-codemirror-vendor.result != 'failure' &&
+        needs.renovate-codemirror-vendor.result != 'cancelled' &&
+        needs.renovate-codemirror-vendor-commit.result != 'failure' &&
+        needs.renovate-codemirror-vendor-commit.result != 'cancelled' &&
+        needs.renovate-codemirror-vendor-commit.outputs.committed != 'true'
+      }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7

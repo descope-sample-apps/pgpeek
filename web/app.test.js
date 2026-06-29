@@ -904,6 +904,8 @@ describe("CodeMirror 6 mode", () => {
     // Qualified entries: schema.table → column names
     expect(config.schema["public.users"]).toContain("id");
     expect(config.schema["public.users"]).toContain("email");
+    expect(config.columnsByRelation["public.users"]).toContain("id");
+    expect(config.columnsByRelation.users).toContain("email");
     expect(config.defaultSchema).toBe("public");
   });
 
@@ -940,6 +942,23 @@ describe("CodeMirror 6 mode", () => {
 
     const config = editor.setSQLConfig.mock.calls[editor.setSQLConfig.mock.calls.length - 1][0];
     expect(config.defaultSchema).toBe("auth");
+  });
+
+  it("does not add bare column completions for duplicate table names", async () => {
+    const { editor } = installCM6();
+    setRoute("GET /api/tables", makeResp({ json: [
+      { schema: "public", name: "users", type: "table", estRows: 1 },
+      { schema: "auth", name: "users", type: "table", estRows: 1 },
+    ] }));
+    setRoute("GET /api/tables/*/columns", makeResp({ json: [{ name: "id" }] }));
+    await loadApp();
+    await click("tab-sql");
+    await flush();
+
+    const config = editor.setSQLConfig.mock.calls[editor.setSQLConfig.mock.calls.length - 1][0];
+    expect(config.columnsByRelation["public.users"]).toContain("id");
+    expect(config.columnsByRelation["auth.users"]).toContain("id");
+    expect(config.columnsByRelation.users).toBeUndefined();
   });
 
   it("discards stale column fetches when db switches during in-flight requests", async () => {

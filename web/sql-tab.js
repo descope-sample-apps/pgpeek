@@ -77,11 +77,14 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables }) 
     let live = true;
     // Build schema → table-names entries up front (sync).
     const schema = {};
+    const tableNameCounts = {};
     for (const tbl of tables) {
       if (!schema[tbl.schema]) schema[tbl.schema] = [];
       schema[tbl.schema].push(tbl.name);
+      tableNameCounts[tbl.name] = (tableNameCounts[tbl.name] || 0) + 1;
     }
-    const baseConfig = { schema, defaultSchema: schema.public ? "public" : tables[0].schema };
+    const columnsByRelation = {};
+    const baseConfig = { schema, columnsByRelation, defaultSchema: schema.public ? "public" : tables[0].schema };
     editorRef.current.setSQLConfig(baseConfig);
     // Fetch columns async; populate qualified-table → column-names entries.
     (async () => {
@@ -89,7 +92,11 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables }) 
         try {
           const cols = await getJSON(tablePath(tbl) + "/columns", dbId);
           if (!live) return;
-          schema[tbl.schema + "." + tbl.name] = cols.map((c) => c.name);
+          const names = cols.map((c) => c.name);
+          const qualified = tbl.schema + "." + tbl.name;
+          schema[qualified] = names;
+          columnsByRelation[qualified] = names;
+          if (tableNameCounts[tbl.name] === 1) columnsByRelation[tbl.name] = names;
         } catch { /* partial autocomplete ok */ }
       }));
       if (!live) return;

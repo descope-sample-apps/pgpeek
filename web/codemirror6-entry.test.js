@@ -6,7 +6,7 @@ import { columnCompletionSource } from "./vendor/src/codemirror6.entry.js";
 
 function labels(raw, columnsByRelation = { access_key_roles: ["id", "role_name"] }) {
   const pos = raw.indexOf("|");
-  const doc = raw.replace("|", "");
+  const doc = raw.slice(0, pos) + raw.slice(pos + 1);
   const state = EditorState.create({ doc });
   const result = columnCompletionSource(columnsByRelation)(new CompletionContext(state, pos, true));
   return result ? result.options.map((o) => o.label) : [];

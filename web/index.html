@@ -229,6 +229,12 @@
   .cm-editor .cm-activeLineGutter { background: var(--hover); }
   .cm-editor .cm-selectionBackground,
   .cm-editor.cm-focused .cm-selectionBackground { background: var(--selection) !important; }
+  .cm-tooltip.cm-tooltip-autocomplete { background: var(--elev); color: var(--text); border: 1px solid var(--border); box-shadow: 0 12px 32px rgb(0 0 0 / .35); }
+  .cm-tooltip-autocomplete > ul { font-family: monospace; }
+  .cm-tooltip-autocomplete > ul > li { color: var(--text); }
+  .cm-tooltip-autocomplete > ul > li[aria-selected] { background: var(--accent); color: var(--on-accent); }
+  .cm-tooltip-autocomplete .cm-completionDetail { color: var(--muted); }
+  .cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionDetail { color: var(--on-accent); opacity: .85; }
   textarea#sql { width: 100%; height: 180px; background: var(--panel); color: var(--text); border: 0; padding: 10px; font: 13px/1.5 monospace; resize: vertical; }
   .results { flex: 1; overflow: auto; }
   table { border-collapse: collapse; width: 100%; font-size: 13px; }

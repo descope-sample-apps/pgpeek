@@ -848,6 +848,7 @@ describe("CodeMirror 6 mode", () => {
       getValue: vi.fn(() => value),
       setValue: vi.fn((v) => { value = v; }),
       refresh: vi.fn(),
+      setSQLConfig: vi.fn(),
     };
     const mount = vi.fn(() => editor);
     window.cm6 = { mount };
@@ -875,6 +876,91 @@ describe("CodeMirror 6 mode", () => {
 
     await changeSelect($("presets"), "9");
     expect(editor.setValue).toHaveBeenCalledWith("select picked");
+  });
+
+  it("fetches columns and configures autocomplete schema when tables load", async () => {
+    const { editor } = installCM6();
+    const cols = deferred();
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/columns", () => cols.promise);
+    await loadApp();
+    await click("tab-sql");
+
+    expect(editor.setSQLConfig).toHaveBeenCalled();
+    let config = editor.setSQLConfig.mock.calls[editor.setSQLConfig.mock.calls.length - 1][0];
+    expect(config.schema.public).toContain("users");
+    expect(config.schema.auth).toContain("sessions");
+    expect(config.schema["public.users"]).toBeUndefined();
+
+    cols.resolve(makeResp({
+      json: [{ name: "id", type: "int", nullable: false, default: null }, { name: "email", type: "text", nullable: true, default: null }],
+    }));
+    await flush();
+
+    config = editor.setSQLConfig.mock.calls[editor.setSQLConfig.mock.calls.length - 1][0];
+    // Schema groups: public → [users, v_active, companies], auth → [sessions]
+    expect(config.schema.public).toContain("users");
+    expect(config.schema.auth).toContain("sessions");
+    // Qualified entries: schema.table → column names
+    expect(config.schema["public.users"]).toContain("id");
+    expect(config.schema["public.users"]).toContain("email");
+    expect(config.defaultSchema).toBe("public");
+  });
+
+  it("textarea mode does not fetch columns for autocomplete", async () => {
+    // window.cm6 is absent (deleted in beforeEach) — textarea path taken.
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    await loadApp();
+    await click("tab-sql");
+    // structure tab not opened → zero /columns calls expected
+    expect(callsTo("/columns")).toHaveLength(0);
+  });
+
+  it("swallows column fetch errors and still calls setSQLConfig with schema groups", async () => {
+    const { editor } = installCM6();
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/columns", new Error("columns down"));
+    await loadApp();
+    await click("tab-sql");
+    await flush();
+
+    expect(editor.setSQLConfig).toHaveBeenCalled();
+    const config = editor.setSQLConfig.mock.calls[editor.setSQLConfig.mock.calls.length - 1][0];
+    expect(config.schema.public).toContain("users");       // schema group built sync
+    expect(config.schema["public.users"]).toBeUndefined(); // no column data (fetch failed)
+  });
+
+  it("uses the first schema as autocomplete default when public is absent", async () => {
+    const { editor } = installCM6();
+    setRoute("GET /api/tables", makeResp({ json: [{ schema: "auth", name: "sessions", type: "table", estRows: 1 }] }));
+    setRoute("GET /api/tables/*/columns", makeResp({ json: [{ name: "sid" }] }));
+    await loadApp();
+    await click("tab-sql");
+    await flush();
+
+    const config = editor.setSQLConfig.mock.calls[editor.setSQLConfig.mock.calls.length - 1][0];
+    expect(config.defaultSchema).toBe("auth");
+  });
+
+  it("discards stale column fetches when db switches during in-flight requests", async () => {
+    const { editor } = installCM6();
+    const cols = deferred();
+    setRoute("GET /api/databases", makeResp({ json: { defaultId: "db1", databases: [{ id: "db1", name: "A" }, { id: "db2", name: "B" }] } }));
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/columns", () => cols.promise);
+    await loadApp();
+    await click("tab-sql");
+    editor.setSQLConfig.mockClear();
+
+    // Switch db while column fetches are in-flight — cleanup fires → live = false.
+    setRoute("GET /api/tables", makeResp({ json: [] }));
+    await changeSelect($("database-select"), "db2");
+
+    // Resolve stale fetches; !live guards discard them.
+    cols.resolve(makeResp({ json: [] }));
+    await flush();
+
+    expect(editor.setSQLConfig).not.toHaveBeenCalled();
   });
 });
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.5.0...v0.6.0) (2026-06-29)
+
+
+### Features
+
+* **web:** add SQL autocomplete ([#51](https://github.com/descope-sample-apps/pgpeek/issues/51)) ([553b78c](https://github.com/descope-sample-apps/pgpeek/commit/553b78cd7bf7e2d4914a6a1b338ea5a68bbfb346))
+
 ## [0.5.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.4.0...v0.5.0) (2026-06-28)
 
 

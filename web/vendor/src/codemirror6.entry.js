@@ -13,7 +13,7 @@
 // lets it degrade to a plain <textarea> when this bundle is absent.
 import { EditorView, keymap } from "@codemirror/view";
 import { basicSetup } from "codemirror";
-import { Prec } from "@codemirror/state";
+import { Prec, Compartment } from "@codemirror/state";
 import { sql, PostgreSQL } from "@codemirror/lang-sql";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
@@ -35,12 +35,13 @@ const highlight = Prec.highest(
 // mount(parent, doc, onRun) builds an editor inside `parent` and returns the
 // tiny imperative surface web/app.js relies on (getValue / setValue / refresh).
 function mount(parent, doc, onRun) {
+  const sqlLang = new Compartment();
   const view = new EditorView({
     doc,
     parent,
     extensions: [
       basicSetup,
-      sql({ dialect: PostgreSQL }),
+      sqlLang.of(sql({ dialect: PostgreSQL })),
       EditorView.lineWrapping,
       highlight,
       // Prec.highest so Mod-Enter beats basicSetup's defaultKeymap, which
@@ -53,9 +54,10 @@ function mount(parent, doc, onRun) {
   return {
     getValue: () => view.state.doc.toString(),
     setValue: (v) => view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: v } }),
-    // CM6 measures on layout, but an editor created while its tab is hidden
-    // (display:none → zero size) needs a re-measure when first shown.
     refresh: () => view.requestMeasure(),
+    setSQLConfig: (config) => view.dispatch({
+      effects: sqlLang.reconfigure(sql({ dialect: PostgreSQL, ...config })),
+    }),
   };
 }
 

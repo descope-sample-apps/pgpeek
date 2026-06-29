@@ -25,7 +25,8 @@ everywhere. Read-only by design: no row editing, schema management, or migration
   **click-through links** that jump to the referenced row. CSV export respects
   the active search/filters/sort.
 - **Structure** tab — column name, type, nullable, default.
-- **SQL** tab — CodeMirror editor, saved/preset queries, CSV export.
+- **SQL** tab — CodeMirror editor with table/field autocomplete, saved/preset
+  queries, CSV export.
 
 Filtering is safe by construction: column names are validated against the
 relation's real columns and emitted via `pgx.Identifier`, operators come from a

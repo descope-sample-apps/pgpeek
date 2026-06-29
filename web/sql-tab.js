@@ -1,8 +1,8 @@
 // SqlTab — CodeMirror SQL editor with run, export, and saved-query CRUD.
 import { html, useState, useEffect, useRef, useCallback } from "./vendor/preact-htm.js";
-import { dbUrl } from "./api.js";
+import { dbUrl, getJSON, tablePath } from "./api.js";
 
-export function SqlTab({ active, saved, reloadSaved, dbId, setStatus }) {
+export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables }) {
   const wrapRef = useRef();
   const taRef = useRef();
   const editorRef = useRef();
@@ -63,6 +63,47 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus }) {
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); runRef.current(); }
     });
   }, []);
+
+  // CM6 autocomplete: fetch columns for each table and wire up schema config.
+  // Textarea mode skips this entirely (no window.cm6 → no column fetches).
+  useEffect(() => {
+    if (!active) return;
+    if (!window.cm6) return;
+    if (!editorRef.current?.setSQLConfig) return;
+    if (!tables || tables.length === 0) {
+      editorRef.current.setSQLConfig({ schema: {} });
+      return;
+    }
+    let live = true;
+    // Build schema → table-names entries up front (sync).
+    const schema = {};
+    const tableNameCounts = {};
+    for (const tbl of tables) {
+      if (!schema[tbl.schema]) schema[tbl.schema] = [];
+      schema[tbl.schema].push(tbl.name);
+      tableNameCounts[tbl.name] = (tableNameCounts[tbl.name] || 0) + 1;
+    }
+    const columnsByRelation = {};
+    const baseConfig = { schema, columnsByRelation, defaultSchema: schema.public ? "public" : tables[0].schema };
+    editorRef.current.setSQLConfig(baseConfig);
+    // Fetch columns async; populate qualified-table → column-names entries.
+    (async () => {
+      await Promise.all(tables.map(async (tbl) => {
+        try {
+          const cols = await getJSON(tablePath(tbl) + "/columns", dbId);
+          if (!live) return;
+          const names = cols.map((c) => c.name);
+          const qualified = tbl.schema + "." + tbl.name;
+          schema[qualified] = names;
+          columnsByRelation[qualified] = names;
+          if (tableNameCounts[tbl.name] === 1) columnsByRelation[tbl.name] = names;
+        } catch { /* partial autocomplete ok */ }
+      }));
+      if (!live) return;
+      editorRef.current?.setSQLConfig(baseConfig);
+    })();
+    return () => { live = false; };
+  }, [active, tables, dbId]);
 
   // CodeMirror was created while hidden (zero size); refresh when shown.
   useEffect(() => { if (active && editorRef.current) editorRef.current.refresh(); }, [active]);

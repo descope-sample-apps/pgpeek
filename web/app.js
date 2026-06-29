@@ -250,7 +250,7 @@ function App() {
         </section>
         <section class="panel" id="panel-sql" role="tabpanel" aria-labelledby="tab-sql" hidden=${tab !== "sql"}>
           <${SqlTab} active=${tab === "sql"} saved=${saved} reloadSaved=${reloadSaved}
-            dbId=${currentDb} setStatus=${setStatus} />
+            dbId=${currentDb} setStatus=${setStatus} tables=${tables} />
         </section>
       </main>
     </div>

@@ -62,7 +62,7 @@ web-vendor: ## Regenerate the vendored CodeMirror 6 bundle (esbuild)
 
 .PHONY: build
 build: web-vendor ## Build the static binary
-	CGO_ENABLED=0 $(GO) build -trimpath -ldflags="-s -w" -o pgpeek .
+	CGO_ENABLED=0 GOFIPS140=v1.0.0 GODEBUG=fips140=on $(GO) build -trimpath -ldflags="-s -w" -o pgpeek .
 
 .PHONY: image
 image: ## Build a snapshot image via goreleaser+ko

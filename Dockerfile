@@ -28,7 +28,8 @@ COPY --from=build --chown=nonroot:nonroot /src/data.keep /data/.keep
 
 ENV PGPEEK_LISTEN=:8080 \
     PGPEEK_STORE_PATH=/data/pgpeek.db \
-    GODEBUG=fips140=on
+    GODEBUG=fips140=on \
+    GOFIPS140=v1.0.0
 EXPOSE 8080
 USER nonroot:nonroot
 ENTRYPOINT ["/pgpeek"]

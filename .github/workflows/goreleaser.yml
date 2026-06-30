@@ -115,3 +115,5 @@ jobs:
           # publish:true -> push to GHCR; publish:false (PRs) -> push to the
           # throwaway local registry service so nothing lands in GHCR.
           KO_DOCKER_REPO: ${{ inputs.publish && 'ghcr.io/descope-sample-apps/pgpeek' || 'localhost:5000/pgpeek' }}
+          GOFIPS140: v1.0.0
+          GODEBUG: fips140=on

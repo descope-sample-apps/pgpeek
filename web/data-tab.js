@@ -26,21 +26,73 @@ function cellText(v) {
   return typeof v === "object" ? JSON.stringify(v) : String(v);
 }
 
-function Cell({ value, fkRef, onNavigate }) {
-  const text = cellText(value);
-  if (text === null) return html`<td class="null">NULL</td>`;
-  if (fkRef) {
-    return html`<td><button class="fk"
-      title=${"→ " + fkRef.schema + "." + fkRef.table + "." + fkRef.column}
-      onClick=${() => onNavigate(fkRef, value)}>${text}</button></td>`;
-  }
-  return html`<td>${text}</td>`;
+function cellFullText(v) {
+  return typeof v === "object" ? JSON.stringify(v, null, 2) : String(v);
 }
 
-function BodyRows({ rows, fkByCol, onNavigate }) {
+const PREVIEW_CHARS = 220;
+const MATCH_CONTEXT = 90;
+
+function cleanTerm(term) {
+  return String(term || "").trim().replace(/^%+/, "").replace(/%+$/, "");
+}
+
+function filterTerm(filter) {
+  if (!filter || !filter.op || filter.op === "is_null" || filter.op === "is_not_null") return "";
+  return cleanTerm(filter.value);
+}
+
+function previewText(text, term) {
+  const needle = cleanTerm(term);
+  const match = needle ? text.toLowerCase().indexOf(needle.toLowerCase()) : -1;
+  if (match >= 0 && text.length > PREVIEW_CHARS) {
+    const start = Math.max(0, match - MATCH_CONTEXT);
+    const end = Math.min(text.length, match + needle.length + MATCH_CONTEXT);
+    return (start ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : "");
+  }
+  if (text.length <= PREVIEW_CHARS) return text;
+  return text.slice(0, PREVIEW_CHARS) + "…";
+}
+
+function highlightText(text, term) {
+  const needle = cleanTerm(term);
+  if (!needle) return text;
+  const match = text.toLowerCase().indexOf(needle.toLowerCase());
+  if (match < 0) return text;
+  return [
+    text.slice(0, match),
+    html`<mark>${text.slice(match, match + needle.length)}</mark>`,
+    text.slice(match + needle.length),
+  ];
+}
+
+function Cell({ value, column, term, fkRef, onNavigate }) {
+  const text = cellText(value);
+  if (text === null) return html`<td class="null cell">NULL</td>`;
+  const fullText = cellFullText(value);
+  const preview = previewText(text, term);
+  const body = highlightText(preview, term);
+  const long = text.length > PREVIEW_CHARS || fullText.length > PREVIEW_CHARS || fullText.includes("\n");
+  if (fkRef) {
+    return html`<td class="cell" title=${text}><button class="fk"
+      title=${"→ " + fkRef.schema + "." + fkRef.table + "." + fkRef.column}
+      onClick=${() => onNavigate(fkRef, value)}>${body}</button></td>`;
+  }
+  if (!long) return html`<td class="cell" title=${text}><span class="cell-preview">${body}</span></td>`;
+  return html`<td class="cell cell-long" title="Expand to read full value">
+    <details class="cell-detail">
+      <summary aria-label=${"Show full value for " + column}>
+        <span class="cell-preview">${body}</span>
+      </summary>
+      <pre>${fullText}</pre>
+    </details>
+  </td>`;
+}
+
+function BodyRows({ rows, columns, fkByCol, termsByCol, onNavigate }) {
   return rows.map((row) =>
     html`<tr>${row.map((v, i) =>
-      html`<${Cell} value=${v} fkRef=${fkByCol && fkByCol[i]} onNavigate=${onNavigate} />`)}</tr>`);
+      html`<${Cell} value=${v} column=${columns[i]} term=${termsByCol && termsByCol[i]} fkRef=${fkByCol && fkByCol[i]} onNavigate=${onNavigate} />`)}</tr>`);
 }
 
 export function DataTab({
@@ -126,19 +178,25 @@ export function DataTab({
     grid = html`<div class="empty">No columns.</div>`;
   } else {
     const fkByCol = data.columns.map((c) => fks[c] || null);
+    const globalTerm = cleanTerm(search);
+    const termsByCol = data.columns.map((c) => filterTerm(filterFor(filters, c)) || globalTerm);
     grid = html`
       <table>
         <thead>
-          <tr>${data.columns.map((c) => html`<th class="sortable" key=${c} onClick=${() => toggleSort(c)}>
+          <tr>${data.columns.map((c) => html`<th class="sortable" key=${c} title=${c} tabindex="0"
+            aria-sort=${sort && sort.col === c ? (sort.dir === "desc" ? "descending" : "ascending") : "none"}
+            onClick=${() => toggleSort(c)} onKeyDown=${(e) => {
+              if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleSort(c); }
+            }}>
             ${c}${sort && sort.col === c ? (sort.dir === "desc" ? " ▼" : " ▲") : ""}</th>`)}</tr>
           <tr class="filter-row">${data.columns.map((c) => {
             const d = filterFor(draft, c);
             return html`<td key=${c}>
-              <select class="f-op" data-col=${c} value=${d.op || ""} onChange=${(e) => {
+              <select class="f-op" data-col=${c} aria-label=${"Filter operator for " + c} value=${d.op || ""} onChange=${(e) => {
                 const next = setFilterValue(draft, c, { op: e.target.value, value: d.value || "" });
                 setDraft(next); applyDraft(next);
               }}>${OPS.map(([k, label]) => html`<option value=${k}>${label}</option>`)}</select>
-              <input class="f-val" data-col=${c} placeholder="filter…" value=${d.value || ""}
+              <input class="f-val" data-col=${c} aria-label=${"Filter value for " + c} placeholder="filter…" value=${d.value || ""}
                 onInput=${(e) => setDraft(setFilterValue(draft, c, { op: d.op || "", value: e.target.value }))}
                 onKeyDown=${(e) => {
                   if (e.key === "Enter") applyDraft(setFilterValue(draft, c, { op: d.op || "", value: e.target.value }));
@@ -146,7 +204,7 @@ export function DataTab({
             </td>`;
           })}</tr>
         </thead>
-        <tbody><${BodyRows} rows=${data.rows} fkByCol=${fkByCol} onNavigate=${onNavigate} /></tbody>
+        <tbody><${BodyRows} rows=${data.rows} columns=${data.columns} fkByCol=${fkByCol} termsByCol=${termsByCol} onNavigate=${onNavigate} /></tbody>
       </table>
       ${data.rows.length ? "" : html`<div class="empty">0 rows.</div>`}`;
   }

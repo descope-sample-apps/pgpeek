@@ -72,3 +72,53 @@ SELECT
          'curl/8.4.0'])[1 + (g % 4)],
   now() + (g || ' hours')::interval
 FROM generate_series(1, 25) AS g;
+
+DO $$
+DECLARE
+  extra_cols text;
+BEGIN
+  SELECT string_agg(format('field_%s text NOT NULL', lpad(i::text, 2, '0')), ', ')
+  INTO extra_cols
+  FROM generate_series(1, 46) AS s(i);
+
+  EXECUTE 'CREATE TABLE IF NOT EXISTS public.wide_support_events (
+    id serial PRIMARY KEY,
+    subject text NOT NULL,
+    notes text NOT NULL,
+    payload jsonb NOT NULL, ' || extra_cols || '
+  )';
+END $$;
+
+DO $$
+DECLARE
+  extra_names text;
+  extra_values text;
+BEGIN
+  SELECT string_agg(format('field_%s', lpad(i::text, 2, '0')), ', ')
+  INTO extra_names
+  FROM generate_series(1, 46) AS s(i);
+
+  SELECT string_agg(format(
+    '(''field_%1$s row '' || g || '' — long diagnostic text with searchable token renewal-blocked-%1$s and JSON pointer $.events[%2$s].detail. '' || repeat(''trace context '', 8))',
+    lpad(i::text, 2, '0'),
+    i
+  ), ', ')
+  INTO extra_values
+  FROM generate_series(1, 46) AS s(i);
+
+  EXECUTE 'INSERT INTO public.wide_support_events (subject, notes, payload, ' || extra_names || ')
+  SELECT
+    ''Support investigation '' || g,
+    ''Long support note for a wide table row. The important filtered phrase renewal-blocked-needle sits near the end so truncated cells used to hide it. '' || repeat(''Customer timeline, entitlement metadata, admin comments, and audit evidence. '', 5),
+    jsonb_build_object(
+      ''ticketId'', ''SUP-'' || to_char(g, ''FM0000''),
+      ''filterExample'', ''renewal-blocked-needle'',
+      ''columns'', 50,
+      ''events'', jsonb_build_array(
+        jsonb_build_object(''kind'', ''email'', ''body'', repeat(''long email body '', 8)),
+        jsonb_build_object(''kind'', ''webhook'', ''payload'', jsonb_build_object(''plan'', ''enterprise'', ''blocked'', true, ''reason'', ''renewal-blocked-needle''))
+      )
+    ),
+    ' || extra_values || '
+  FROM generate_series(1, 18) AS g';
+END $$;

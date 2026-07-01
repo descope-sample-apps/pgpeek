@@ -20,6 +20,7 @@ This matrix is the checklist for answering â€œis the product behavior covered?â€
 | --- | --- | --- |
 | App startup and shutdown | config errors, DB connect errors, IAM path, TLS, graceful shutdown, store open errors | `main_test.go` |
 | Configuration | single DB, multi-DB env/list/file parsing, defaults, bad values, secret redaction inputs | `internal/config/*_test.go` |
+| Runtime DB safeguards | pool creation, DSN validation, ping/close, statement timeout, read-only session, row cap, value normalization | `internal/db/pool_test.go`, `internal/db/pool_integration_test.go` |
 | Database registry | default selection, known/unknown DB IDs, private DSN handling, multi-DB metadata | `internal/db/registry_test.go`, `internal/server/registry_unit_test.go`, `internal/server/multi_database_integration_test.go` |
 | Catalog listing | tables, columns, foreign keys, empty arrays, sanitized error responses | `internal/db/catalog_test.go`, `internal/db/pool_integration_test.go`, `internal/server/catalog_handlers_test.go` |
 | Table data paging | limit/offset handling, row cap, negative offset clamp, query errors, rows errors | `internal/db/catalog_test.go`, `internal/db/pool_test.go`, `internal/db/pool_integration_test.go`, `web/app.test.js` |

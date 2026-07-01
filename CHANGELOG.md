@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.6.0...v0.7.0) (2026-07-01)
+
+
+### Features
+
+* **web:** improve large table readability ([#56](https://github.com/descope-sample-apps/pgpeek/issues/56)) ([7cc02f9](https://github.com/descope-sample-apps/pgpeek/commit/7cc02f9dd08915fbb34447f7013612d4d1a4abda))
+
+
+### Bug Fixes
+
+* **db:** cast pattern filters to text ([#54](https://github.com/descope-sample-apps/pgpeek/issues/54)) ([8540b8b](https://github.com/descope-sample-apps/pgpeek/commit/8540b8b67fd8e506d78bb7901dc85848f8541146))
+
 ## [0.6.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.5.0...v0.6.0) (2026-06-29)
 
 

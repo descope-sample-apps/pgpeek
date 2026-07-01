@@ -117,6 +117,51 @@ describe("large schema rendering", () => {
     expect(cell.textContent).toContain("renewal-blocked-needle");
   });
 
+  it("keeps highlighted matches readable at long-cell boundaries", async () => {
+    const term = "renewal-blocked-needle";
+    routes["GET /api/tables/*/data"] = makeResp({
+      json: {
+        columns: ["field_01"],
+        rows: [[`${term} ${"after-match evidence ".repeat(18)}`], [`${"before-match evidence ".repeat(18)} ${term}`]],
+        rowCount: 2,
+        elapsedMs: 1,
+      },
+    });
+
+    await loadApp();
+    await click($("tables").querySelector(".tbl"));
+    const filterCell = $("data-results").querySelector("tr.filter-row td");
+    await changeSelect(filterCell.querySelector("select"), "ilike");
+    const input = filterCell.querySelector("input");
+    input.value = term;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await flush();
+
+    const cells = $("data-results").querySelectorAll("tbody td");
+    expect(cells[0].querySelector(".cell-preview").textContent.startsWith(term)).toBe(true);
+    expect(cells[1].querySelector(".cell-preview").textContent.endsWith(term)).toBe(true);
+    expect($("data-results").querySelectorAll("mark")).toHaveLength(2);
+  });
+
+  it("sorts wide columns from the keyboard", async () => {
+    await loadApp();
+    await click($("tables").querySelector(".tbl"));
+
+    const header = $("data-results").querySelector("th.sortable");
+    header.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await flush();
+    expect(header.getAttribute("aria-sort")).toBe("ascending");
+
+    header.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+    await flush();
+    expect(header.getAttribute("aria-sort")).toBe("descending");
+
+    header.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await flush();
+    expect(header.getAttribute("aria-sort")).toBe("descending");
+  });
+
   it("defines overflow at the sidebar and result boundaries", () => {
     const html = readFileSync("web/index.html", "utf8");
 
@@ -124,7 +169,8 @@ describe("large schema rendering", () => {
     expect(html).toMatch(/\.results\s*\{[^}]*overflow:\s*auto/s);
     expect(html).toMatch(/table\s*\{[^}]*min-width:\s*max-content/s);
     expect(html).toMatch(/\.cell-detail\s*>\s*summary/s);
-    expect(html).toMatch(/\.cell-preview mark/s);
+    expect(html).toMatch(/\.cell-preview mark\s*\{[^}]*background:\s*var\(--match-bg\)/s);
+    expect(html).toMatch(/@supports\s*\(background:\s*color-mix/s);
     expect(html).toMatch(/\.body\s*\{[^}]*min-height:\s*0/s);
     expect(html).toMatch(/main\s*\{[^}]*min-height:\s*0/s);
     expect(html).toMatch(/main\s*\{[^}]*min-width:\s*0/s);

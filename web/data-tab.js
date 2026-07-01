@@ -27,7 +27,6 @@ function cellText(v) {
 }
 
 function cellFullText(v) {
-  if (v === null || v === undefined) return null;
   return typeof v === "object" ? JSON.stringify(v, null, 2) : String(v);
 }
 

@@ -22,6 +22,8 @@ builds:
     binary: pgpeek
     env:
       - CGO_ENABLED=0
+      - GOFIPS140=v1.0.0
+      - GODEBUG=fips140=on
     goos:
       - linux
     goarch:

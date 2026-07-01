@@ -45,6 +45,10 @@ spec:
               value: "8"
             - name: PGPEEK_STORE_PATH
               value: "/data/pgpeek.db"
+            - name: GODEBUG
+              value: "fips140=on"
+            - name: GOFIPS140
+              value: "v1.0.0"
             # --- RDS/Aurora IAM auth (optional) ---
             # Drop the secretKeyRef password above, set DATABASE_URL to a
             # passwordless DSN, and enable IAM auth + region:

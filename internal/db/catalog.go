@@ -164,10 +164,7 @@ func (p *Pool) TableRows(ctx context.Context, q TableQuery) (*Result, error) {
 	if limit <= 0 || limit > p.rowCap {
 		limit = p.rowCap
 	}
-	offset := q.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(q.Offset, 0)
 	ident := pgx.Identifier{q.Schema, q.Table}.Sanitize()
 
 	var (
@@ -217,6 +214,9 @@ func (p *Pool) TableRows(ctx context.Context, q TableQuery) (*Result, error) {
 				return nil, fmt.Errorf("unknown operator %q", f.Op)
 			}
 			args = append(args, f.Value)
+			if f.Op == "like" || f.Op == "ilike" {
+				id += "::text"
+			}
 			where = append(where, id+" "+op+" $"+strconv.Itoa(len(args)))
 		}
 	}

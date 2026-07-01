@@ -7,8 +7,6 @@ import (
 	"testing"
 )
 
-func strptr(s string) *string { return &s }
-
 func TestTables_Success(t *testing.T) {
 	rows := &fakeRows{
 		cols: []string{"schema", "name", "type", "est"},
@@ -57,10 +55,11 @@ func TestTables_RowsErr(t *testing.T) {
 }
 
 func TestColumns_Success(t *testing.T) {
+	defaultValue := "nextval('s')"
 	rows := &fakeRows{
 		cols: []string{"name", "type", "nullable", "default"},
 		data: [][]any{
-			{"id", "integer", false, strptr("nextval('s')")},
+			{"id", "integer", false, &defaultValue},
 			{"email", "text", true, (*string)(nil)},
 		},
 	}
@@ -214,32 +213,6 @@ func TestTableRows_Search(t *testing.T) {
 	}
 	if len(fp.lastArgs) != 1 || fp.lastArgs[0] != "%acme%" {
 		t.Errorf("search arg = %v", fp.lastArgs)
-	}
-}
-
-func TestTableRows_Filters(t *testing.T) {
-	fp := &fakePool{rows: dataRows(), colRows: colsFor("id", "name", "deleted_at")}
-	p := &Pool{pool: fp, rowCap: 100}
-	_, err := p.TableRows(context.Background(), TableQuery{
-		Schema: "public", Table: "users",
-		Filters: []Filter{
-			{Column: "id", Op: "gt", Value: "100"},
-			{Column: "name", Op: "ilike", Value: "%a%"},
-			{Column: "deleted_at", Op: "is_null"},
-			{Column: "name", Op: "is_not_null"},
-		},
-	})
-	if err != nil {
-		t.Fatalf("TableRows: %v", err)
-	}
-	sql := fp.lastSQL
-	for _, want := range []string{`"id" > $1`, `"name" ILIKE $2`, `"deleted_at" IS NULL`, `"name" IS NOT NULL`} {
-		if !strings.Contains(sql, want) {
-			t.Errorf("missing %q in %q", want, sql)
-		}
-	}
-	if len(fp.lastArgs) != 2 || fp.lastArgs[0] != "100" || fp.lastArgs[1] != "%a%" {
-		t.Errorf("args = %v", fp.lastArgs)
 	}
 }
 

@@ -72,6 +72,7 @@ beforeEach(() => {
   routes = {
     // empty databases: keeps existing tests db-param-free and selector-hidden
     "GET /api/databases": makeResp({ json: { defaultId: null, databases: [] } }),
+    "GET /api/user": makeResp({ json: { provider: "anonymous", email: "" } }),
     "GET /api/meta": makeResp({ json: { rowCap: 1000 } }),
     "GET /api/tables": makeResp({ json: [] }),
     "GET /api/tables/*/columns": makeResp({ json: [] }),
@@ -173,6 +174,13 @@ describe("sidebar and tabs", () => {
     expect($("panel-sql").hidden).toBe(false);
     expect($("panel-data").hidden).toBe(true);
     expect($("tab-sql").classList.contains("active")).toBe(true);
+  });
+
+  it("shows Cloudflare Access user", async () => {
+    setRoute("GET /api/user", makeResp({ json: { provider: "cloudflare-access", email: "alice@example.com" } }));
+    await loadApp();
+
+    expect($("current-user").textContent).toBe("alice@example.com");
   });
 
   it("shows loading copy while tables have not resolved", async () => {

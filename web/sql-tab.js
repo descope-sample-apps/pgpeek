@@ -181,10 +181,13 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables }) 
       body: JSON.stringify({ name, description, sql }),
     });
     const d = await r.json();
+    if (!r.ok) {
+      if (action === actionRef.current) setStatus({ text: "✗ " + (d.error || "save failed"), cls: "error" });
+      return;
+    }
+    await reloadSaved();
     if (action !== actionRef.current) return;
-    if (!r.ok) { setStatus({ text: "✗ " + (d.error || "save failed"), cls: "error" }); return; }
-    await reloadSaved(); setSelected(String(d.id));
-    if (action !== actionRef.current) return;
+    setSelected(String(d.id));
     setError("");
     setStatus({ text: "\u2713 Saved \u201c" + d.name + "\u201d.", cls: "ok" });
   };
@@ -195,10 +198,13 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables }) 
     const action = actionRef.current + 1;
     actionRef.current = action;
     const r = await fetch("/api/queries/" + selectedQ.id, { method: "DELETE" });
+    if (!r.ok && r.status !== 204) {
+      if (action === actionRef.current) setStatus({ text: "✗ delete failed", cls: "error" });
+      return;
+    }
+    await reloadSaved();
     if (action !== actionRef.current) return;
-    if (!r.ok && r.status !== 204) { setStatus({ text: "✗ delete failed", cls: "error" }); return; }
-    await reloadSaved(); setSelected("");
-    if (action !== actionRef.current) return;
+    setSelected("");
     setError("");
     setStatus({ text: "✓ Deleted.", cls: "ok" });
   };

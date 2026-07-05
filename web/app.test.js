@@ -832,6 +832,43 @@ describe("saved queries", () => {
     expect($("status").textContent).toContain("save failed");
   });
 
+  it("refreshes saved queries after a stale successful save", async () => {
+    let resolveSave;
+    await openWithSaved(SAVED);
+    await changeSelect($("presets"), "2");
+    $("sql").value = "select later";
+    prompt.mockReturnValueOnce("Later").mockReturnValueOnce("");
+    setRoute("POST /api/queries", () => new Promise((resolve) => { resolveSave = resolve; }));
+    await dispatchClick("save-btn");
+
+    setRoute("GET /api/queries", makeResp({ json: [...SAVED, { id: 7, name: "Later", sql: "select later", isPreset: false }] }));
+    await changeSelect($("presets"), "1");
+    const beforeRefreshes = fetch.mock.calls.filter(([u]) => String(u) === "/api/queries").length;
+    resolveSave(makeResp({ json: { id: 7, name: "Later" } }));
+    await flush();
+
+    const afterRefreshes = fetch.mock.calls.filter(([u]) => String(u) === "/api/queries").length;
+    expect(afterRefreshes).toBeGreaterThan(beforeRefreshes);
+    expect($("presets").value).toBe("1");
+    expect($("status").textContent).toContain("Loaded “Preset one”. Press Run.");
+  });
+
+  it("ignores stale save failures", async () => {
+    let resolveSave;
+    await openWithSaved(SAVED);
+    await changeSelect($("presets"), "2");
+    $("sql").value = "select later";
+    prompt.mockReturnValueOnce("Later").mockReturnValueOnce("");
+    setRoute("POST /api/queries", () => new Promise((resolve) => { resolveSave = resolve; }));
+    await dispatchClick("save-btn");
+
+    await changeSelect($("presets"), "1");
+    resolveSave(makeResp({ ok: false, status: 500, json: { error: "late save failed" } }));
+    await flush();
+
+    expect($("status").textContent).toContain("Loaded “Preset one”. Press Run.");
+  });
+
   it("deletes after confirmation, aborts otherwise, and handles failures", async () => {
     await openWithSaved();
     await changeSelect($("presets"), "2");
@@ -866,6 +903,41 @@ describe("saved queries", () => {
     setRoute("DELETE /api/queries/:id", makeResp({ ok: false, status: 500 }));
     await click("delete-btn");
     expect($("status").textContent).toContain("delete failed");
+  });
+
+  it("refreshes saved queries after a stale successful delete", async () => {
+    let resolveDelete;
+    await openWithSaved();
+    await changeSelect($("presets"), "2");
+    confirm.mockReturnValueOnce(true);
+    setRoute("DELETE /api/queries/:id", () => new Promise((resolve) => { resolveDelete = resolve; }));
+    await dispatchClick("delete-btn");
+
+    setRoute("GET /api/queries", makeResp({ json: [SAVED[0]] }));
+    await changeSelect($("presets"), "1");
+    const beforeRefreshes = fetch.mock.calls.filter(([u]) => String(u) === "/api/queries").length;
+    resolveDelete(makeResp({ status: 204 }));
+    await flush();
+
+    const afterRefreshes = fetch.mock.calls.filter(([u]) => String(u) === "/api/queries").length;
+    expect(afterRefreshes).toBeGreaterThan(beforeRefreshes);
+    expect($("presets").value).toBe("1");
+    expect($("status").textContent).toContain("Loaded “Preset one”. Press Run.");
+  });
+
+  it("ignores stale delete failures", async () => {
+    let resolveDelete;
+    await openWithSaved();
+    await changeSelect($("presets"), "2");
+    confirm.mockReturnValueOnce(true);
+    setRoute("DELETE /api/queries/:id", () => new Promise((resolve) => { resolveDelete = resolve; }));
+    await dispatchClick("delete-btn");
+
+    await changeSelect($("presets"), "1");
+    resolveDelete(makeResp({ ok: false, status: 500 }));
+    await flush();
+
+    expect($("status").textContent).toContain("Loaded “Preset one”. Press Run.");
   });
 });
 

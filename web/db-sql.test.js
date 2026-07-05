@@ -221,6 +221,93 @@ describe("API db params — POST requests", () => {
     expect($("status").textContent).toContain("✓ 1 row in 1 ms");
   });
 
+  it("ignores stale export response errors after a newer successful query", async () => {
+    let resolveExport;
+    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
+    setRoute("POST /api/export", () => new Promise((resolve) => { resolveExport = resolve; }));
+    await loadApp();
+    await click("tab-sql");
+    $("sql").value = "select 1";
+    await click("run-btn");
+    await click("sql-export-btn");
+
+    await click("run-btn");
+    resolveExport(makeResp({ ok: false, status: 400, json: { error: "late export failed" } }));
+    await flush();
+
+    expect(document.querySelector(".query-error")).toBeFalsy();
+    expect($("status").textContent).toContain("✓ 1 row in 1 ms");
+  });
+
+  it("ignores stale successful exports after a newer successful query", async () => {
+    let resolveExport;
+    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
+    setRoute("POST /api/export", () => new Promise((resolve) => { resolveExport = resolve; }));
+    await loadApp();
+    await click("tab-sql");
+    $("sql").value = "select 1";
+    await click("run-btn");
+    await click("sql-export-btn");
+
+    await click("run-btn");
+    resolveExport(makeResp({ blob: new Blob(["n\n1"]) }));
+    await flush();
+
+    expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
+    expect($("status").textContent).toContain("✓ 1 row in 1 ms");
+  });
+
+  it("ignores stale query response errors after picking a saved query", async () => {
+    let resolveQuery;
+    setRoute("GET /api/queries", makeResp({ json: [{ id: 7, name: "Recent keys", sql: "select 1", isPreset: false }] }));
+    setRoute("POST /api/query", () => new Promise((resolve) => { resolveQuery = resolve; }));
+    await loadApp();
+    await click("tab-sql");
+    $("sql").value = "select pg_sleep(1)";
+    await click("run-btn");
+
+    await changeSelect($("presets"), "7");
+    resolveQuery(makeResp({ ok: false, status: 400, json: { error: "late query failed" } }));
+    await flush();
+
+    expect(document.querySelector(".query-error")).toBeFalsy();
+    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Run.");
+  });
+
+  it("ignores stale query network errors after picking a saved query", async () => {
+    let rejectQuery;
+    setRoute("GET /api/queries", makeResp({ json: [{ id: 7, name: "Recent keys", sql: "select 1", isPreset: false }] }));
+    setRoute("POST /api/query", () => new Promise((_, reject) => { rejectQuery = reject; }));
+    await loadApp();
+    await click("tab-sql");
+    $("sql").value = "select pg_sleep(1)";
+    await click("run-btn");
+
+    await changeSelect($("presets"), "7");
+    rejectQuery(new Error("late query network"));
+    await flush();
+
+    expect(document.querySelector(".query-error")).toBeFalsy();
+    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Run.");
+  });
+
+  it("ignores stale successful queries after picking a saved query", async () => {
+    let resolveQuery;
+    setRoute("GET /api/queries", makeResp({ json: [{ id: 7, name: "Recent keys", sql: "select 1", isPreset: false }] }));
+    setRoute("POST /api/query", () => new Promise((resolve) => { resolveQuery = resolve; }));
+    await loadApp();
+    await click("tab-sql");
+    $("sql").value = "select pg_sleep(1)";
+    await click("run-btn");
+
+    await changeSelect($("presets"), "7");
+    resolveQuery(makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
+    await flush();
+
+    expect($("sql-results").textContent).toContain("Run a query to see results.");
+    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Run.");
+  });
+
   it("ignores stale export errors after picking a saved query", async () => {
     let rejectExport;
     setRoute("GET /api/queries", makeResp({ json: [{ id: 7, name: "Recent keys", sql: "select 1", isPreset: false }] }));

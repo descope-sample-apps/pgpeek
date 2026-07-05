@@ -84,6 +84,22 @@ func newTestServer(t *testing.T, q Querier) (*httptest.Server, *store.Store) {
 	return ts, st
 }
 
+func newCloudflareRequiredTestServer(t *testing.T, q Querier) (*httptest.Server, *store.Store) {
+	t.Helper()
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	web := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<html>pgpeek</html>")}}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	srv := New(q, st, web, log, 5*time.Second, RequireCloudflareAccess(true))
+	ts := httptest.NewServer(srv.Routes())
+	t.Cleanup(ts.Close)
+	return ts, st
+}
+
 func post(t *testing.T, ts *httptest.Server, path, body string) *http.Response {
 	t.Helper()
 	resp, err := http.Post(ts.URL+path, "application/json", strings.NewReader(body))

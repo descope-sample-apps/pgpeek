@@ -19,6 +19,7 @@ func clearEnv(t *testing.T) {
 		"PGPEEK_MAX_CONNS", "PGPEEK_STATEMENT_TIMEOUT", "PGPEEK_IDLE_TX_TIMEOUT",
 		"PGPEEK_DB_IAM_AUTH", "PGPEEK_AWS_REGION", "AWS_REGION",
 		"PGPEEK_STORE_PATH", "PGPEEK_ROW_CAP",
+		"PGPEEK_REQUIRE_CLOUDFLARE_ACCESS",
 		"PGPEEK_DATABASE_URLS", "PGPEEK_DATABASE_IDS", "PGPEEK_DATABASE_NAMES",
 		"PGPEEK_DATABASES_FILE", "PGPEEK_DEFAULT_DATABASE",
 	} {
@@ -62,6 +63,9 @@ func TestLoad_Defaults(t *testing.T) {
 	if c.Server.TLSEnabled() {
 		t.Error("TLS should be disabled by default")
 	}
+	if c.RequireCloudflareAccess {
+		t.Error("RequireCloudflareAccess should be disabled by default")
+	}
 	if c.DefaultDatabaseID != "default" || len(c.Databases) != 1 {
 		t.Fatalf("default database registry = %q/%d", c.DefaultDatabaseID, len(c.Databases))
 	}
@@ -82,6 +86,7 @@ func TestLoad_Overrides(t *testing.T) {
 	t.Setenv("PGPEEK_READ_HEADER_TIMEOUT", "3s")
 	t.Setenv("PGPEEK_SHUTDOWN_TIMEOUT", "8s")
 	t.Setenv("PGPEEK_STORE_PATH", "/tmp/x.db")
+	t.Setenv("PGPEEK_REQUIRE_CLOUDFLARE_ACCESS", "true")
 
 	c, err := Load()
 	if err != nil {
@@ -92,6 +97,9 @@ func TestLoad_Overrides(t *testing.T) {
 	}
 	if c.Server.WriteTimeout != 5*time.Second || c.Server.IdleTimeout != 7*time.Second {
 		t.Errorf("server timeouts: %+v", c.Server)
+	}
+	if !c.RequireCloudflareAccess {
+		t.Error("RequireCloudflareAccess override not applied")
 	}
 }
 

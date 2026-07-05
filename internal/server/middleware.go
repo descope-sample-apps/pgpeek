@@ -30,7 +30,7 @@ func requireCloudflareAccess(require bool, next http.Handler) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" || cloudflareAccessUser(r).Provider == "cloudflare-access" {
+		if isProbePath(r.URL.Path) || cloudflareAccessUser(r).Provider == "cloudflare-access" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -43,7 +43,7 @@ func logging(log *slog.Logger, next http.Handler) http.Handler {
 		start := time.Now()
 		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(sw, r)
-		if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
+		if isProbePath(r.URL.Path) {
 			return
 		}
 		log.Info("request",
@@ -53,6 +53,10 @@ func logging(log *slog.Logger, next http.Handler) http.Handler {
 			"ms", time.Since(start).Milliseconds(),
 		)
 	})
+}
+
+func isProbePath(path string) bool {
+	return path == "/healthz" || path == "/readyz"
 }
 
 type statusWriter struct {

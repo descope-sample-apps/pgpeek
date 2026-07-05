@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/descope-sample-apps/pgpeek/internal/db"
 )
 
@@ -46,6 +48,10 @@ func TestQuery_InvalidJSON(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
+	got := decode[map[string]string](t, resp)
+	if got["error"] != "invalid request body" {
+		t.Fatalf("error = %q, want invalid request body", got["error"])
+	}
 }
 
 func TestQuery_UnknownField(t *testing.T) {
@@ -66,6 +72,20 @@ func TestQuery_DBError(t *testing.T) {
 	got := decode[map[string]string](t, resp)
 	if got["error"] != "query failed" {
 		t.Fatalf("error = %q, want sanitized query failed", got["error"])
+	}
+}
+
+func TestQuery_PostgresError(t *testing.T) {
+	q := &fakeQuerier{err: &pgconn.PgError{Message: `syntax error at or near "IS"`, Code: "42601"}}
+	ts, _ := newTestServer(t, q)
+	resp := post(t, ts, "/api/query", `{"sql":"SELECT * FROM access_keys tenants IS NULL"}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+	got := decode[map[string]string](t, resp)
+	want := `syntax error at or near "IS" (SQLSTATE 42601)`
+	if got["error"] != want {
+		t.Fatalf("error = %q, want %q", got["error"], want)
 	}
 }
 

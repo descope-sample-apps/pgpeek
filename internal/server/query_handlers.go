@@ -9,9 +9,10 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/descope-sample-apps/pgpeek/internal/db"
 	"github.com/descope-sample-apps/pgpeek/internal/guard"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type queryRequest struct {

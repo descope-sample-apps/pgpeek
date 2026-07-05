@@ -183,6 +183,26 @@ describe("sidebar and tabs", () => {
     expect($("current-user").textContent).toBe("alice@example.com");
   });
 
+  it("uses a fallback Cloudflare Access label", async () => {
+    setRoute("GET /api/user", makeResp({ json: { provider: "cloudflare-access", email: "" } }));
+    await loadApp();
+
+    expect($("current-user").textContent).toBe("Cloudflare Access");
+  });
+
+  it("ignores a user response after unmount", async () => {
+    const pending = deferred();
+    setRoute("GET /api/user", () => pending.promise);
+    await loadApp();
+
+    const { render } = await import("./vendor/preact-htm.js");
+    render(null, $("app"));
+    pending.resolve(makeResp({ json: { provider: "cloudflare-access", email: "late@example.com" } }));
+    await flush();
+
+    expect(document.body.textContent).not.toContain("late@example.com");
+  });
+
   it("shows loading copy while tables have not resolved", async () => {
     setRoute("GET /api/tables", () => new Promise(() => {}));
     await loadApp();

@@ -3,12 +3,15 @@ package server
 import (
 	"context"
 	"encoding/csv"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
 	"github.com/descope-sample-apps/pgpeek/internal/db"
 	"github.com/descope-sample-apps/pgpeek/internal/guard"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type queryRequest struct {
@@ -49,10 +52,18 @@ func (s *Server) readOnlyResult(w http.ResponseWriter, r *http.Request) (*db.Res
 	res, err := pool.Query(ctx, sql)
 	if err != nil {
 		s.log.Error("query", "err", err)
-		writeError(w, http.StatusBadRequest, "query failed")
+		writeError(w, http.StatusBadRequest, queryErrorMessage(err))
 		return nil, false
 	}
 	return res, true
+}
+
+func queryErrorMessage(err error) string {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Message != "" {
+		return fmt.Sprintf("%s (SQLSTATE %s)", pgErr.Message, pgErr.Code)
+	}
+	return "query failed"
 }
 
 func decodeReadOnlyQuery(w http.ResponseWriter, r *http.Request) (string, bool) {

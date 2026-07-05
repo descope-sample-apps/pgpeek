@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.7.0...v0.8.0) (2026-07-05)
+
+
+### Features
+
+* support Cloudflare Access headers ([#57](https://github.com/descope-sample-apps/pgpeek/issues/57)) ([cda00e8](https://github.com/descope-sample-apps/pgpeek/commit/cda00e8f80480063759606d6a0a0bcae2eb0232b))
+
+
+### Bug Fixes
+
+* show SQL query errors inline ([#59](https://github.com/descope-sample-apps/pgpeek/issues/59)) ([10fda5f](https://github.com/descope-sample-apps/pgpeek/commit/10fda5f8ed4f8b32c42fc1200aa6eff7fe1412b2))
+
 ## [0.7.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.6.0...v0.7.0) (2026-07-01)
 
 

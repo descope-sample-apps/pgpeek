@@ -2,6 +2,11 @@
 import { html, useState, useEffect, useRef, useCallback } from "./vendor/preact-htm.js";
 import { dbUrl, getJSON, tablePath } from "./api.js";
 
+async function responseError(r, fallback) {
+  const body = await r.json().catch(() => null);
+  return (body && body.error) || r.statusText || fallback;
+}
+
 export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables }) {
   const wrapRef = useRef();
   const taRef = useRef();
@@ -10,7 +15,9 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables }) 
   const [lastSQL, setLastSQL] = useState("");
   const [selected, setSelected] = useState("");
   const [running, setRunning] = useState(false);
+  const [error, setError] = useState("");
   const runningRef = useRef(false);
+  const actionRef = useRef(0);
 
   const getSQL = () => (editorRef.current ? editorRef.current.getValue() : taRef.current.value).trim();
   const setSQL = (v) => { if (editorRef.current) editorRef.current.setValue(v); else taRef.current.value = v; };
@@ -19,7 +26,10 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables }) 
     const sql = getSQL();
     if (!sql) return;
     if (runningRef.current) return;
+    const action = actionRef.current + 1;
+    actionRef.current = action;
     runningRef.current = true; setRunning(true);
+    setError("");
     setStatus({ text: "Running…", cls: "ok" });
     try {
       const r = await fetch(dbUrl("/api/query", dbId), {
@@ -27,19 +37,26 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables }) 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sql }),
       });
-      const d = await r.json();
       if (!r.ok) {
-        setStatus({ text: "✗ " + (d.error || r.statusText), cls: "error" });
+        const message = await responseError(r, "query failed");
+        if (action !== actionRef.current) return;
+        setError(message);
+        setStatus({ text: "✗ " + message, cls: "error" });
         setResult(null);
         return;
       }
+      const d = await r.json();
+      if (action !== actionRef.current) return;
       setLastSQL(sql); setResult(d);
       const base = "✓ " + d.rowCount + " row" + (d.rowCount === 1 ? "" : "s") + " in " + d.elapsedMs + " ms";
       setStatus(d.truncated
         ? { text: base, cls: "ok", warn: "· capped (more rows available — add LIMIT or refine)" }
         : { text: base, cls: "ok" });
     } catch (e) {
-      setStatus({ text: "✗ " + e.message, cls: "error" });
+      if (action === actionRef.current) {
+        setError(e.message);
+        setStatus({ text: "✗ " + e.message, cls: "error" });
+      }
     } finally {
       runningRef.current = false; setRunning(false);
     }
@@ -111,25 +128,42 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables }) 
   const exportCSV = async () => {
     const sql = lastSQL || getSQL();
     if (!sql) return;
-    const r = await fetch(dbUrl("/api/export", dbId), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sql }),
-    });
-    if (!r.ok) {
-      const d = await r.json().catch(() => ({}));
-      setStatus({ text: "✗ " + (d.error || "export failed"), cls: "error" });
-      return;
+    const action = actionRef.current + 1;
+    actionRef.current = action;
+    setError("");
+    try {
+      const r = await fetch(dbUrl("/api/export", dbId), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sql }),
+      });
+      if (!r.ok) {
+        const message = await responseError(r, "export failed");
+        if (action !== actionRef.current) return;
+        setError(message);
+        setStatus({ text: "✗ " + message, cls: "error" });
+        return;
+      }
+      const blob = await r.blob();
+      if (action !== actionRef.current) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = "pgpeek-export.csv"; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (e) {
+      if (action === actionRef.current) {
+        setError(e.message);
+        setStatus({ text: "✗ " + e.message, cls: "error" });
+      }
     }
-    const url = URL.createObjectURL(await r.blob());
-    const a = document.createElement("a"); a.href = url; a.download = "pgpeek-export.csv"; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
   const onPick = (e) => {
     const id = e.target.value; setSelected(id);
     const q = saved.find((x) => String(x.id) === id);
-    if (q) { setSQL(q.sql); setStatus({ text: "Loaded \u201c" + q.name + "\u201d. Press Run.", cls: "ok" }); }
+    if (q) {
+      actionRef.current += 1;
+      setSQL(q.sql); setError(""); setStatus({ text: "Loaded \u201c" + q.name + "\u201d. Press Run.", cls: "ok" });
+    }
   };
   const selectedQ = saved.find((x) => String(x.id) === selected);
 
@@ -139,23 +173,33 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables }) 
     const name = prompt("Name for this saved query:");
     if (!name) return;
     const description = prompt("Description (optional):") || "";
+    const action = actionRef.current + 1;
+    actionRef.current = action;
     const r = await fetch("/api/queries", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, description, sql }),
     });
     const d = await r.json();
+    if (action !== actionRef.current) return;
     if (!r.ok) { setStatus({ text: "✗ " + (d.error || "save failed"), cls: "error" }); return; }
     await reloadSaved(); setSelected(String(d.id));
+    if (action !== actionRef.current) return;
+    setError("");
     setStatus({ text: "\u2713 Saved \u201c" + d.name + "\u201d.", cls: "ok" });
   };
 
   const onDelete = async () => {
     if (!selectedQ) return;
     if (!confirm("Delete saved query \u201c" + selectedQ.name + "\u201d?")) return;
+    const action = actionRef.current + 1;
+    actionRef.current = action;
     const r = await fetch("/api/queries/" + selectedQ.id, { method: "DELETE" });
+    if (action !== actionRef.current) return;
     if (!r.ok && r.status !== 204) { setStatus({ text: "✗ delete failed", cls: "error" }); return; }
     await reloadSaved(); setSelected("");
+    if (action !== actionRef.current) return;
+    setError("");
     setStatus({ text: "✓ Deleted.", cls: "ok" });
   };
 
@@ -181,6 +225,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables }) 
         disabled=${!(selectedQ && !selectedQ.isPreset)} onClick=${onDelete}>Delete</button>
       <span class="hint">Ctrl/Cmd\u00a0+\u00a0Enter to run · single SELECT/WITH only</span>
     </div>
+    ${error ? html`<div class="query-error" role="alert" aria-live="assertive">${error}</div>` : ""}
     <div class="results" id="sql-results">
       ${result
         ? (result.columns.length === 0

@@ -103,7 +103,7 @@ func run(ctx context.Context, log *slog.Logger) error {
 	}
 
 	web := mustSubFS(webFiles, "web")
-	srv := server.NewWithRegistry(server.NewDatabaseRegistry(registry), st, web, log, cfg.DB.StatementTimeout+5*time.Second)
+	srv := server.NewWithRegistry(server.NewDatabaseRegistry(registry), st, web, log, cfg.DB.StatementTimeout+5*time.Second, server.RequireCloudflareAccess(cfg.RequireCloudflareAccess))
 	httpSrv := &http.Server{
 		Addr:              cfg.Server.Listen,
 		Handler:           srv.Routes(),

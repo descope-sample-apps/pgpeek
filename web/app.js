@@ -41,6 +41,11 @@ function TableContext({ table }) {
   </div>`;
 }
 
+function UserBadge({ user }) {
+  if (!user || user.provider !== "cloudflare-access") return null;
+  return html`<span class="badge" id="current-user" title="Cloudflare Access user">${user.email || "Cloudflare Access"}</span>`;
+}
+
 // ---- App ----
 function App() {
   const [databases, setDatabases]     = useState([]);
@@ -55,6 +60,7 @@ function App() {
   const [navKey, setNavKey]           = useState(0);
   const [pendingFilters, setPendingFilters] = useState(null);
   const [urlInit, setUrlInit]         = useState(null);
+  const [user, setUser]               = useState(null);
   const [status, setStatus]           = useState({ text: "Ready.", cls: "ok" });
   // Refs so popstate handler always sees the latest values.
   const urlStateRef = useRef({});
@@ -71,6 +77,14 @@ function App() {
   const reloadSaved = useCallback(async () => {
     try { setSaved(await getJSON("/api/queries")); }
     catch (e) { setStatus({ text: "✗ failed to load saved queries: " + e.message, cls: "error" }); }
+  }, []);
+
+  useEffect(() => {
+    let live = true;
+    getJSON("/api/user")
+      .then((u) => { if (live) setUser(u); })
+      .catch(() => {});
+    return () => { live = false; };
   }, []);
 
   // Phase 1: fetch /api/databases, resolve active db, restore URL state,
@@ -221,6 +235,7 @@ function App() {
     <a class="skip-link" href="#main">Skip to data browser</a>
     <header>
       <h1>pgpeek</h1><span class="badge">read-only</span>
+      <${UserBadge} user=${user} />
       <${DatabaseSelect} databases=${databases} currentDb=${currentDb} onSwitch=${switchDb} />
       <${ThemeSelect} />
     </header>

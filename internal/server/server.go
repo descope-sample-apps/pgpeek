@@ -11,20 +11,31 @@ import (
 
 // Server holds the dependencies for the HTTP handlers.
 type Server struct {
-	registry  DatabaseRegistry
-	store     QueryStore
-	web       fs.FS
-	log       *slog.Logger
-	queryWait time.Duration
+	registry                DatabaseRegistry
+	store                   QueryStore
+	web                     fs.FS
+	log                     *slog.Logger
+	queryWait               time.Duration
+	requireCloudflareAccess bool
+}
+
+type Option func(*Server)
+
+func RequireCloudflareAccess(require bool) Option {
+	return func(s *Server) { s.requireCloudflareAccess = require }
 }
 
 // New constructs a Server.
-func New(pool Querier, st QueryStore, web fs.FS, log *slog.Logger, queryWait time.Duration) *Server {
-	return NewWithRegistry(NewSingleDatabaseRegistry(pool), st, web, log, queryWait)
+func New(pool Querier, st QueryStore, web fs.FS, log *slog.Logger, queryWait time.Duration, opts ...Option) *Server {
+	return NewWithRegistry(NewSingleDatabaseRegistry(pool), st, web, log, queryWait, opts...)
 }
 
-func NewWithRegistry(registry DatabaseRegistry, st QueryStore, web fs.FS, log *slog.Logger, queryWait time.Duration) *Server {
-	return &Server{registry: registry, store: st, web: web, log: log, queryWait: queryWait}
+func NewWithRegistry(registry DatabaseRegistry, st QueryStore, web fs.FS, log *slog.Logger, queryWait time.Duration, opts ...Option) *Server {
+	s := &Server{registry: registry, store: st, web: web, log: log, queryWait: queryWait}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // Routes returns the configured handler.
@@ -39,6 +50,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /readyz", s.handleReady)
 
 	// API
+	mux.HandleFunc("GET /api/user", s.handleUser)
 	mux.HandleFunc("GET /api/databases", s.handleDatabases)
 	mux.HandleFunc("GET /api/meta", s.handleMeta)
 	mux.HandleFunc("POST /api/query", s.handleQuery)
@@ -55,5 +67,10 @@ func (s *Server) Routes() http.Handler {
 	// Static UI
 	mux.Handle("GET /", http.FileServerFS(s.web))
 
-	return securityHeaders(logging(s.log, mux))
+	return securityHeaders(logging(s.log, requireCloudflareAccess(s.requireCloudflareAccess, mux)))
+}
+
+func (s *Server) handleUser(w http.ResponseWriter, r *http.Request) {
+	u := cloudflareAccessUser(r)
+	writeJSON(w, http.StatusOK, map[string]string{"provider": u.Provider, "email": u.Email})
 }

@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -18,6 +19,56 @@ func TestHealthz(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("healthz = %d", resp.StatusCode)
+	}
+}
+
+func TestCurrentUser(t *testing.T) {
+	ts, _ := newTestServer(t, &fakeQuerier{})
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/api/user", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set(cloudflareAccessEmailHeader, "alice@example.com")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var got map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got["provider"] != "cloudflare-access" || got["email"] != "alice@example.com" {
+		t.Fatalf("user = %#v", got)
+	}
+}
+
+func TestCloudflareAccessRequired(t *testing.T) {
+	ts, _ := newCloudflareRequiredTestServer(t, &fakeQuerier{})
+	resp := mustGet(t, ts, "/api/databases")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("without access = %d, want 403", resp.StatusCode)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/api/databases", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set(cloudflareAccessJWTHeader, "token")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("with access = %d, want 200", resp.StatusCode)
+	}
+
+	resp = mustGet(t, ts, "/healthz")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("healthz = %d, want 200", resp.StatusCode)
 	}
 }
 

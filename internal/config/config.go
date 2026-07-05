@@ -14,12 +14,13 @@ import (
 
 // Config is the fully-resolved application configuration.
 type Config struct {
-	Server            Server
-	DB                DB
-	Databases         []DatabaseEntry
-	DefaultDatabaseID string
-	StorePath         string
-	RowCap            int
+	Server                  Server
+	DB                      DB
+	Databases               []DatabaseEntry
+	DefaultDatabaseID       string
+	StorePath               string
+	RowCap                  int
+	RequireCloudflareAccess bool
 }
 
 // Server holds HTTP server settings.
@@ -79,10 +80,11 @@ func Load() (*Config, error) {
 			IAMAuth:          iamAuth,
 			Region:           region,
 		},
-		Databases:         databases,
-		DefaultDatabaseID: defaultDatabaseID,
-		StorePath:         env("PGPEEK_STORE_PATH", "/data/pgpeek.db"),
-		RowCap:            envInt("PGPEEK_ROW_CAP", 1000),
+		Databases:               databases,
+		DefaultDatabaseID:       defaultDatabaseID,
+		StorePath:               env("PGPEEK_STORE_PATH", "/data/pgpeek.db"),
+		RowCap:                  envInt("PGPEEK_ROW_CAP", 1000),
+		RequireCloudflareAccess: envBool("PGPEEK_REQUIRE_CLOUDFLARE_ACCESS", false),
 	}
 	if err := applyDefaultDatabase(c); err != nil {
 		return nil, err

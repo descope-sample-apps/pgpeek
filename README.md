@@ -101,6 +101,7 @@ supplied from mounted files so they do not live in manifests.
 | `PGPEEK_SHUTDOWN_TIMEOUT`    | `15s`                | Graceful-shutdown grace period.                                       |
 | `PGPEEK_TLS_CERT_FILE`       | —                    | Enable HTTPS (set together with the key). Otherwise serve plain HTTP behind a TLS-terminating ingress. |
 | `PGPEEK_TLS_KEY_FILE`        | —                    | TLS private key path.                                                 |
+| `PGPEEK_REQUIRE_CLOUDFLARE_ACCESS` | `false`       | Return 403 unless Cloudflare Access headers are present; probes stay open. |
 | `PGPEEK_DB_IAM_AUTH`         | `false`              | Use RDS/Aurora IAM auth instead of a password (see below).            |
 | `PGPEEK_AWS_REGION`          | `$AWS_REGION`        | AWS region for IAM token signing (required when IAM auth is on).      |
 
@@ -285,6 +286,11 @@ pgpeek is intentionally **auth-thin** — put it behind your existing SSO. The
 example `Ingress` assumes oauth2-proxy (Entra/Google SAML). **Do not expose
 pgpeek without an auth layer in front of it.**
 
+Cloudflare Access is detected from `Cf-Access-Authenticated-User-Email` and
+shown in the UI. Set `PGPEEK_REQUIRE_CLOUDFLARE_ACCESS=true` to reject requests
+without Cloudflare Access headers. This is not JWT validation; only use it when
+the origin is reachable only through Cloudflare Access/Tunnel.
+
 ## Managing preset queries
 
 Two ways:
@@ -301,6 +307,7 @@ Two ways:
 | Method & path                                 | Purpose                                        |
 | --------------------------------------------- | ---------------------------------------------- |
 | `GET /api/databases`                          | List configured databases → `{defaultId, databases:[{id,name}]}`. |
+| `GET /api/user`                               | Current detected user (`anonymous` or Cloudflare Access email).    |
 | `POST /api/query?db=<id>`                     | Run a query → JSON `{columns, rows, …}`.       |
 | `POST /api/export?db=<id>`                    | Run a query → CSV download.                    |
 | `GET /api/meta?db=<id>`                       | Server limits the UI needs (`{rowCap}`).       |

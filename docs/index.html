@@ -196,8 +196,27 @@
         </div>
       </article>
 
-      <!-- Foreign keys -->
       <article class="feature feature--flip reveal">
+        <div class="feature__figure">
+          <figure class="frame">
+            <div class="frame__toolbar"><span class="frame__dots"><span class="frame__dot frame__dot--red"></span><span class="frame__dot frame__dot--yellow"></span><span class="frame__dot frame__dot--green"></span></span><span class="frame__url">wide_support_events</span></div>
+            <img src="screenshots/large-table-ux-desktop.png" width="1440" height="900" loading="lazy" decoding="async"
+                 alt="pgpeek browsing a very wide support-events table with sticky headers, clipped cell previews, and horizontal scrolling." />
+          </figure>
+        </div>
+        <div class="feature__text">
+          <span class="feature__num">02</span>
+          <h3 class="feature__title">Wide tables stay readable</h3>
+          <ul class="feature__bullets">
+            <li>Sticky headers and filter rows keep context while scrolling.</li>
+            <li>Long cells render compact previews, with full values available on demand.</li>
+            <li>Desktop, tablet, and mobile overflow are contained instead of stretching the page.</li>
+          </ul>
+        </div>
+      </article>
+
+      <!-- Foreign keys -->
+      <article class="feature reveal">
         <div class="feature__figure">
           <figure class="frame">
             <div class="frame__toolbar"><span class="frame__dots"><span class="frame__dot frame__dot--red"></span><span class="frame__dot frame__dot--yellow"></span><span class="frame__dot frame__dot--green"></span></span><span class="frame__url">public.companies</span></div>
@@ -206,7 +225,7 @@
           </figure>
         </div>
         <div class="feature__text">
-          <span class="feature__num">02</span>
+          <span class="feature__num">03</span>
           <h3 class="feature__title">Foreign keys you can click through</h3>
           <ul class="feature__bullets">
             <li>FK cells render as links straight to the referenced row.</li>
@@ -216,7 +235,7 @@
         </div>
       </article>
 
-      <article class="feature reveal">
+      <article class="feature feature--flip reveal">
         <div class="feature__figure">
           <figure class="frame">
             <div class="frame__toolbar"><span class="frame__dots"><span class="frame__dot frame__dot--red"></span><span class="frame__dot frame__dot--yellow"></span><span class="frame__dot frame__dot--green"></span></span><span class="frame__url">?db=analytics&amp;schema=public&amp;table=users</span></div>
@@ -225,7 +244,7 @@
           </figure>
         </div>
         <div class="feature__text">
-          <span class="feature__num">03</span>
+          <span class="feature__num">04</span>
           <h3 class="feature__title">Switch databases without losing the link</h3>
           <ul class="feature__bullets">
             <li>Pick from named databases or clusters in the header.</li>
@@ -236,7 +255,7 @@
       </article>
 
       <!-- Structure -->
-      <article class="feature feature--flip reveal">
+      <article class="feature reveal">
         <div class="feature__figure">
           <figure class="frame">
             <div class="frame__toolbar"><span class="frame__dots"><span class="frame__dot frame__dot--red"></span><span class="frame__dot frame__dot--yellow"></span><span class="frame__dot frame__dot--green"></span></span><span class="frame__url">Structure</span></div>
@@ -245,7 +264,7 @@
           </figure>
         </div>
         <div class="feature__text">
-          <span class="feature__num">04</span>
+          <span class="feature__num">05</span>
           <h3 class="feature__title">Structure at a glance</h3>
           <ul class="feature__bullets">
             <li>Every column: name, type, nullable, default.</li>
@@ -256,7 +275,7 @@
       </article>
 
       <!-- SQL -->
-      <article class="feature reveal">
+      <article class="feature feature--flip reveal">
         <div class="feature__figure">
           <figure class="frame">
             <div class="frame__toolbar"><span class="frame__dots"><span class="frame__dot frame__dot--red"></span><span class="frame__dot frame__dot--yellow"></span><span class="frame__dot frame__dot--green"></span></span><span class="frame__url">SQL</span></div>
@@ -265,12 +284,13 @@
           </figure>
         </div>
         <div class="feature__text">
-          <span class="feature__num">05</span>
+          <span class="feature__num">06</span>
           <h3 class="feature__title">A SQL scratchpad with memory</h3>
           <ul class="feature__bullets">
             <li>CodeMirror editor (pgsql mode) with table/field autocomplete; gracefully degrades to a textarea.</li>
             <li>Single <code>SELECT</code> / <code>WITH</code> only — enforced.</li>
             <li>Saved &amp; preset queries, grouped; CSV export; capped-result warning.</li>
+            <li>Query errors appear inline under the editor, without replacing the last good result.</li>
             <li><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd> runs.</li>
           </ul>
         </div>
@@ -421,6 +441,13 @@
         <strong>Filtering is safe by construction.</strong> Column names are validated against the relation's real columns and emitted via <code>pgx.Identifier</code>; operators come from a fixed allowlist; values are bound as query parameters; sort is <code>ASC</code>/<code>DESC</code> only. No user input is ever concatenated into SQL.
       </div>
     </div>
+
+    <div class="callout callout--success reveal">
+      <div class="callout__icon" aria-hidden="true">cf</div>
+      <div class="callout__body">
+        <strong>Cloudflare Access aware.</strong> pgpeek shows the detected <code>Cf-Access-Authenticated-User-Email</code> in the UI. Set <code>PGPEEK_REQUIRE_CLOUDFLARE_ACCESS=true</code> to reject requests without Cloudflare Access headers. This is header enforcement only, not JWT validation; keep the origin reachable only through Cloudflare Access/Tunnel.
+      </div>
+    </div>
   </div>
 </section>
 
@@ -471,7 +498,7 @@
       </div>
       <div class="stack-item">
         <span class="stack-dot stack-dot--warn" aria-hidden="true"></span>
-        <span class="stack-item__body"><span class="stack-item__label">Ships as</span><span class="stack-item__desc">one ~25&nbsp;MB distroless image · multi-arch · reproducible · with SBOMs</span></span>
+        <span class="stack-item__body"><span class="stack-item__label">Ships as</span><span class="stack-item__desc">one ~25&nbsp;MB distroless image · Go FIPS mode · multi-arch · reproducible · with SBOMs</span></span>
       </div>
     </div>
   </div>
@@ -567,6 +594,7 @@ docker build -t pgpeek .   <span class="tok-comment"># or the hand-written Docke
           <tr><td class="td-path">PGPEEK_SHUTDOWN_TIMEOUT</td><td><span class="pill-default">15s</span></td><td>Graceful-shutdown grace period.</td></tr>
           <tr><td class="td-path">PGPEEK_TLS_CERT_FILE</td><td><span class="pill-default">—</span></td><td>Enable HTTPS (set with the key file). Otherwise terminate TLS at the ingress.</td></tr>
           <tr><td class="td-path">PGPEEK_TLS_KEY_FILE</td><td><span class="pill-default">—</span></td><td>TLS private key path.</td></tr>
+          <tr><td class="td-path">PGPEEK_REQUIRE_CLOUDFLARE_ACCESS</td><td><span class="pill-default">false</span></td><td>Return 403 unless Cloudflare Access headers are present; probes stay open.</td></tr>
           <tr><td class="td-path">PGPEEK_DB_IAM_AUTH</td><td><span class="pill-default">false</span></td><td>Use RDS/Aurora IAM auth instead of a password.</td></tr>
           <tr><td class="td-path">PGPEEK_AWS_REGION</td><td><span class="pill-default">$AWS_REGION</span></td><td>AWS region for IAM token signing (required when IAM auth is on).</td></tr>
         </tbody>
@@ -586,6 +614,13 @@ docker build -t pgpeek .   <span class="tok-comment"># or the hand-written Docke
         <strong>Multiple clusters are bookmarkable.</strong> The UI writes the selected database into the URL as <code>?db=prod</code>, alongside table, tab, filter, sort, and pagination params. For Kubernetes, mount a ConfigMap at <code>/config/pgpeek/databases.json</code> and Secret files at <code>/secrets/*</code>; for Compose, mount local directories with <code>./pgpeek-config:/config/pgpeek:ro</code> and <code>./pgpeek-secrets:/secrets:ro</code>. These are examples only — no extra deploy files are required.
       </div>
     </div>
+
+    <div class="callout callout--success reveal">
+      <div class="callout__icon" aria-hidden="true">cf</div>
+      <div class="callout__body">
+        <strong>Cloudflare Access gate.</strong> pgpeek reads <code>Cf-Access-Authenticated-User-Email</code> for the current user banner and can require Access headers with <code>PGPEEK_REQUIRE_CLOUDFLARE_ACCESS=true</code>. Use it only when Cloudflare Access/Tunnel is the only path to the origin.
+      </div>
+    </div>
   </div>
 </section>
 
@@ -603,6 +638,7 @@ docker build -t pgpeek .   <span class="tok-comment"># or the hand-written Docke
         <thead><tr><th>Method &amp; path</th><th>Purpose</th></tr></thead>
         <tbody>
           <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/databases</td><td>List configured databases → <code>{defaultId, databases:[{id,name}]}</code>.</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/user</td><td>Current detected user: <code>anonymous</code> or a Cloudflare Access email.</td></tr>
           <tr><td class="td-path"><span class="method-badge method-post">POST</span> /api/query?db=&lt;id&gt;</td><td>Run a query → JSON <code>{columns, rows, …}</code>.</td></tr>
           <tr><td class="td-path"><span class="method-badge method-post">POST</span> /api/export?db=&lt;id&gt;</td><td>Run a query → CSV download.</td></tr>
           <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/meta?db=&lt;id&gt;</td><td>Server limits the UI needs (<code>{rowCap}</code>).</td></tr>
@@ -644,17 +680,30 @@ docker build -t pgpeek .   <span class="tok-comment"># or the hand-written Docke
       </article>
       <article class="deploy-card reveal reveal-delay-2">
         <span class="deploy-card__label">Releases</span>
-        <h3 class="deploy-card__title">Signed &amp; reproducible</h3>
-        <p class="deploy-card__text">release-please + goreleaser + ko publish multi-arch distroless images with SBOMs to <code>ghcr.io/descope-sample-apps/pgpeek</code>.</p>
+        <h3 class="deploy-card__title">FIPS, signed &amp; reproducible</h3>
+        <p class="deploy-card__text">release-please + goreleaser + ko publish multi-arch distroless images with SBOMs to <code>ghcr.io/descope-sample-apps/pgpeek</code>. Builds and runtime pin <code>GOFIPS140=v1.0.0</code> and <code>GODEBUG=fips140=on</code>.</p>
       </article>
+      <article class="deploy-card reveal reveal-delay-3">
+        <span class="deploy-card__label">Secrets</span>
+        <h3 class="deploy-card__title">Mount credentials, don't commit them</h3>
+        <p class="deploy-card__text">Use Secret-backed env for single DB or <code>PGPEEK_DATABASE_URLS</code>, Secret-mounted files for <code>DATABASE_URL_FILE</code> or numbered <code>_FILE</code> DSNs, and ConfigMap JSON plus Secret <code>urlFile</code> entries for multi-cluster routing.</p>
+      </article>
+    </div>
+
+    <div class="callout callout--success reveal">
+      <div class="callout__icon" aria-hidden="true">sec</div>
+      <div class="callout__body">
+        <strong>Security-aware Kubernetes patterns.</strong> Keep DSNs and passwords in Kubernetes Secrets or an External Secrets / Sealed Secrets flow, never in Git or ConfigMaps. For RDS/Aurora, prefer IRSA with <code>PGPEEK_DB_IAM_AUTH=true</code>, <code>PGPEEK_AWS_REGION</code>, and a passwordless DSN. If pgpeek terminates TLS itself, mount cert/key files from a Secret and set <code>PGPEEK_TLS_CERT_FILE</code> + <code>PGPEEK_TLS_KEY_FILE</code>; otherwise terminate TLS at the Ingress or mesh.
+      </div>
     </div>
 
     <div class="callout callout--warn reveal">
       <div class="callout__icon" aria-hidden="true">!</div>
       <div class="callout__body">
-        <strong>pgpeek is intentionally auth-thin — put it behind your own SSO.</strong> The example Ingress assumes oauth2-proxy (Entra / Google SAML). Do not expose pgpeek without an auth layer in front of it.
+        <strong>Deploy behind an access layer.</strong> pgpeek is auth-thin by design. Use oauth2-proxy, Cloudflare Access/Tunnel, VPN, private ingress, or service-mesh auth; do not expose it directly. If <code>PGPEEK_REQUIRE_CLOUDFLARE_ACCESS=true</code>, keep the origin reachable only through Cloudflare. Kubernetes probes stay open on <code>/healthz</code> and <code>/readyz</code>.
       </div>
     </div>
+
   </div>
 </section>
 
@@ -670,7 +719,7 @@ docker build -t pgpeek .   <span class="tok-comment"># or the hand-written Docke
       <div class="quality-stat"><span class="quality-stat__num">100%</span><span class="quality-stat__label">backend coverage (internal/)</span></div>
       <div class="quality-stat"><span class="quality-stat__num">100%</span><span class="quality-stat__label">frontend coverage (vitest)</span></div>
       <div class="quality-stat"><span class="quality-stat__num">~25&nbsp;MB</span><span class="quality-stat__label">distroless image</span></div>
-      <div class="quality-stat"><span class="quality-stat__num">0</span><span class="quality-stat__label">cgo dependencies</span></div>
+      <div class="quality-stat"><span class="quality-stat__num">FIPS</span><span class="quality-stat__label">Go crypto mode pinned</span></div>
     </div>
 
     <div class="quality__list">
@@ -684,7 +733,7 @@ docker build -t pgpeek .   <span class="tok-comment"># or the hand-written Docke
       </div>
       <div class="quality-item reveal reveal-delay-2">
         <span class="quality-item__icon" aria-hidden="true">✓</span>
-        <div><h3 class="quality-item__title">Reproducible releases</h3><p class="quality-item__desc">Tagged via release-please; built by goreleaser + ko into signed, multi-arch images with SBOMs.</p></div>
+        <div><h3 class="quality-item__title">Reproducible FIPS releases</h3><p class="quality-item__desc">Tagged via release-please; built by goreleaser + ko into signed, multi-arch images with SBOMs and Go FIPS mode enabled.</p></div>
       </div>
     </div>
   </div>
@@ -713,6 +762,7 @@ docker build -t pgpeek .   <span class="tok-comment"># or the hand-written Docke
           <a href="#quickstart">Quick start</a>
           <a href="#config">Configuration</a>
           <a href="#api">HTTP API</a>
+          <a href="llms.txt">LLMs.txt</a>
         </div>
         <div class="footer__col-links">
           <span class="footer__col-title">Operate</span>

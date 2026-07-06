@@ -765,7 +765,7 @@ pre code {
 .callout__icon { width: 20px; height: 20px; flex-shrink: 0; margin-top: 2px; }
 .callout--success .callout__icon { color: var(--c-success); }
 .callout--warn    .callout__icon { color: var(--c-warn); }
-.callout__body { flex: 1; }
+.callout__body { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .callout__body h4 {
   font-size: var(--text-sm);
   font-weight: 600;

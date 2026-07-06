@@ -23,7 +23,8 @@ everywhere. Read-only by design: no row editing, schema management, or migration
   (matches any column), per-column filters with operators (`=`, `≠`, `<`, `>`,
   `ILIKE`, `IS NULL`, …), and click-to-sort headers. Foreign-key cells are
   **click-through links** that jump to the referenced row. CSV export respects
-  the active search/filters/sort.
+  the active search/filters/sort. Wide tables stay usable with sticky headers,
+  clipped cell previews, full values on demand, and mobile overflow containment.
 - **Structure** tab — column name, type, nullable, default.
 - **SQL** tab — CodeMirror editor with table/field autocomplete, saved/preset
   queries, CSV export.
@@ -57,6 +58,9 @@ browser ── HTTP ──> pgpeek (Go, single static binary)
 - **Frontend**: one `web/index.html` — CodeMirror editor (CDN, degrades to a
   textarea), results table, saved-query dropdown, CSV button. Embedded into the
   binary via `go:embed`.
+
+LLM-friendly project notes live in [`llms.txt`](llms.txt); the published docs
+site also serves [`/llms.txt`](docs/llms.txt).
 
 ## Read-only enforcement (defense in depth)
 
@@ -214,6 +218,10 @@ make image                 # snapshot distroless image via goreleaser + ko
 docker build -t pgpeek .   # alternative: hand-written multi-stage Dockerfile
 ```
 
+Builds run with Go FIPS 140-3 mode enabled (`GOFIPS140=v1.0.0`,
+`GODEBUG=fips140=on`). The hand-written Dockerfile uses Verity's Go FIPS builder
+image and keeps the runtime distroless/nonroot.
+
 Release images are built with [ko](https://ko.build) inside goreleaser
 (distroless, multi-arch, reproducible, with SBOMs) — see [Releases](#releases).
 
@@ -249,6 +257,7 @@ make cover-check        # uses PGPEEK_TEST_DATABASE_URL (default points at :5543
 - The tag triggers **goreleaser** (`.goreleaser.yaml`), which builds the
   binaries and uses **ko** to publish multi-arch distroless images to
   `ghcr.io/descope-sample-apps/pgpeek:{version,major.minor,latest}` with SBOMs.
+  Release builds pin Go FIPS mode with `GOFIPS140=v1.0.0` and `GODEBUG=fips140=on`.
 
 CI (`.github/workflows/ci.yml`) runs lint, vet, race tests with a Postgres
 service, the 100% coverage gate, govulncheck, the vitest suite, and a snapshot
@@ -271,6 +280,9 @@ kubectl apply -k k8s/
 The pod runs as non-root with a read-only root filesystem (only `/data` is
 writable), drops all capabilities, and has liveness (`/healthz`) and readiness
 (`/readyz`) probes.
+
+The example Deployment also sets `GOFIPS140=v1.0.0` and `GODEBUG=fips140=on` so
+runtime crypto follows the same FIPS profile as release builds.
 
 ### A note on scaling
 

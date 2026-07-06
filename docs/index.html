@@ -683,14 +683,27 @@ docker build -t pgpeek .   <span class="tok-comment"># or the hand-written Docke
         <h3 class="deploy-card__title">FIPS, signed &amp; reproducible</h3>
         <p class="deploy-card__text">release-please + goreleaser + ko publish multi-arch distroless images with SBOMs to <code>ghcr.io/descope-sample-apps/pgpeek</code>. Builds and runtime pin <code>GOFIPS140=v1.0.0</code> and <code>GODEBUG=fips140=on</code>.</p>
       </article>
+      <article class="deploy-card reveal reveal-delay-3">
+        <span class="deploy-card__label">Secrets</span>
+        <h3 class="deploy-card__title">Mount credentials, don't commit them</h3>
+        <p class="deploy-card__text">Use Secret-backed env for single DB or <code>PGPEEK_DATABASE_URLS</code>, Secret-mounted files for <code>DATABASE_URL_FILE</code> or numbered <code>_FILE</code> DSNs, and ConfigMap JSON plus Secret <code>urlFile</code> entries for multi-cluster routing.</p>
+      </article>
+    </div>
+
+    <div class="callout callout--success reveal">
+      <div class="callout__icon" aria-hidden="true">sec</div>
+      <div class="callout__body">
+        <strong>Security-aware Kubernetes patterns.</strong> Keep DSNs and passwords in Kubernetes Secrets or an External Secrets / Sealed Secrets flow, never in Git or ConfigMaps. For RDS/Aurora, prefer IRSA with <code>PGPEEK_DB_IAM_AUTH=true</code>, <code>PGPEEK_AWS_REGION</code>, and a passwordless DSN. If pgpeek terminates TLS itself, mount cert/key files from a Secret and set <code>PGPEEK_TLS_CERT_FILE</code> + <code>PGPEEK_TLS_KEY_FILE</code>; otherwise terminate TLS at the Ingress or mesh.
+      </div>
     </div>
 
     <div class="callout callout--warn reveal">
       <div class="callout__icon" aria-hidden="true">!</div>
       <div class="callout__body">
-        <strong>pgpeek is intentionally auth-thin — put it behind your own SSO.</strong> The example Ingress assumes oauth2-proxy (Entra / Google SAML). Cloudflare Access is supported too. Do not expose pgpeek without an auth layer in front of it.
+        <strong>Deploy behind an access layer.</strong> pgpeek is auth-thin by design. Use oauth2-proxy, Cloudflare Access/Tunnel, VPN, private ingress, or service-mesh auth; do not expose it directly. If <code>PGPEEK_REQUIRE_CLOUDFLARE_ACCESS=true</code>, keep the origin reachable only through Cloudflare. Kubernetes probes stay open on <code>/healthz</code> and <code>/readyz</code>.
       </div>
     </div>
+
   </div>
 </section>
 

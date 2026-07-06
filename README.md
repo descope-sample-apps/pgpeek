@@ -284,6 +284,56 @@ writable), drops all capabilities, and has liveness (`/healthz`) and readiness
 The example Deployment also sets `GOFIPS140=v1.0.0` and `GODEBUG=fips140=on` so
 runtime crypto follows the same FIPS profile as release builds.
 
+### Kubernetes security and secret mounting
+
+Production rule: keep DSNs and DB passwords out of Git and out of ConfigMaps.
+Use a read-only Postgres role, require TLS to the database (`sslmode=require`),
+and put pgpeek behind SSO before it is reachable by users.
+
+Supported secret patterns, from simplest to most flexible:
+
+1. **Single DB, env from Secret** — the shipped `k8s/deployment.yaml` reads
+   `DATABASE_URL` from the `pgpeek-db` Secret. Create that Secret out-of-band
+   with `kubectl create secret`, Sealed Secrets, External Secrets Operator, or
+   your platform's secret manager sync.
+2. **Single DB, mounted Secret file** — mount a Secret key as a file and set
+   `DATABASE_URL_FILE=/secrets/database-url`. This keeps the secret out of pod
+   env dumps while still using one database.
+3. **Multiple DBs, env from Secret** — set `PGPEEK_DATABASE_URLS` from a Secret
+   when your secret manager already publishes the whole DSN list as one value.
+   Keep `PGPEEK_DATABASE_IDS` and `PGPEEK_DATABASE_NAMES` in a ConfigMap when
+   they are non-secret.
+4. **Multiple DBs, numbered Secret files** — mount one Secret file per DSN and
+   set `PGPEEK_DATABASE_URL_1_FILE=/secrets/prod-url`,
+   `PGPEEK_DATABASE_URL_2_FILE=/secrets/analytics-url`, plus matching IDs and
+   display names.
+5. **Multiple DBs, ConfigMap + Secret files** — mount non-secret routing config
+   as `PGPEEK_DATABASES_FILE=/config/pgpeek/databases.json`, and keep each
+   database DSN in a Secret-mounted file referenced by `urlFile`.
+6. **No static DB password** — for RDS/Aurora, set
+   `PGPEEK_DB_IAM_AUTH=true`, `PGPEEK_AWS_REGION`, use a passwordless DSN, and
+   annotate `k8s/serviceaccount.yaml` for IRSA with `rds-db:connect` on the
+   read-only DB user.
+
+Keep app config and secrets separated: ConfigMaps may hold database IDs, names,
+row caps, and timeouts; Secrets should hold DSNs, TLS private keys, and any auth
+material. If pgpeek terminates TLS itself, mount certificate/key files from a
+Secret and set `PGPEEK_TLS_CERT_FILE` + `PGPEEK_TLS_KEY_FILE`; otherwise
+terminate TLS at the Ingress or mesh.
+
+Network/auth checklist:
+
+- Do not publish pgpeek directly to the internet. Use oauth2-proxy, Cloudflare
+  Access/Tunnel, VPN, private ingress, or a service mesh auth layer.
+- If using Cloudflare Access, set `PGPEEK_REQUIRE_CLOUDFLARE_ACCESS=true` only
+  when the origin cannot be reached except through Cloudflare.
+- Keep probes open: `/healthz` and `/readyz` remain usable by Kubernetes even
+  when Cloudflare Access headers are required.
+- Restrict egress to the configured Postgres endpoints and any AWS STS/RDS IAM
+  endpoints required for IAM auth.
+- Rotate DB credentials in the backing Secret; restart pods if your secret sync
+  mechanism does not refresh mounted files/env automatically.
+
 ### A note on scaling
 
 The saved-query store is a SQLite file on a **ReadWriteOnce** PVC, so the

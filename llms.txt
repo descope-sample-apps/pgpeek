@@ -19,6 +19,8 @@
 - RDS/Aurora IAM auth is supported with `PGPEEK_DB_IAM_AUTH=true` and `PGPEEK_AWS_REGION`.
 - Cloudflare Access headers are detected from `Cf-Access-Authenticated-User-Email`; `PGPEEK_REQUIRE_CLOUDFLARE_ACCESS=true` rejects requests missing those headers. This does not validate JWTs.
 - Builds and runtime use Go FIPS mode: `GOFIPS140=v1.0.0`, `GODEBUG=fips140=on`.
+- Kubernetes security baseline: use a read-only DB role, require database TLS, keep DSNs/passwords in Secrets or external-secret sync, keep non-secret database names/IDs in ConfigMaps, run behind SSO/private access, and never expose pgpeek directly.
+- Kubernetes secret options: `DATABASE_URL` from Secret env, `DATABASE_URL_FILE` from a mounted Secret file, `PGPEEK_DATABASE_URLS` from Secret env for multi-DB lists, numbered `PGPEEK_DATABASE_URL_N_FILE` Secret files, `PGPEEK_DATABASES_FILE` ConfigMap JSON with Secret-backed `urlFile` entries, or RDS/Aurora IAM auth via IRSA with no static DB password.
 
 ## Important env vars
 

@@ -80,7 +80,9 @@ pgpeek exposes a stateless [Streamable HTTP](https://modelcontextprotocol.io/spe
 MCP endpoint at `http(s)://<pgpeek-host>/mcp`, implemented with the official Go
 SDK. MCP responses use JSON rather than long-lived SSE sessions, which keeps the
 endpoint simple to run behind an ingress or load balancer. Request bodies are
-capped at 32 KiB before protocol parsing.
+capped at 32 KiB before protocol parsing. Structured tool output is capped at
+448 KiB; query and discovery responses set `truncated=true` when rows or catalog
+entries are omitted to stay within that budget.
 
 The server advertises four structured, read-only tools:
 

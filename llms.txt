@@ -23,6 +23,8 @@ full-context: https://descope-sample-apps.github.io/pgpeek/llms-full.txt
 - The app is intentionally auth-thin and must sit behind an authentication layer.
 - MCP is available at `/mcp` over stateless Streamable HTTP with four structured,
   read-only tools: `list_databases`, `list_tables`, `describe_table`, and `query`.
+  Requests are capped at 32 KiB and structured outputs at 448 KiB with
+  `truncated` signaling.
 
 ## Start locally
 

@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -18,10 +17,6 @@ var (
 	errMCPRelationRequired    = errors.New("schema and table are required")
 )
 
-// Leave room below 512 KiB for the bounded request ID, JSON-RPC envelope, and
-// compact text content.
-const maxMCPQueryResultBytes = 448 << 10
-
 type mcpDatabaseInput struct {
 	DatabaseID string `json:"databaseId,omitempty" jsonschema:"configured database ID; omit to use the default database"`
 }
@@ -31,11 +26,13 @@ type mcpListDatabasesInput struct{}
 type mcpListDatabasesOutput struct {
 	DefaultDatabaseID string            `json:"defaultDatabaseId" jsonschema:"database ID used when a tool call omits databaseId"`
 	Databases         []db.PoolMetadata `json:"databases" jsonschema:"configured database IDs and display names"`
+	Truncated         bool              `json:"truncated" jsonschema:"whether configured databases were omitted by the response-size cap"`
 }
 
 type mcpListTablesOutput struct {
 	DatabaseID string         `json:"databaseId" jsonschema:"database queried"`
 	Tables     []db.TableInfo `json:"tables" jsonschema:"user-facing tables and views"`
+	Truncated  bool           `json:"truncated" jsonschema:"whether tables were omitted by the response-size cap"`
 }
 
 type mcpDescribeTableInput struct {
@@ -50,6 +47,7 @@ type mcpDescribeTableOutput struct {
 	Table       string          `json:"table" jsonschema:"table or view name"`
 	Columns     []db.ColumnInfo `json:"columns" jsonschema:"columns in ordinal order"`
 	ForeignKeys []db.ForeignKey `json:"foreignKeys" jsonschema:"single-column foreign keys"`
+	Truncated   bool            `json:"truncated" jsonschema:"whether columns or foreign keys were omitted by the response-size cap"`
 }
 
 type mcpQueryInput struct {
@@ -67,10 +65,11 @@ type mcpQueryOutput struct {
 }
 
 func (s *Server) mcpListDatabases(context.Context, *mcp.CallToolRequest, mcpListDatabasesInput) (*mcp.CallToolResult, mcpListDatabasesOutput, error) {
-	return nil, mcpListDatabasesOutput{
+	output, err := capMCPListDatabasesOutput(mcpListDatabasesOutput{
 		DefaultDatabaseID: s.registry.DefaultID(),
 		Databases:         nonNil(s.registry.List()),
-	}, nil
+	})
+	return mcpStructuredOutput("Database list completed. The result is available in structuredContent.", output, err)
 }
 
 func (s *Server) mcpListTables(ctx context.Context, _ *mcp.CallToolRequest, input mcpDatabaseInput) (*mcp.CallToolResult, mcpListTablesOutput, error) {
@@ -85,7 +84,8 @@ func (s *Server) mcpListTables(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		s.log.Error("mcp list tables", "databaseID", databaseID, "err", err)
 		return nil, mcpListTablesOutput{}, errors.New("failed to list tables")
 	}
-	return nil, mcpListTablesOutput{DatabaseID: databaseID, Tables: nonNil(tables)}, nil
+	output, err := capMCPListTablesOutput(mcpListTablesOutput{DatabaseID: databaseID, Tables: nonNil(tables)})
+	return mcpStructuredOutput("Table list completed. The result is available in structuredContent.", output, err)
 }
 
 func (s *Server) mcpDescribeTable(ctx context.Context, _ *mcp.CallToolRequest, input mcpDescribeTableInput) (*mcp.CallToolResult, mcpDescribeTableOutput, error) {
@@ -110,13 +110,14 @@ func (s *Server) mcpDescribeTable(ctx context.Context, _ *mcp.CallToolRequest, i
 		s.log.Error("mcp describe table foreign keys", "databaseID", databaseID, "err", err)
 		return nil, mcpDescribeTableOutput{}, errors.New("failed to read foreign keys")
 	}
-	return nil, mcpDescribeTableOutput{
+	output, err := capMCPDescribeTableOutput(mcpDescribeTableOutput{
 		DatabaseID:  databaseID,
 		Schema:      schema,
 		Table:       table,
 		Columns:     nonNil(columns),
 		ForeignKeys: nonNil(foreignKeys),
-	}, nil
+	})
+	return mcpStructuredOutput("Table description completed. The result is available in structuredContent.", output, err)
 }
 
 func (s *Server) mcpQuery(ctx context.Context, _ *mcp.CallToolRequest, input mcpQueryInput) (*mcp.CallToolResult, mcpQueryOutput, error) {
@@ -144,42 +145,7 @@ func (s *Server) mcpQuery(ctx context.Context, _ *mcp.CallToolRequest, input mcp
 		ElapsedMS:  result.ElapsedMS,
 	}
 	output, err = capMCPQueryOutput(output)
-	if err != nil {
-		return nil, mcpQueryOutput{}, err
-	}
-	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{
-		Text: "Query completed. The result is available in structuredContent.",
-	}}}, output, nil
-}
-
-func capMCPQueryOutput(output mcpQueryOutput) (mcpQueryOutput, error) {
-	encoded, err := json.Marshal(output)
-	if err == nil && len(encoded) <= maxMCPQueryResultBytes {
-		return output, nil
-	}
-
-	low, high := 0, len(output.Rows)
-	for low < high {
-		mid := low + (high-low+1)/2
-		candidate := output
-		candidate.Rows = output.Rows[:mid]
-		candidate.RowCount = mid
-		candidate.Truncated = true
-		encoded, err = json.Marshal(candidate)
-		if err == nil && len(encoded) <= maxMCPQueryResultBytes {
-			low = mid
-		} else {
-			high = mid - 1
-		}
-	}
-	output.Rows = output.Rows[:low]
-	output.RowCount = low
-	output.Truncated = true
-	encoded, err = json.Marshal(output)
-	if err != nil || len(encoded) > maxMCPQueryResultBytes {
-		return mcpQueryOutput{}, errors.New("query result metadata exceeds MCP response limit")
-	}
-	return output, nil
+	return mcpStructuredOutput("Query completed. The result is available in structuredContent.", output, err)
 }
 
 func (s *Server) mcpPool(id string) (string, Querier, error) {

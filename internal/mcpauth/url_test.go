@@ -15,7 +15,9 @@ func TestParseSecureURL_enforcesSharedMCPPolicy(t *testing.T) {
 		{name: "non-loopback HTTP", raw: "http://pgpeek.example.com/mcp", wantErr: true},
 		{name: "user information", raw: "https://user@pgpeek.example.com/mcp", wantErr: true},
 		{name: "query", raw: "https://pgpeek.example.com/mcp?tenant=one", wantErr: true},
+		{name: "empty query delimiter", raw: "https://pgpeek.example.com/mcp?", wantErr: true},
 		{name: "fragment", raw: "https://pgpeek.example.com/mcp#fragment", wantErr: true},
+		{name: "empty fragment delimiter", raw: "https://pgpeek.example.com/mcp#", wantErr: true},
 	}
 
 	for _, tt := range tests {

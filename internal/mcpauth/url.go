@@ -14,7 +14,7 @@ func ParseSecureURL(raw string) (*url.URL, error) {
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return nil, errors.New("must be an absolute URL")
 	}
-	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+	if u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(raw, "#") {
 		return nil, errors.New("must not contain user information, a query, or a fragment")
 	}
 	if strings.EqualFold(u.Scheme, "https") {

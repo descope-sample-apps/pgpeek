@@ -51,6 +51,24 @@ func TestMCP_lists_simple_read_only_tools(t *testing.T) {
 	}
 }
 
+func TestMCP_initialize_reportsConfiguredVersion(t *testing.T) {
+	// Given: pgpeek is built with a release version.
+	ts := newRegistryTestServer(t, fakeRegistry{
+		defaultID: "primary",
+		metadata:  []db.PoolMetadata{{ID: "primary", Name: "Primary"}},
+		pools:     map[string]Querier{"primary": &fakeQuerier{}},
+	}, Version("v1.2.3"))
+
+	// When: an MCP client initializes a session.
+	session := connectMCP(t, ts)
+
+	// Then: server metadata exposes the build version.
+	result := session.InitializeResult()
+	if result == nil || result.ServerInfo == nil || result.ServerInfo.Version != "v1.2.3" {
+		t.Fatalf("initialize result = %+v", result)
+	}
+}
+
 func TestMCP_list_databases_returns_safe_registry_metadata(t *testing.T) {
 	// Given: pgpeek has two configured databases.
 	ts := newRegistryTestServer(t, fakeRegistry{

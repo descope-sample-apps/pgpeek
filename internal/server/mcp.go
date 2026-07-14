@@ -50,14 +50,18 @@ func (s *Server) mcpHandler() http.Handler {
 		Annotations: annotations,
 	}, s.mcpQuery)
 
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
+	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return server
 	}, &mcp.StreamableHTTPOptions{
 		Stateless:    true,
 		JSONResponse: true,
 		Logger:       s.log,
 	})
-	return http.NewCrossOriginProtection().Handler(http.MaxBytesHandler(singleMCPMessage(handler), maxMCPRequestBytes))
+	handler := http.MaxBytesHandler(singleMCPMessage(transport), maxMCPRequestBytes)
+	if s.mcpAuthorization != nil {
+		handler = s.mcpAuthorization.protect(handler)
+	}
+	return http.NewCrossOriginProtection().Handler(handler)
 }
 
 func singleMCPMessage(next http.Handler) http.Handler {

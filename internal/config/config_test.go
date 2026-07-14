@@ -20,6 +20,8 @@ func clearEnv(t *testing.T) {
 		"PGPEEK_DB_IAM_AUTH", "PGPEEK_AWS_REGION", "AWS_REGION",
 		"PGPEEK_STORE_PATH", "PGPEEK_ROW_CAP",
 		"PGPEEK_REQUIRE_CLOUDFLARE_ACCESS",
+		"DESCOPE_MCP_SERVER_WELL_KNOWN_URL", "DESCOPE_CONFIG_URL",
+		"PGPEEK_MCP_SERVER_URL", "PGPEEK_MCP_REQUIRED_SCOPES",
 		"PGPEEK_DATABASE_URLS", "PGPEEK_DATABASE_IDS", "PGPEEK_DATABASE_NAMES",
 		"PGPEEK_DATABASES_FILE", "PGPEEK_DEFAULT_DATABASE",
 	} {
@@ -65,6 +67,9 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if c.RequireCloudflareAccess {
 		t.Error("RequireCloudflareAccess should be disabled by default")
+	}
+	if c.MCPAuth.Enabled() {
+		t.Error("MCPAuth should be disabled by default")
 	}
 	if c.DefaultDatabaseID != "default" || len(c.Databases) != 1 {
 		t.Fatalf("default database registry = %q/%d", c.DefaultDatabaseID, len(c.Databases))

@@ -53,6 +53,22 @@ func run(ctx context.Context, log *slog.Logger) error {
 
 	signalCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	serverOptions := []server.Option{
+		server.RequireCloudflareAccess(cfg.RequireCloudflareAccess),
+		server.Version(version),
+	}
+	if cfg.MCPAuth.Enabled() {
+		authz, authErr := server.NewDescopeMCPAuthorization(signalCtx, server.DescopeMCPAuthConfig{
+			WellKnownURL:   cfg.MCPAuth.WellKnownURL,
+			ResourceURL:    cfg.MCPAuth.ResourceURL,
+			RequiredScopes: cfg.MCPAuth.RequiredScopes,
+		})
+		if authErr != nil {
+			return fmt.Errorf("configure Descope MCP authorization: %w", authErr)
+		}
+		serverOptions = append(serverOptions, server.WithMCPAuthorization(authz))
+		log.Info("Descope MCP authorization enabled", "resourceURL", cfg.MCPAuth.ResourceURL, "requiredScopeCount", len(cfg.MCPAuth.RequiredScopes))
+	}
 
 	entries := make([]db.RegistryEntry, 0, len(cfg.Databases))
 	closeEntries := func() {
@@ -103,7 +119,7 @@ func run(ctx context.Context, log *slog.Logger) error {
 	}
 
 	web := mustSubFS(webFiles, "web")
-	srv := server.NewWithRegistry(server.NewDatabaseRegistry(registry), st, web, log, cfg.DB.StatementTimeout+5*time.Second, server.RequireCloudflareAccess(cfg.RequireCloudflareAccess), server.Version(version))
+	srv := server.NewWithRegistry(server.NewDatabaseRegistry(registry), st, web, log, cfg.DB.StatementTimeout+5*time.Second, serverOptions...)
 	httpSrv := &http.Server{
 		Addr:              cfg.Server.Listen,
 		Handler:           srv.Routes(),

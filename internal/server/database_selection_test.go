@@ -86,7 +86,7 @@ func (q *selectedQuerier) Ping(context.Context) error {
 	return nil
 }
 
-func newRegistryTestServer(t *testing.T, registry DatabaseRegistry) *httptest.Server {
+func newRegistryTestServer(t *testing.T, registry DatabaseRegistry, opts ...Option) *httptest.Server {
 	t.Helper()
 	st, err := store.Open(t.TempDir() + "/t.db")
 	if err != nil {
@@ -95,7 +95,7 @@ func newRegistryTestServer(t *testing.T, registry DatabaseRegistry) *httptest.Se
 	t.Cleanup(func() { _ = st.Close() })
 	web := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("x")}}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := NewWithRegistry(registry, st, web, log, time.Second)
+	srv := NewWithRegistry(registry, st, web, log, time.Second, opts...)
 	ts := httptest.NewServer(srv.Routes())
 	t.Cleanup(ts.Close)
 	return ts

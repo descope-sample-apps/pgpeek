@@ -17,6 +17,7 @@ type Server struct {
 	log                     *slog.Logger
 	queryWait               time.Duration
 	requireCloudflareAccess bool
+	mcpAuthorization        *MCPAuthorization
 	version                 string
 }
 
@@ -28,6 +29,10 @@ func RequireCloudflareAccess(require bool) Option {
 
 func Version(version string) Option {
 	return func(s *Server) { s.version = version }
+}
+
+func WithMCPAuthorization(authz *MCPAuthorization) Option {
+	return func(s *Server) { s.mcpAuthorization = authz }
 }
 
 // New constructs a Server.
@@ -69,11 +74,16 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("PUT /api/queries/{id}", s.handleUpdateQuery)
 	mux.HandleFunc("DELETE /api/queries/{id}", s.handleDeleteQuery)
 
-	// MCP (stateless Streamable HTTP, no MCP auth layer)
+	// MCP (stateless Streamable HTTP, optionally protected by Descope OAuth)
 	mcpHandler := s.mcpHandler()
 	mux.Handle("GET /mcp", mcpHandler)
 	mux.Handle("POST /mcp", mcpHandler)
 	mux.Handle("DELETE /mcp", mcpHandler)
+	if s.mcpAuthorization != nil {
+		metadataHandler := s.mcpAuthorization.metadataHandler()
+		mux.Handle("GET "+protectedResourceMetadataPath, metadataHandler)
+		mux.Handle("OPTIONS "+protectedResourceMetadataPath, metadataHandler)
+	}
 
 	// Static UI
 	mux.Handle("GET /", http.FileServerFS(s.web))

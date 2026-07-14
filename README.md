@@ -105,11 +105,44 @@ For MCP clients that accept a URL-based server entry:
 }
 ```
 
-There is no MCP-specific authentication or OAuth flow. Cross-origin browser
-requests are rejected, and `PGPEEK_REQUIRE_CLOUDFLARE_ACCESS=true` still wraps
-the MCP route when enabled. Do not expose an unauthenticated pgpeek deployment
-to the public internet; keep it on a trusted network or behind your existing
-SSO/access proxy, and apply request-rate limits at that boundary when needed.
+MCP authentication is optional. With no Descope settings, `/mcp` remains
+unauthenticated and should stay on a trusted network or behind an existing
+access proxy. Cross-origin browser requests are rejected, and
+`PGPEEK_REQUIRE_CLOUDFLARE_ACCESS=true` remains an additional gate when enabled.
+
+### Descope OAuth with Dynamic Client Registration
+
+pgpeek can act as an OAuth resource server while Descope handles Dynamic Client
+Registration (DCR), login, consent, and token issuance:
+
+1. In Descope Agentic Identity Hub, create an MCP Server whose **Server URL** is
+   the full public pgpeek endpoint, for example
+   `https://pgpeek.example.com/mcp`.
+2. Enable **Dynamic Client Registration** and define the scope or scopes that
+   should grant access to pgpeek's read-only tools.
+3. Copy the MCP Server's OpenID well-known URL and configure all three values:
+
+```sh
+export DESCOPE_MCP_SERVER_WELL_KNOWN_URL='https://api.descope.com/v1/apps/agentic/<project>/<server>/.well-known/openid-configuration'
+export PGPEEK_MCP_SERVER_URL='https://pgpeek.example.com/mcp'
+export PGPEEK_MCP_REQUIRED_SCOPES='mcp:pgpeek.read'
+```
+
+`DESCOPE_CONFIG_URL` is also accepted as an alias for the well-known URL used
+by Descope's B2B MCP example. If both names are set, they must match.
+
+At startup pgpeek fetches the discovery document, verifies that it advertises a
+DCR `registration_endpoint` and every configured scope, then prepares local
+verification against its `jwks_uri` using the supported asymmetric signing
+algorithms advertised by Descope. Each `/mcp` request must present a Bearer
+token with the discovered issuer, an `aud` matching
+`PGPEEK_MCP_SERVER_URL`, a valid expiry, and every configured scope. pgpeek does
+not need a Descope management key or project secret.
+
+OAuth clients discover Descope through public RFC 9728 metadata at
+`/.well-known/oauth-protected-resource`; unauthenticated MCP responses point to
+that URL in `WWW-Authenticate`. The metadata endpoint remains public when
+Cloudflare Access enforcement is enabled, while `/mcp` must pass both gates.
 
 ## Configuration (env vars)
 
@@ -142,7 +175,10 @@ supplied from mounted files so they do not live in manifests.
 | `PGPEEK_SHUTDOWN_TIMEOUT`    | `15s`                | Graceful-shutdown grace period.                                       |
 | `PGPEEK_TLS_CERT_FILE`       | —                    | Enable HTTPS (set together with the key). Otherwise serve plain HTTP behind a TLS-terminating ingress. |
 | `PGPEEK_TLS_KEY_FILE`        | —                    | TLS private key path.                                                 |
-| `PGPEEK_REQUIRE_CLOUDFLARE_ACCESS` | `false`       | Return 403 unless Cloudflare Access headers are present; probes stay open. |
+| `PGPEEK_REQUIRE_CLOUDFLARE_ACCESS` | `false`       | Return 403 unless Cloudflare Access headers are present; probes and OAuth protected-resource metadata stay open. |
+| `DESCOPE_MCP_SERVER_WELL_KNOWN_URL` | —             | Enable Descope OAuth for `/mcp` with this MCP Server OpenID discovery URL. `DESCOPE_CONFIG_URL` is an accepted alias. |
+| `PGPEEK_MCP_SERVER_URL`      | —                    | Full public MCP URL ending in `/mcp`; used as protected resource and required JWT audience. |
+| `PGPEEK_MCP_REQUIRED_SCOPES` | —                    | Comma- or whitespace-separated Descope scopes required on every MCP request. |
 | `PGPEEK_DB_IAM_AUTH`         | `false`              | Use RDS/Aurora IAM auth instead of a password (see below).            |
 | `PGPEEK_AWS_REGION`          | `$AWS_REGION`        | AWS region for IAM token signing (required when IAM auth is on).      |
 
@@ -360,12 +396,15 @@ terminate TLS at the Ingress or mesh.
 
 Network/auth checklist:
 
-- Do not publish pgpeek directly to the internet. Use oauth2-proxy, Cloudflare
-  Access/Tunnel, VPN, private ingress, or a service mesh auth layer.
+- Do not publish the UI or HTTP API directly to the internet. Use oauth2-proxy,
+  Cloudflare Access/Tunnel, VPN, private ingress, or a service mesh auth layer.
+- For public MCP access, configure Descope DCR auth and keep
+  `PGPEEK_MCP_SERVER_URL` identical to the Server URL registered in Descope.
 - If using Cloudflare Access, set `PGPEEK_REQUIRE_CLOUDFLARE_ACCESS=true` only
   when the origin cannot be reached except through Cloudflare.
-- Keep probes open: `/healthz` and `/readyz` remain usable by Kubernetes even
-  when Cloudflare Access headers are required.
+- Keep public infrastructure endpoints open: `/healthz`, `/readyz`, and
+  `/.well-known/oauth-protected-resource` remain reachable without Cloudflare
+  Access headers.
 - Restrict egress to the configured Postgres endpoints and any AWS STS/RDS IAM
   endpoints required for IAM auth.
 - Rotate DB credentials in the backing Secret; restart pods if your secret sync
@@ -381,9 +420,13 @@ shared backend (a dedicated schema in Postgres, or an RWX volume) and bump
 
 ### Auth
 
-pgpeek is intentionally **auth-thin** — put it behind your existing SSO. The
-example `Ingress` assumes oauth2-proxy (Entra/Google SAML). **Do not expose
-pgpeek without an auth layer in front of it.**
+The UI and JSON API remain intentionally **auth-thin** — put them behind your
+existing SSO. The example `Ingress` assumes oauth2-proxy (Entra/Google SAML).
+**Do not expose them without an auth layer in front of them.**
+
+The MCP endpoint can additionally validate Descope-issued OAuth tokens when the
+three MCP auth variables above are set. This does not authenticate the UI or
+JSON API.
 
 Cloudflare Access is detected from `Cf-Access-Authenticated-User-Email` and
 shown in the UI. Set `PGPEEK_REQUIRE_CLOUDFLARE_ACCESS=true` to reject requests
@@ -419,6 +462,7 @@ Two ways:
 | `PUT /api/queries/{id}`     | Update a saved query.                     |
 | `DELETE /api/queries/{id}`  | Delete a saved query.                     |
 | `POST /mcp`                 | Send stateless Streamable HTTP MCP messages (GET/DELETE retain protocol transport behavior). |
+| `GET /.well-known/oauth-protected-resource` | Public OAuth protected-resource metadata when Descope MCP auth is enabled. |
 | `GET /healthz`              | Liveness (always 200 if process is up).   |
 | `GET /readyz`               | Readiness (pings the DB).                 |
 | `GET /`                     | The UI.                                   |

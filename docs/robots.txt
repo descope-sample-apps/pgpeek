@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://descope-sample-apps.github.io/pgpeek/sitemap.xml

@@ -31,6 +31,9 @@ All values are CSS custom properties declared in `docs/styles.css → :root`.
 | `--c-text` | `#e6e8eb` | Primary text |
 | `--c-muted` | `#9aa3b2` | Secondary text, labels, icons |
 | `--c-accent` | `#4f8cff` | Brand blue — CTAs, links, active states |
+| `--c-accent-strong` | `#336fd1` | Accessible filled CTA background |
+| `--c-accent-strong-hover` | `#285fbd` | Filled CTA hover background |
+| `--c-on-accent` | `#ffffff` | Text on filled accent surfaces |
 | `--c-success` | `#3ecf8e` | Positive status, string literals |
 | `--c-danger` | `#ff5c5c` | Error, DELETE method badge |
 | `--c-warn` | `#ffce5c` | Warning, ★ recommended badge |
@@ -104,10 +107,18 @@ All values are CSS custom properties declared in `docs/styles.css → :root`.
 | `--max-w` | `1200px` | `.container` max-width |
 | `--nav-h` | `60px` | Sticky nav height (56 px at < 480 px) |
 | `--sec-py` | `clamp(4rem, 8vw, 6rem)` | Section vertical padding |
+| `--section-intrinsic-block-size` | `960px` | Offscreen section size hint for stable deferred rendering |
 
 ### Grid conventions
 - Responsive card grids: `grid-template-columns: repeat(auto-fit, minmax(N, 1fr))`.
 - Card gap: `var(--sp-4)`. Section gap: `var(--sp-8)`.
+- At single-column breakpoints, the hero preserves DOM order: product summary,
+  actions, and agent entry points appear before the product screenshot.
+- Below-the-fold `.section` elements use `content-visibility: auto` with the
+  intrinsic block-size token. This defers offscreen paint without removing
+  content from navigation, accessibility, or the document.
+- Elements that also use `.container`, including `.footer__inner`, set only
+  block-axis padding so the shared inline gutter remains intact at every width.
 
 ---
 
@@ -125,6 +136,8 @@ Active state: `transform: translateY(1px)`.
 ### Code blocks
 - `pre`: `--c-code-bg` fill, `--c-border` border, `--r-lg` radius, JetBrains Mono, `--text-sm`.
 - Inline `code`: accent-tinted fill, accent border, `--r-sm` radius.
+- Structured error blocks use `.error-json` to preserve indentation while
+  wrapping long strings on narrow viewports.
 - Syntax tokens: `.tok-comment` `#4d5566` · `.tok-string` success green · `.tok-key` accent
   blue · `.tok-var` warn yellow · `.tok-flag` danger red · `.tok-kw` purple.
 
@@ -137,6 +150,7 @@ Copy button is always visible so mouse, keyboard, and touch users get the same a
 
 ### Cards
 Background `--c-panel`, border `--c-border`, radius `--r-xl`, inner padding `--sp-6`.
+Metric cards stack the value and label as separate blocks with `--sp-1` between them.
 
 ### Data tables
 - Scrollable wrapper (`.table-wrap`): `overflow-x: auto`, `--r-xl` radius, `--c-border` border.
@@ -157,6 +171,9 @@ Background `--c-panel`, border `--c-border`, radius `--r-xl`, inner padding `--s
 `.reveal` starts `opacity: 0; transform: translateY(18px)`. An intersection-observer
 adds `.revealed` to transition to visible. Stagger: `.reveal-delay-1` through
 `.reveal-delay-4` add 60 ms increments.
+
+Critical above-the-fold hero content never uses `.reveal`; the product summary,
+agent entry points, and LCP media render immediately.
 
 ### Rules
 - No layout-property animations (`width`, `height`, `top`, `left`).

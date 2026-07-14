@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://descope-sample-apps.github.io/pgpeek/</loc>
+  </url>
+  <url>
+    <loc>https://descope-sample-apps.github.io/pgpeek/llms.txt</loc>
+  </url>
+  <url>
+    <loc>https://descope-sample-apps.github.io/pgpeek/llms-full.txt</loc>
+  </url>
+  <url>
+    <loc>https://descope-sample-apps.github.io/pgpeek/agent.json</loc>
+  </url>
+</urlset>

@@ -1,0 +1,177 @@
+{
+  "schemaVersion": 1,
+  "status": "ok",
+  "product": {
+    "name": "pgpeek",
+    "description": "A minimal, read-only, team-shared Postgres browser shipped as one static Go binary.",
+    "canonical": "https://descope-sample-apps.github.io/pgpeek/",
+    "repository": "https://github.com/descope-sample-apps/pgpeek"
+  },
+  "summary": {
+    "sectionCount": 10,
+    "featureCount": 6,
+    "themeCount": 20,
+    "safetyLayerCount": 3,
+    "documentedConfigCount": 20,
+    "httpRouteCount": 16,
+    "defaultRowCap": 1000,
+    "defaultStatementTimeout": "30s"
+  },
+  "resources": {
+    "count": 4,
+    "items": [
+      {
+        "id": "quick-context",
+        "href": "llms.txt",
+        "description": "Concise product, safety, startup, and HTTP context."
+      },
+      {
+        "id": "full-context",
+        "href": "llms-full.txt",
+        "description": "Full configuration, deployment, testing, and endpoint documentation."
+      },
+      {
+        "id": "human-docs",
+        "href": "./",
+        "description": "Rendered documentation with screenshots and section anchors."
+      },
+      {
+        "id": "repository",
+        "href": "https://github.com/descope-sample-apps/pgpeek",
+        "description": "Source, issues, releases, and maintainer README."
+      }
+    ]
+  },
+  "tasks": {
+    "count": 5,
+    "items": [
+      {
+        "id": "run-local",
+        "href": "./#quickstart",
+        "command": "go run ."
+      },
+      {
+        "id": "inspect-limits",
+        "href": "./#api",
+        "command": "curl -fsS http://localhost:8080/api/meta"
+      },
+      {
+        "id": "list-databases",
+        "href": "./#api",
+        "command": "curl -fsS http://localhost:8080/api/databases"
+      },
+      {
+        "id": "check-liveness",
+        "href": "./#deploy",
+        "command": "curl -fsS http://localhost:8080/healthz"
+      },
+      {
+        "id": "check-readiness",
+        "href": "./#deploy",
+        "command": "curl -fsS http://localhost:8080/readyz"
+      }
+    ]
+  },
+  "httpRoutes": {
+    "count": 16,
+    "items": [
+      {
+        "method": "GET",
+        "path": "/healthz",
+        "description": "Process liveness probe; returns plain text ok."
+      },
+      {
+        "method": "GET",
+        "path": "/readyz",
+        "description": "Database readiness probe; returns ready or a JSON error."
+      },
+      {
+        "method": "GET",
+        "path": "/api/user",
+        "description": "Return the authenticated user context forwarded by the deployment proxy."
+      },
+      {
+        "method": "GET",
+        "path": "/api/databases",
+        "description": "List configured database targets and the default target."
+      },
+      {
+        "method": "GET",
+        "path": "/api/meta",
+        "description": "Return server limits needed by the UI, including rowCap."
+      },
+      {
+        "method": "POST",
+        "path": "/api/query",
+        "description": "Run one read-only SQL statement and return JSON rows."
+      },
+      {
+        "method": "POST",
+        "path": "/api/export",
+        "description": "Run one read-only SQL statement and download CSV."
+      },
+      {
+        "method": "GET",
+        "path": "/api/tables",
+        "description": "List browsable tables and views."
+      },
+      {
+        "method": "GET",
+        "path": "/api/tables/{schema}/{table}/columns",
+        "description": "Return column structure for a table or view."
+      },
+      {
+        "method": "GET",
+        "path": "/api/tables/{schema}/{table}/fks",
+        "description": "Return single-column foreign keys for click-through navigation."
+      },
+      {
+        "method": "GET",
+        "path": "/api/tables/{schema}/{table}/data",
+        "description": "Return paged, filtered, and sorted table data."
+      },
+      {
+        "method": "GET",
+        "path": "/api/queries",
+        "description": "List saved and preset queries."
+      },
+      {
+        "method": "POST",
+        "path": "/api/queries",
+        "description": "Create a saved query."
+      },
+      {
+        "method": "PUT",
+        "path": "/api/queries/{id}",
+        "description": "Update a saved query."
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/queries/{id}",
+        "description": "Delete a saved query."
+      },
+      {
+        "method": "GET",
+        "path": "/",
+        "description": "Serve the pgpeek browser UI."
+      }
+    ]
+  },
+  "httpContract": {
+    "error": {
+      "contentType": "application/json",
+      "body": {
+        "error": "<message>"
+      }
+    },
+    "emptySavedQueries": [],
+    "healthz": "ok",
+    "readyz": "ready"
+  },
+  "help": [
+    "Read llms.txt first for the lowest-context overview.",
+    "Read llms-full.txt only when configuration, deployment, or endpoint detail is needed.",
+    "Use the read-only Postgres role as the security boundary.",
+    "Put pgpeek behind SSO or another authentication proxy before exposing it."
+  ]
+}

@@ -60,6 +60,14 @@ web-test: ## Front-end tests (vitest, 100% thresholds)
 web-vendor: ## Regenerate the vendored CodeMirror 6 bundle (esbuild)
 	npm ci --ignore-scripts && npm run vendor
 
+.PHONY: docs-check
+docs-check: ## Validate agent-readable docs, counts, links, and full-context sync
+	node scripts/check-agent-docs.mjs
+
+.PHONY: docs-css
+docs-css: ## Synchronize inline critical CSS and deferred documentation styles
+	node scripts/build-docs-css.mjs
+
 .PHONY: build
 build: web-vendor ## Build the static binary
 	CGO_ENABLED=0 GOFIPS140=v1.0.0 GODEBUG=fips140=on $(GO) build -trimpath -ldflags="-s -w" -o pgpeek .
@@ -73,4 +81,4 @@ run: ## Run locally (requires DATABASE_URL)
 	$(GO) run .
 
 .PHONY: ci
-ci: lint vet cover-check vulncheck web-test ## Everything CI runs
+ci: lint vet cover-check vulncheck web-test docs-check ## Everything CI runs

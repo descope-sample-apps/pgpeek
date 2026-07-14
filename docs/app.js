@@ -10,29 +10,92 @@
   const mobileNav = document.querySelector('.nav__mobile');
 
   if (hamburger && mobileNav) {
+    const desktopMedia = window.matchMedia('(min-width: 769px)');
+    const backgroundRegions = document.querySelectorAll('main, footer');
+
+    function setBackgroundInert(isInert) {
+      backgroundRegions.forEach(function (region) {
+        region.toggleAttribute('inert', isInert);
+      });
+    }
+
+    function getMobileNavFocusables() {
+      return [hamburger].concat(
+        Array.from(mobileNav.querySelectorAll('a[href]'))
+      );
+    }
+
+    function openMobileNav() {
+      hamburger.setAttribute('aria-expanded', 'true');
+      mobileNav.classList.add('open');
+      document.body.style.overflow = 'hidden';
+      setBackgroundInert(true);
+
+      const firstLink = mobileNav.querySelector('a[href]');
+      if (firstLink) firstLink.focus();
+    }
+
+    function closeMobileNav(restoreFocus) {
+      hamburger.setAttribute('aria-expanded', 'false');
+      mobileNav.classList.remove('open');
+      document.body.style.overflow = '';
+      setBackgroundInert(false);
+
+      if (restoreFocus) {
+        const focusTarget = desktopMedia.matches
+          ? document.querySelector('.nav__logo')
+          : hamburger;
+        if (focusTarget) focusTarget.focus();
+      }
+    }
+
     hamburger.addEventListener('click', () => {
       const expanded = hamburger.getAttribute('aria-expanded') === 'true';
-      hamburger.setAttribute('aria-expanded', String(!expanded));
-      mobileNav.classList.toggle('open', !expanded);
-      document.body.style.overflow = expanded ? '' : 'hidden';
+      if (expanded) {
+        closeMobileNav(false);
+      } else {
+        openMobileNav();
+      }
     });
 
     // Close on link click
     mobileNav.querySelectorAll('a').forEach(function (a) {
       a.addEventListener('click', function () {
-        hamburger.setAttribute('aria-expanded', 'false');
-        mobileNav.classList.remove('open');
-        document.body.style.overflow = '';
+        closeMobileNav(false);
       });
     });
 
-    // Close on Escape
+    // Keep keyboard focus inside the full-screen menu; close on Escape.
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && mobileNav.classList.contains('open')) {
-        hamburger.setAttribute('aria-expanded', 'false');
-        mobileNav.classList.remove('open');
-        document.body.style.overflow = '';
-        hamburger.focus();
+      if (!mobileNav.classList.contains('open')) return;
+
+      if (e.key === 'Escape') {
+        closeMobileNav(true);
+        return;
+      }
+
+      if (e.key !== 'Tab') return;
+
+      const focusables = getMobileNavFocusables();
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      } else if (!focusables.includes(active)) {
+        e.preventDefault();
+        first.focus();
+      }
+    });
+
+    desktopMedia.addEventListener('change', function (e) {
+      if (e.matches && mobileNav.classList.contains('open')) {
+        closeMobileNav(true);
       }
     });
   }
@@ -151,6 +214,7 @@
       if (id === '#') return;
       var target = document.querySelector(id);
       if (!target) return;
+      var fromMobileNav = a.closest('.nav__mobile') !== null;
       e.preventDefault();
       var top = target.getBoundingClientRect().top + window.scrollY;
       var navHeight = parseInt(
@@ -160,6 +224,17 @@
       window.scrollTo({ top: top - navHeight - 16, behavior: 'smooth' });
       // Update URL hash without jumping
       history.pushState(null, '', id);
+
+      if (fromMobileNav) {
+        var hadTabindex = target.hasAttribute('tabindex');
+        if (!hadTabindex) target.setAttribute('tabindex', '-1');
+        target.focus({ preventScroll: true });
+        if (!hadTabindex) {
+          target.addEventListener('blur', function () {
+            target.removeAttribute('tabindex');
+          }, { once: true });
+        }
+      }
     });
   });
 

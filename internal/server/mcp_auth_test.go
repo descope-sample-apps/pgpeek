@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+
+	"github.com/descope-sample-apps/pgpeek/internal/mcpauth"
 )
 
 func TestNewDescopeMCPAuthorization_discoversDCR(t *testing.T) {
@@ -158,7 +160,7 @@ func TestMCPAuthURLParsers_rejectUnsafeValues(t *testing.T) {
 		{
 			name: "URL user information",
 			parse: func(value string) error {
-				_, err := parseMCPAuthURL(value)
+				_, err := mcpauth.ParseSecureURL(value)
 				return err
 			},
 			value: "https://user@example.com/mcp",
@@ -166,7 +168,7 @@ func TestMCPAuthURLParsers_rejectUnsafeValues(t *testing.T) {
 		{
 			name: "URL query",
 			parse: func(value string) error {
-				_, err := parseMCPAuthURL(value)
+				_, err := mcpauth.ParseSecureURL(value)
 				return err
 			},
 			value: "https://example.com/mcp?tenant=one",
@@ -174,7 +176,7 @@ func TestMCPAuthURLParsers_rejectUnsafeValues(t *testing.T) {
 		{
 			name: "URL fragment",
 			parse: func(value string) error {
-				_, err := parseMCPAuthURL(value)
+				_, err := mcpauth.ParseSecureURL(value)
 				return err
 			},
 			value: "https://example.com/mcp#fragment",

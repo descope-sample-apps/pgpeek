@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
-	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -14,6 +12,8 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
+
+	"github.com/descope-sample-apps/pgpeek/internal/mcpauth"
 )
 
 const (
@@ -50,7 +50,7 @@ func newDescopeMCPAuthorization(ctx context.Context, cfg DescopeMCPAuthConfig, c
 	if err != nil {
 		return nil, fmt.Errorf("descope well-known URL: %w", err)
 	}
-	resourceURL, err := parseMCPAuthURL(cfg.ResourceURL)
+	resourceURL, err := mcpauth.ParseSecureURL(cfg.ResourceURL)
 	if err != nil {
 		return nil, fmt.Errorf("MCP resource URL: %w", err)
 	}
@@ -81,7 +81,7 @@ func newDescopeMCPAuthorization(ctx context.Context, cfg DescopeMCPAuthConfig, c
 		{name: "registration_endpoint", value: metadata.RegistrationEndpoint},
 		{name: "jwks_uri", value: metadata.JWKSURI},
 	} {
-		if _, err := parseMCPAuthURL(endpoint.value); err != nil {
+		if _, err := mcpauth.ParseSecureURL(endpoint.value); err != nil {
 			return nil, fmt.Errorf("descope %s: %w", endpoint.name, err)
 		}
 	}
@@ -139,14 +139,14 @@ func newMCPAuthHTTPClient() *http.Client {
 			if len(via) >= 3 {
 				return errors.New("too many Descope discovery redirects")
 			}
-			_, err := parseMCPAuthURL(req.URL.String())
+			_, err := mcpauth.ParseSecureURL(req.URL.String())
 			return err
 		},
 	}
 }
 
 func issuerFromWellKnownURL(raw string) (string, error) {
-	wellKnownURL, err := parseMCPAuthURL(raw)
+	wellKnownURL, err := mcpauth.ParseSecureURL(raw)
 	if err != nil {
 		return "", err
 	}
@@ -157,25 +157,6 @@ func issuerFromWellKnownURL(raw string) (string, error) {
 	issuerURL.Path = strings.TrimSuffix(issuerURL.Path, openIDConfigurationPathSuffix)
 	issuerURL.RawPath = ""
 	return strings.TrimSuffix(issuerURL.String(), "/"), nil
-}
-
-func parseMCPAuthURL(raw string) (*url.URL, error) {
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return nil, errors.New("must be an absolute URL")
-	}
-	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return nil, errors.New("must not contain user information, a query, or a fragment")
-	}
-	if strings.EqualFold(u.Scheme, "https") {
-		return u, nil
-	}
-	hostIP := net.ParseIP(u.Hostname())
-	loopback := strings.EqualFold(u.Hostname(), "localhost") || hostIP != nil && hostIP.IsLoopback()
-	if !strings.EqualFold(u.Scheme, "http") || !loopback {
-		return nil, errors.New("must use HTTPS except on loopback hosts")
-	}
-	return u, nil
 }
 
 func normalizeMCPAuthScopes(scopes []string) ([]string, error) {

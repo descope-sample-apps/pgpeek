@@ -3,11 +3,11 @@ package config
 import (
 	"errors"
 	"fmt"
-	"net"
-	"net/url"
 	"os"
 	"strings"
 	"unicode"
+
+	"github.com/descope-sample-apps/pgpeek/internal/mcpauth"
 )
 
 const openIDConfigurationSuffix = "/.well-known/openid-configuration"
@@ -44,7 +44,7 @@ func loadMCPAuth() (MCPAuth, error) {
 		return MCPAuth{}, errors.New("DESCOPE_MCP_SERVER_WELL_KNOWN_URL (or DESCOPE_CONFIG_URL), PGPEEK_MCP_SERVER_URL, and PGPEEK_MCP_REQUIRED_SCOPES must be set together")
 	}
 
-	discoveryURL, err := parseSecureMCPURL(wellKnownURL)
+	discoveryURL, err := mcpauth.ParseSecureURL(wellKnownURL)
 	if err != nil {
 		return MCPAuth{}, fmt.Errorf("DESCOPE_MCP_SERVER_WELL_KNOWN_URL: %w", err)
 	}
@@ -52,7 +52,7 @@ func loadMCPAuth() (MCPAuth, error) {
 		return MCPAuth{}, fmt.Errorf("DESCOPE_MCP_SERVER_WELL_KNOWN_URL path must end with %s", openIDConfigurationSuffix)
 	}
 
-	resource, err := parseSecureMCPURL(resourceURL)
+	resource, err := mcpauth.ParseSecureURL(resourceURL)
 	if err != nil {
 		return MCPAuth{}, fmt.Errorf("PGPEEK_MCP_SERVER_URL: %w", err)
 	}
@@ -65,31 +65,6 @@ func loadMCPAuth() (MCPAuth, error) {
 		return MCPAuth{}, fmt.Errorf("PGPEEK_MCP_REQUIRED_SCOPES: %w", err)
 	}
 	return MCPAuth{WellKnownURL: wellKnownURL, ResourceURL: resourceURL, RequiredScopes: scopes}, nil
-}
-
-func parseSecureMCPURL(raw string) (*url.URL, error) {
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return nil, errors.New("must be an absolute URL")
-	}
-	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return nil, errors.New("must not contain user information, a query, or a fragment")
-	}
-	if strings.EqualFold(u.Scheme, "https") {
-		return u, nil
-	}
-	if !strings.EqualFold(u.Scheme, "http") || !isLoopbackHost(u.Hostname()) {
-		return nil, errors.New("must use HTTPS except on loopback hosts")
-	}
-	return u, nil
-}
-
-func isLoopbackHost(host string) bool {
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }
 
 func parseMCPScopes(value string) ([]string, error) {

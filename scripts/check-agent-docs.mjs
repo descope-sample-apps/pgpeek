@@ -153,6 +153,17 @@ assertIncludes(
   "docs/index.html",
 );
 
+if (full.includes("](docs/llms.txt)")) {
+  throw new Error(
+    "docs/llms-full.txt must link to llms.txt in the same published directory",
+  );
+}
+assertIncludes(
+  full,
+  "[`llms.txt`](llms.txt)",
+  "docs/llms-full.txt",
+);
+
 if (!concise.includes("full-context:") || !concise.includes("## Help")) {
   throw new Error("docs/llms.txt must disclose full context and contextual help");
 }

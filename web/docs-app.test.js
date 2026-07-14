@@ -109,6 +109,26 @@ describe("docs mobile navigation", () => {
     dom.window.close();
   });
 
+  it("closes the open menu when the visible logo is activated", () => {
+    const dom = renderDocsNav();
+    const { document } = dom.window;
+    const hamburger = document.querySelector(".nav__hamburger");
+    const mobileNav = document.querySelector(".nav__mobile");
+    const logo = document.querySelector(".nav__logo");
+    const main = document.querySelector("main");
+    const footer = document.querySelector("footer");
+
+    hamburger.click();
+    logo.click();
+
+    expect(hamburger.getAttribute("aria-expanded")).toBe("false");
+    expect(mobileNav.classList.contains("open")).toBe(false);
+    expect(main.hasAttribute("inert")).toBe(false);
+    expect(footer.hasAttribute("inert")).toBe(false);
+    expect(document.body.style.overflow).toBe("");
+    dom.window.close();
+  });
+
   it("restores focus and background state when Escape closes the menu", () => {
     const dom = renderDocsNav();
     const { document, KeyboardEvent } = dom.window;

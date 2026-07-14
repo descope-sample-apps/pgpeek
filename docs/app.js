@@ -8,6 +8,7 @@
   /* ── 1. Mobile nav toggle ─────────────────────────────────────── */
   const hamburger = document.querySelector('.nav__hamburger');
   const mobileNav = document.querySelector('.nav__mobile');
+  const logo = document.querySelector('.nav__logo');
 
   if (hamburger && mobileNav) {
     const desktopMedia = window.matchMedia('(min-width: 769px)');
@@ -43,7 +44,7 @@
 
       if (restoreFocus) {
         const focusTarget = desktopMedia.matches
-          ? document.querySelector('.nav__logo')
+          ? logo
           : hamburger;
         if (focusTarget) focusTarget.focus();
       }
@@ -64,6 +65,14 @@
         closeMobileNav(false);
       });
     });
+
+    if (logo) {
+      logo.addEventListener('click', function () {
+        if (mobileNav.classList.contains('open')) {
+          closeMobileNav(false);
+        }
+      });
+    }
 
     // Keep keyboard focus inside the full-screen menu; close on Escape.
     document.addEventListener('keydown', function (e) {

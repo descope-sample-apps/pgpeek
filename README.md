@@ -60,7 +60,7 @@ browser ── HTTP ──> pgpeek (Go, single static binary)
   binary via `go:embed`.
 
 LLM-friendly project notes live in [`llms.txt`](llms.txt); the published docs
-site also serves [`/llms.txt`](docs/llms.txt).
+site serves the same file at `/llms.txt`.
 
 ## Read-only enforcement (defense in depth)
 

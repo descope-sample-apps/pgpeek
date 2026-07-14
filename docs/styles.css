@@ -79,6 +79,7 @@
   /* Layout */
   --max-w: 1200px;
   --nav-h: 60px;
+  --control-sm: 36px;
   --sec-py: clamp(4rem, 8vw, 6rem);
   --section-intrinsic-block-size: 960px;
 }
@@ -298,13 +299,32 @@ pre code {
   flex-shrink: 0;
 }
 
+.github {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-sm);
+  height: var(--control-sm);
+  color: var(--c-muted);
+  border-radius: var(--r-md);
+  text-decoration: none;
+  transition: color var(--t-fast), background var(--t-fast);
+  flex-shrink: 0;
+}
+.github:hover {
+  color: var(--c-text);
+  background: rgba(255,255,255,.05);
+  text-decoration: none;
+}
+.github svg { display: block; }
+
 .nav__hamburger {
   display: none;
   flex-direction: column;
   justify-content: center;
   gap: 5px;
-  width: 36px;
-  height: 36px;
+  width: var(--control-sm);
+  height: var(--control-sm);
   background: none;
   border: none;
   cursor: pointer;

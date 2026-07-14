@@ -106,6 +106,7 @@ All values are CSS custom properties declared in `docs/styles.css → :root`.
 |---|---|---|
 | `--max-w` | `1200px` | `.container` max-width |
 | `--nav-h` | `60px` | Sticky nav height (56 px at < 480 px) |
+| `--control-sm` | `36px` | Compact square nav controls |
 | `--sec-py` | `clamp(4rem, 8vw, 6rem)` | Section vertical padding |
 | `--section-intrinsic-block-size` | `960px` | Offscreen section size hint for stable deferred rendering |
 
@@ -123,6 +124,13 @@ All values are CSS custom properties declared in `docs/styles.css → :root`.
 ---
 
 ## 5. Components
+
+### Navigation actions
+The desktop GitHub link is an icon-only `.github` action using the
+`--control-sm` square target. Its accessible name remains `pgpeek on GitHub`;
+hover uses the established muted-to-primary text treatment and keyboard focus
+uses the global `:focus-visible` ring. Compact navigation uses the same control
+size for `.nav__hamburger`.
 
 ### Buttons
 Two variants: `.btn--primary` (accent fill) · `.btn--ghost` (outlined/muted).

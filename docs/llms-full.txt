@@ -1,3 +1,36 @@
+# pgpeek full agent context
+
+> status: ok
+> canonical: https://descope-sample-apps.github.io/pgpeek/
+> concise context: https://descope-sample-apps.github.io/pgpeek/llms.txt
+> structured index: https://descope-sample-apps.github.io/pgpeek/agent.json
+
+This file is the full-detail escape hatch for agents. Prefer `llms.txt` when the
+task only needs product identity, startup, safety, or probe behavior.
+
+## Agent interface contract
+
+- API errors use an appropriate non-2xx status and JSON body
+  `{"error":"<message>"}`.
+- An empty saved-query collection is the definitive JSON value `[]`.
+- `GET /healthz` returns plain text `ok`.
+- `GET /readyz` returns plain text `ready` or status 503 with
+  `{"error":"database not ready"}`.
+- Large query results stop at `PGPEEK_ROW_CAP`; the default is 1000 rows.
+- The default statement timeout is 30 seconds.
+- The database role, not the SQL parser, is the primary read-only boundary.
+
+## Precomputed documentation summary
+
+- Website sections: 10
+- Product features: 6
+- Built-in themes: 20
+- Read-only enforcement layers: 3
+- Website configuration rows: 20
+- Documented HTTP routes: 16
+
+---
+
 # pgpeek
 
 A minimal, **read-only**, team-shared Postgres browser. Built to replace Adminer

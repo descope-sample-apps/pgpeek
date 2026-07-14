@@ -68,6 +68,8 @@ jobs:
       - run: npm ci
       - run: npm run vendor
       - run: npx vitest run --coverage # thresholds enforce 100%
+      - name: agent docs
+        run: make docs-check
 
   # Full image build via the SAME reusable workflow the real release uses, so
   # release breakage is caught here instead of after a tag. Split by event so

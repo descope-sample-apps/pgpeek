@@ -5,7 +5,7 @@ RUN npm ci --ignore-scripts
 COPY web/vendor/src ./web/vendor/src
 RUN npm run vendor
 
-FROM ghcr.io/verity-org/golang:1.26-fips@sha256:1c86d92d8313d808979075b832b9c1732b5fb5180f7d8dc1768dd4fd1e9d6133 AS build
+FROM ghcr.io/verity-org/golang:1.26-fips@sha256:c1689432748fd0cbeccec073c1d0d0a9a46acbfdc51e1ffaa16ea408871dca02 AS build
 SHELL ["/usr/bin/bash", "-c"]
 ENV GOFIPS140=v1.0.0 \
     GODEBUG=fips140=on

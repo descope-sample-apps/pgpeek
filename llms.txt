@@ -1,60 +1,71 @@
 # pgpeek
 
-> Minimal read-only Postgres browser for support teams. Single Go binary with embedded Preact UI, pgx-backed Postgres access, and a small SQLite saved-query store.
+> A minimal, read-only, team-shared Postgres browser. It pages through tables,
+> runs single read-only SQL statements, saves queries, and exports CSV. It ships
+> as one static Go binary.
 
-## Canonical docs
+status: ok
+canonical: https://descope-sample-apps.github.io/pgpeek/
+repository: https://github.com/descope-sample-apps/pgpeek
+structured-index: https://descope-sample-apps.github.io/pgpeek/agent.json
+full-context: https://descope-sample-apps.github.io/pgpeek/llms-full.txt
 
-- README: https://github.com/descope-sample-apps/pgpeek/blob/main/README.md
-- Website: https://descope-sample-apps.github.io/pgpeek/
-- Test matrix: https://github.com/descope-sample-apps/pgpeek/blob/main/docs/test-matrix.md
-- Source: https://github.com/descope-sample-apps/pgpeek
+## Current facts
 
-## Core behavior
+- 6 documented product features.
+- 20 built-in UI themes.
+- 3 read-only enforcement layers.
+- 20 configuration rows in the website reference.
+- 16 documented HTTP routes, including both probes and the UI.
+- Default row cap: 1000 (`PGPEEK_ROW_CAP`).
+- Default statement timeout: 30s (`PGPEEK_STATEMENT_TIMEOUT`).
+- Saved queries use SQLite; browsed data remains in Postgres.
+- The app is intentionally auth-thin and must sit behind an authentication layer.
 
-- Read-only by design: use a no-write DB role, set `default_transaction_read_only=on`, and reject non-read SQL with `internal/guard`.
-- Browse tables/views with paging, row cap, global search, per-column filters, click-to-sort, foreign-key navigation, and CSV export.
-- Wide tables stay usable via sticky headers, clipped previews, full-cell reveal, and mobile overflow containment.
-- SQL tab supports read-only `SELECT`/`WITH`/`VALUES`/`TABLE`/`EXPLAIN`, CodeMirror autocomplete, saved/preset queries, CSV export, and inline errors.
-- Multiple databases/clusters are configured by env lists, numbered env vars, or mounted JSON; selected DB is stored in `?db=`.
-- RDS/Aurora IAM auth is supported with `PGPEEK_DB_IAM_AUTH=true` and `PGPEEK_AWS_REGION`.
-- Cloudflare Access headers are detected from `Cf-Access-Authenticated-User-Email`; `PGPEEK_REQUIRE_CLOUDFLARE_ACCESS=true` rejects requests missing those headers. This does not validate JWTs.
-- Builds and runtime use Go FIPS mode: `GOFIPS140=v1.0.0`, `GODEBUG=fips140=on`.
-- Kubernetes security baseline: use a read-only DB role, require database TLS, keep DSNs/passwords in Secrets or external-secret sync, keep non-secret database names/IDs in ConfigMaps, run behind SSO/private access, and never expose pgpeek directly.
-- Kubernetes secret options: `DATABASE_URL` from Secret env, `DATABASE_URL_FILE` from a mounted Secret file, `PGPEEK_DATABASE_URLS` from Secret env for multi-DB lists, numbered `PGPEEK_DATABASE_URL_N_FILE` Secret files, `PGPEEK_DATABASES_FILE` ConfigMap JSON with Secret-backed `urlFile` entries, or RDS/Aurora IAM auth via IRSA with no static DB password.
+## Start locally
 
-## Important env vars
+```bash
+export DATABASE_URL='postgres://descoperead:PASSWORD@host:5432/db?sslmode=require'
+export PGPEEK_STORE_PATH=./pgpeek.db
+go run .
+# open http://localhost:8080
+```
 
-- `DATABASE_URL`, `DATABASE_URL_FILE`
-- `PGPEEK_DATABASE_URLS`, `PGPEEK_DATABASE_IDS`, `PGPEEK_DATABASE_NAMES`
-- `PGPEEK_DATABASE_URL_1`, `PGPEEK_DATABASE_ID_1`, `PGPEEK_DATABASE_NAME_1` and numbered siblings
-- `PGPEEK_DATABASES_FILE`, `PGPEEK_DEFAULT_DATABASE`
-- `PGPEEK_ROW_CAP`, `PGPEEK_STATEMENT_TIMEOUT`, `PGPEEK_MAX_CONNS`
-- `PGPEEK_STORE_PATH`
-- `PGPEEK_DB_IAM_AUTH`, `PGPEEK_AWS_REGION`
-- `PGPEEK_REQUIRE_CLOUDFLARE_ACCESS`
+Use a Postgres role with no write privileges. `Ctrl`/`Cmd` + `Enter` runs the
+current SQL query.
 
-## HTTP API
+## Safety contract
 
-- `GET /api/databases` lists configured DBs.
-- `GET /api/user` returns `anonymous` or the detected Cloudflare Access email.
-- `POST /api/query?db=<id>` runs a read query and returns JSON.
-- `POST /api/export?db=<id>` exports query CSV.
-- `GET /api/meta?db=<id>` returns UI limits.
-- `GET /api/tables?db=<id>` lists tables/views.
-- `GET /api/tables/{schema}/{table}/columns?db=<id>` returns structure.
-- `GET /api/tables/{schema}/{table}/fks?db=<id>` returns single-column FK refs.
-- `GET /api/tables/{schema}/{table}/data?db=<id>&limit=&offset=&search=&sort=&dir=&f=col:op:val` returns paged rows; add `format=csv` for CSV.
-- `GET/POST/PUT/DELETE /api/queries` manages saved queries.
-- `GET /healthz`, `GET /readyz` expose probes.
+1. Database role: the real security boundary; grant no write privileges.
+2. Session: every pooled connection enables `default_transaction_read_only`.
+3. Application: only one `SELECT`, `WITH`, `VALUES`, `TABLE`, or `EXPLAIN`
+   statement is accepted.
 
-## Build/test commands
+The application guard is a guardrail, not a substitute for the read-only role.
+Do not expose pgpeek publicly without SSO or another authentication proxy.
 
-- `make build`
-- `make image`
-- `make test`
-- `make test-integration`
-- `make cover-check`
-- `make lint`
-- `make vulncheck`
-- `make web-test`
-- `make ci`
+## HTTP behavior
+
+- API errors are JSON: `{"error":"<message>"}` with an appropriate non-2xx status.
+- An empty saved-query list is the explicit JSON array `[]`.
+- `GET /healthz` returns `ok` when the process is alive.
+- `GET /readyz` returns `ready` when Postgres is reachable; otherwise it returns
+  `503` with `{"error":"database not ready"}`.
+
+## Agent-readable resources
+
+- `agent.json` — compact structured index with counts, tasks, and contracts.
+- `llms-full.txt` — full repository documentation and all configuration/API detail.
+- `/` — human documentation with the same canonical product facts.
+- Repository `README.md` — source documentation for maintainers.
+
+## Help
+
+- Need configuration details: read `llms-full.txt`, section "Configuration".
+- Need routes: read `llms-full.txt`, section "Endpoints".
+- Need a compact machine response: fetch `agent.json`.
+- Need to verify a running instance:
+  `curl -fsS http://localhost:8080/healthz` then
+  `curl -fsS http://localhost:8080/readyz`.
+- Need more website context: fetch `/` and follow section fragment links from
+  `agent.json`.

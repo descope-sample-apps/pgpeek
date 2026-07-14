@@ -74,6 +74,41 @@ site serves the same file at `/llms.txt`.
    or string literals. This is a guardrail against fat-fingering, **not** the
    security boundary. Don't rely on it as one.
 
+## MCP
+
+pgpeek exposes a stateless [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
+MCP endpoint at `http(s)://<pgpeek-host>/mcp`, implemented with the official Go
+SDK. MCP responses use JSON rather than long-lived SSE sessions, which keeps the
+endpoint simple to run behind an ingress or load balancer. Request bodies are
+capped at 32 KiB before protocol parsing.
+
+The server advertises four structured, read-only tools:
+
+| Tool               | Purpose |
+| ------------------ | ------- |
+| `list_databases`   | List safe database IDs and display names. |
+| `list_tables`      | List user-facing tables and views. |
+| `describe_table`   | Return columns and single-column foreign keys. |
+| `query`            | Run one guarded, row-capped read-only SQL statement. |
+
+For MCP clients that accept a URL-based server entry:
+
+```json
+{
+  "mcpServers": {
+    "pgpeek": {
+      "url": "http://localhost:8080/mcp"
+    }
+  }
+}
+```
+
+There is no MCP-specific authentication or OAuth flow. Cross-origin browser
+requests are rejected, and `PGPEEK_REQUIRE_CLOUDFLARE_ACCESS=true` still wraps
+the MCP route when enabled. Do not expose an unauthenticated pgpeek deployment
+to the public internet; keep it on a trusted network or behind your existing
+SSO/access proxy, and apply request-rate limits at that boundary when needed.
+
 ## Configuration (env vars)
 
 Everything is configured via the environment. Single-database deployments can
@@ -381,6 +416,7 @@ Two ways:
 | `POST /api/queries`         | Create a saved query.                     |
 | `PUT /api/queries/{id}`     | Update a saved query.                     |
 | `DELETE /api/queries/{id}`  | Delete a saved query.                     |
+| `POST /mcp`                 | Send stateless Streamable HTTP MCP messages (GET/DELETE retain protocol transport behavior). |
 | `GET /healthz`              | Liveness (always 200 if process is up).   |
 | `GET /readyz`               | Readiness (pings the DB).                 |
 | `GET /`                     | The UI.                                   |

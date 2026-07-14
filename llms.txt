@@ -16,11 +16,13 @@ full-context: https://descope-sample-apps.github.io/pgpeek/llms-full.txt
 - 20 built-in UI themes.
 - 3 read-only enforcement layers.
 - 20 configuration rows in the website reference.
-- 16 documented HTTP routes, including both probes and the UI.
+- 17 documented HTTP routes, including MCP, both probes, and the UI.
 - Default row cap: 1000 (`PGPEEK_ROW_CAP`).
 - Default statement timeout: 30s (`PGPEEK_STATEMENT_TIMEOUT`).
 - Saved queries use SQLite; browsed data remains in Postgres.
 - The app is intentionally auth-thin and must sit behind an authentication layer.
+- MCP is available at `/mcp` over stateless Streamable HTTP with four structured,
+  read-only tools: `list_databases`, `list_tables`, `describe_table`, and `query`.
 
 ## Start locally
 
@@ -51,6 +53,8 @@ Do not expose pgpeek publicly without SSO or another authentication proxy.
 - `GET /healthz` returns `ok` when the process is alive.
 - `GET /readyz` returns `ready` when Postgres is reachable; otherwise it returns
   `503` with `{"error":"database not ready"}`.
+- `POST /mcp` sends stateless Streamable HTTP MCP messages; `GET` and `DELETE`
+  retain their protocol-defined transport behavior.
 
 ## Agent-readable resources
 

@@ -8,12 +8,12 @@
     "repository": "https://github.com/descope-sample-apps/pgpeek"
   },
   "summary": {
-    "sectionCount": 10,
+    "sectionCount": 11,
     "featureCount": 6,
     "themeCount": 20,
     "safetyLayerCount": 3,
-    "documentedConfigCount": 20,
-    "httpRouteCount": 16,
+    "documentedConfigCount": 23,
+    "httpRouteCount": 21,
     "defaultRowCap": 1000,
     "defaultStatementTimeout": "30s"
   },
@@ -73,7 +73,7 @@
     ]
   },
   "httpRoutes": {
-    "count": 16,
+    "count": 21,
     "items": [
       {
         "method": "GET",
@@ -149,6 +149,31 @@
         "method": "DELETE",
         "path": "/api/queries/{id}",
         "description": "Delete a saved query."
+      },
+      {
+        "method": "GET",
+        "path": "/mcp",
+        "description": "Expose protocol-defined Streamable HTTP transport behavior."
+      },
+      {
+        "method": "POST",
+        "path": "/mcp",
+        "description": "Handle stateless MCP initialization, tool discovery, and tool calls."
+      },
+      {
+        "method": "DELETE",
+        "path": "/mcp",
+        "description": "Expose protocol-defined Streamable HTTP session termination behavior."
+      },
+      {
+        "method": "GET",
+        "path": "/.well-known/oauth-protected-resource",
+        "description": "Publish RFC 9728 protected-resource metadata when Descope OAuth is enabled."
+      },
+      {
+        "method": "OPTIONS",
+        "path": "/.well-known/oauth-protected-resource",
+        "description": "Advertise cross-origin access to public protected-resource metadata."
       },
       {
         "method": "GET",

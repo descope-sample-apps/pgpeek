@@ -461,8 +461,11 @@ Two ways:
 | `POST /api/queries`         | Create a saved query.                     |
 | `PUT /api/queries/{id}`     | Update a saved query.                     |
 | `DELETE /api/queries/{id}`  | Delete a saved query.                     |
-| `POST /mcp`                 | Send stateless Streamable HTTP MCP messages (GET/DELETE retain protocol transport behavior). |
+| `GET /mcp`                  | Protocol-defined Streamable HTTP transport behavior. |
+| `POST /mcp`                 | Send stateless Streamable HTTP MCP messages. |
+| `DELETE /mcp`               | Protocol-defined Streamable HTTP session termination behavior. |
 | `GET /.well-known/oauth-protected-resource` | Public OAuth protected-resource metadata when Descope MCP auth is enabled. |
+| `OPTIONS /.well-known/oauth-protected-resource` | CORS preflight for public OAuth metadata. |
 | `GET /healthz`              | Liveness (always 200 if process is up).   |
 | `GET /readyz`               | Readiness (pings the DB).                 |
 | `GET /`                     | The UI.                                   |

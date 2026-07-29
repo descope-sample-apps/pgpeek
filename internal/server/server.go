@@ -81,8 +81,8 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("DELETE /mcp", mcpHandler)
 	if s.mcpAuthorization != nil {
 		metadataHandler := s.mcpAuthorization.metadataHandler()
-		mux.Handle("GET "+protectedResourceMetadataPath, metadataHandler)
-		mux.Handle("OPTIONS "+protectedResourceMetadataPath, metadataHandler)
+		mux.Handle("GET /.well-known/oauth-protected-resource", metadataHandler)
+		mux.Handle("OPTIONS /.well-known/oauth-protected-resource", metadataHandler)
 	}
 
 	// Static UI

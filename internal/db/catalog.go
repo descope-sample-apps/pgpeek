@@ -58,41 +58,63 @@ WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = $1 AND tc.table_n
 ORDER BY kcu.column_name`
 
 // Tables lists all browsable tables and views.
-func (p *Pool) Tables(ctx context.Context) ([]TableInfo, error) {
+func (p *Pool) Tables(ctx context.Context) ([]TableInfo, bool, error) {
 	rows, err := p.pool.Query(ctx, tablesSQL)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer rows.Close()
 
-	out := make([]TableInfo, 0, 64)
+	out := catalogCollector[TableInfo]{items: make([]TableInfo, 0, 64), bytes: 2}
 	for rows.Next() {
 		var t TableInfo
 		if err := rows.Scan(&t.Schema, &t.Name, &t.Type, &t.EstRows); err != nil {
-			return nil, err
+			return nil, false, err
 		}
-		out = append(out, t)
+		keep, err := out.add(t)
+		if err != nil {
+			return nil, false, err
+		}
+		if !keep {
+			break
+		}
 	}
-	return out, rows.Err()
+	if !out.truncated {
+		if err := rows.Err(); err != nil {
+			return nil, false, err
+		}
+	}
+	return out.items, out.truncated, nil
 }
 
 // Columns returns the structure of a single relation.
-func (p *Pool) Columns(ctx context.Context, schema, table string) ([]ColumnInfo, error) {
+func (p *Pool) Columns(ctx context.Context, schema, table string) ([]ColumnInfo, bool, error) {
 	rows, err := p.pool.Query(ctx, columnsSQL, schema, table)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer rows.Close()
 
-	out := make([]ColumnInfo, 0, 16)
+	out := catalogCollector[ColumnInfo]{items: make([]ColumnInfo, 0, 16), bytes: 2}
 	for rows.Next() {
 		var c ColumnInfo
 		if err := rows.Scan(&c.Name, &c.Type, &c.Nullable, &c.Default); err != nil {
-			return nil, err
+			return nil, false, err
 		}
-		out = append(out, c)
+		keep, err := out.add(c)
+		if err != nil {
+			return nil, false, err
+		}
+		if !keep {
+			break
+		}
 	}
-	return out, rows.Err()
+	if !out.truncated {
+		if err := rows.Err(); err != nil {
+			return nil, false, err
+		}
+	}
+	return out.items, out.truncated, nil
 }
 
 // ForeignKey describes a single-column foreign key and the row it points to.
@@ -105,22 +127,33 @@ type ForeignKey struct {
 
 // ForeignKeys returns the single-column foreign keys of a relation, so the UI
 // can turn FK cells into click-through links.
-func (p *Pool) ForeignKeys(ctx context.Context, schema, table string) ([]ForeignKey, error) {
+func (p *Pool) ForeignKeys(ctx context.Context, schema, table string) ([]ForeignKey, bool, error) {
 	rows, err := p.pool.Query(ctx, fksSQL, schema, table)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer rows.Close()
 
-	out := make([]ForeignKey, 0, 8)
+	out := catalogCollector[ForeignKey]{items: make([]ForeignKey, 0, 8), bytes: 2}
 	for rows.Next() {
 		var fk ForeignKey
 		if err := rows.Scan(&fk.Column, &fk.RefSchema, &fk.RefTable, &fk.RefColumn); err != nil {
-			return nil, err
+			return nil, false, err
 		}
-		out = append(out, fk)
+		keep, err := out.add(fk)
+		if err != nil {
+			return nil, false, err
+		}
+		if !keep {
+			break
+		}
 	}
-	return out, rows.Err()
+	if !out.truncated {
+		if err := rows.Err(); err != nil {
+			return nil, false, err
+		}
+	}
+	return out.items, out.truncated, nil
 }
 
 // Filter is one column predicate. Op is a key from filterOps, or "is_null" /
@@ -174,9 +207,12 @@ func (p *Pool) TableRows(ctx context.Context, q TableQuery) (*Result, error) {
 		names []string
 	)
 	if q.Search != "" || len(q.Filters) > 0 || q.Sort != "" {
-		cols, err := p.Columns(ctx, q.Schema, q.Table)
+		cols, truncated, err := p.Columns(ctx, q.Schema, q.Table)
 		if err != nil {
 			return nil, err
+		}
+		if truncated {
+			return nil, fmt.Errorf("relation %s column catalog exceeds result limit", ident)
 		}
 		valid = make(map[string]bool, len(cols))
 		for _, c := range cols {

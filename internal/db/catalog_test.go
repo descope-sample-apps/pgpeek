@@ -16,12 +16,15 @@ func TestTables_Success(t *testing.T) {
 		},
 	}
 	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
-	got, err := p.Tables(context.Background())
+	got, truncated, err := p.Tables(context.Background())
 	if err != nil {
 		t.Fatalf("Tables: %v", err)
 	}
 	if len(got) != 2 {
 		t.Fatalf("len = %d", len(got))
+	}
+	if truncated {
+		t.Fatal("Tables unexpectedly truncated")
 	}
 	if got[0] != (TableInfo{Schema: "public", Name: "users", Type: "table", EstRows: 42}) {
 		t.Errorf("row0 = %+v", got[0])
@@ -33,7 +36,7 @@ func TestTables_Success(t *testing.T) {
 
 func TestTables_QueryError(t *testing.T) {
 	p := &Pool{pool: &fakePool{queryErr: errors.New("boom")}, rowCap: 10}
-	if _, err := p.Tables(context.Background()); err == nil {
+	if _, _, err := p.Tables(context.Background()); err == nil {
 		t.Fatal("expected query error")
 	}
 }
@@ -41,7 +44,7 @@ func TestTables_QueryError(t *testing.T) {
 func TestTables_ScanError(t *testing.T) {
 	rows := &fakeRows{cols: []string{"a"}, data: [][]any{{int64(1)}}, scanErr: errors.New("scan")}
 	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
-	if _, err := p.Tables(context.Background()); err == nil {
+	if _, _, err := p.Tables(context.Background()); err == nil {
 		t.Fatal("expected scan error")
 	}
 }
@@ -49,7 +52,7 @@ func TestTables_ScanError(t *testing.T) {
 func TestTables_RowsErr(t *testing.T) {
 	rows := &fakeRows{cols: []string{"a"}, errErr: errors.New("cursor")}
 	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
-	if _, err := p.Tables(context.Background()); err == nil {
+	if _, _, err := p.Tables(context.Background()); err == nil {
 		t.Fatal("expected rows.Err")
 	}
 }
@@ -64,12 +67,15 @@ func TestColumns_Success(t *testing.T) {
 		},
 	}
 	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
-	got, err := p.Columns(context.Background(), "public", "users")
+	got, truncated, err := p.Columns(context.Background(), "public", "users")
 	if err != nil {
 		t.Fatalf("Columns: %v", err)
 	}
 	if len(got) != 2 {
 		t.Fatalf("len = %d", len(got))
+	}
+	if truncated {
+		t.Fatal("Columns unexpectedly truncated")
 	}
 	if got[0].Name != "id" || got[0].Nullable || got[0].Default == nil {
 		t.Errorf("col0 = %+v", got[0])
@@ -81,7 +87,7 @@ func TestColumns_Success(t *testing.T) {
 
 func TestColumns_QueryError(t *testing.T) {
 	p := &Pool{pool: &fakePool{queryErr: errors.New("boom")}, rowCap: 10}
-	if _, err := p.Columns(context.Background(), "s", "t"); err == nil {
+	if _, _, err := p.Columns(context.Background(), "s", "t"); err == nil {
 		t.Fatal("expected query error")
 	}
 }
@@ -89,7 +95,7 @@ func TestColumns_QueryError(t *testing.T) {
 func TestColumns_ScanError(t *testing.T) {
 	rows := &fakeRows{cols: []string{"a"}, data: [][]any{{"x"}}, scanErr: errors.New("scan")}
 	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
-	if _, err := p.Columns(context.Background(), "s", "t"); err == nil {
+	if _, _, err := p.Columns(context.Background(), "s", "t"); err == nil {
 		t.Fatal("expected scan error")
 	}
 }
@@ -97,7 +103,7 @@ func TestColumns_ScanError(t *testing.T) {
 func TestColumns_RowsErr(t *testing.T) {
 	rows := &fakeRows{cols: []string{"a"}, errErr: errors.New("cursor")}
 	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
-	if _, err := p.Columns(context.Background(), "s", "t"); err == nil {
+	if _, _, err := p.Columns(context.Background(), "s", "t"); err == nil {
 		t.Fatal("expected rows.Err")
 	}
 }
@@ -125,12 +131,15 @@ func TestForeignKeys_Success(t *testing.T) {
 		},
 	}
 	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
-	got, err := p.ForeignKeys(context.Background(), "public", "users")
+	got, truncated, err := p.ForeignKeys(context.Background(), "public", "users")
 	if err != nil {
 		t.Fatalf("ForeignKeys: %v", err)
 	}
 	if len(got) != 2 {
 		t.Fatalf("len = %d", len(got))
+	}
+	if truncated {
+		t.Fatal("ForeignKeys unexpectedly truncated")
 	}
 	if got[0] != (ForeignKey{Column: "company_id", RefSchema: "public", RefTable: "companies", RefColumn: "id"}) {
 		t.Errorf("fk0 = %+v", got[0])
@@ -139,7 +148,7 @@ func TestForeignKeys_Success(t *testing.T) {
 
 func TestForeignKeys_QueryError(t *testing.T) {
 	p := &Pool{pool: &fakePool{queryErr: errors.New("boom")}, rowCap: 10}
-	if _, err := p.ForeignKeys(context.Background(), "s", "t"); err == nil {
+	if _, _, err := p.ForeignKeys(context.Background(), "s", "t"); err == nil {
 		t.Fatal("expected query error")
 	}
 }
@@ -147,7 +156,7 @@ func TestForeignKeys_QueryError(t *testing.T) {
 func TestForeignKeys_ScanError(t *testing.T) {
 	rows := &fakeRows{cols: []string{"col"}, data: [][]any{{"x"}}, scanErr: errors.New("scan")}
 	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
-	if _, err := p.ForeignKeys(context.Background(), "s", "t"); err == nil {
+	if _, _, err := p.ForeignKeys(context.Background(), "s", "t"); err == nil {
 		t.Fatal("expected scan error")
 	}
 }
@@ -155,7 +164,7 @@ func TestForeignKeys_ScanError(t *testing.T) {
 func TestForeignKeys_RowsErr(t *testing.T) {
 	rows := &fakeRows{cols: []string{"col"}, errErr: errors.New("cursor")}
 	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
-	if _, err := p.ForeignKeys(context.Background(), "s", "t"); err == nil {
+	if _, _, err := p.ForeignKeys(context.Background(), "s", "t"); err == nil {
 		t.Fatal("expected rows.Err")
 	}
 }

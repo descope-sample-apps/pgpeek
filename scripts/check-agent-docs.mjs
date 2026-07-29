@@ -60,7 +60,7 @@ const endpointSection = full.match(
   /## Endpoints\n([\s\S]*?)(?=\n## |\n---|$)/,
 )?.[1] ?? "";
 const fullHttpRoutes = [...endpointSection.matchAll(
-  /^\|\s+`(GET|POST|PUT|DELETE) ([^`]+)`/gm,
+  /^\|\s+`(GET|POST|PUT|DELETE|OPTIONS) ([^`]+)`/gm,
 )].map(([, method, routePath]) => ({
   method,
   path: routePath.split("?")[0],
@@ -106,7 +106,7 @@ if (manifest.httpRoutes.count !== expectedSummary.httpRouteCount) {
   );
 }
 for (const route of manifest.httpRoutes.items) {
-  if (!/^(GET|POST|PUT|DELETE)$/.test(route.method) || !route.path.startsWith("/")) {
+  if (!/^(GET|POST|PUT|DELETE|OPTIONS)$/.test(route.method) || !route.path.startsWith("/")) {
     throw new Error(`docs/agent.json has invalid route ${JSON.stringify(route)}`);
   }
   if (typeof route.description !== "string" || route.description.length === 0) {
@@ -173,7 +173,7 @@ for (const statement of [
   `- ${expectedSummary.themeCount} built-in UI themes.`,
   `- ${expectedSummary.safetyLayerCount} read-only enforcement layers.`,
   `- ${expectedSummary.documentedConfigCount} configuration rows in the website reference.`,
-  `- ${expectedSummary.httpRouteCount} documented HTTP routes, including both probes and the UI.`,
+  `- ${expectedSummary.httpRouteCount} documented HTTP routes, including MCP, OAuth metadata, both probes, and the UI.`,
 ]) {
   assertIncludes(concise, statement, "docs/llms.txt");
 }

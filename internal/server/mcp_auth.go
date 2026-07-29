@@ -37,6 +37,7 @@ type MCPAuthorization struct {
 	metadata            *oauthex.ProtectedResourceMetadata
 	resourceMetadataURL string
 	requiredScopes      []string
+	resourceURL         string
 }
 
 // NewDescopeMCPAuthorization resolves Descope's discovery document, requires
@@ -119,6 +120,7 @@ func newDescopeMCPAuthorization(ctx context.Context, cfg DescopeMCPAuthConfig, c
 		},
 		resourceMetadataURL: metadataURL.String(),
 		requiredScopes:      slices.Clone(requiredScopes),
+		resourceURL:         cfg.ResourceURL,
 	}, nil
 }
 
@@ -134,7 +136,8 @@ func mcpAuthSigningAlgorithms(provider *oidc.Provider) ([]string, error) {
 
 func newMCPAuthHTTPClient() *http.Client {
 	return &http.Client{
-		Timeout: mcpAuthHTTPTimeout,
+		Transport: boundedResponseTransport{base: http.DefaultTransport, maxBytes: maxMCPAuthResponseBytes},
+		Timeout:   mcpAuthHTTPTimeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 3 {
 				return errors.New("too many Descope discovery redirects")
@@ -225,6 +228,9 @@ func (a *MCPAuthorization) metadataHandler() http.Handler {
 func (a *MCPAuthorization) verifyToken(ctx context.Context, rawToken string, _ *http.Request) (*auth.TokenInfo, error) {
 	token, err := a.verifier.Verify(ctx, rawToken)
 	if err != nil {
+		return nil, auth.ErrInvalidToken
+	}
+	if len(token.Audience) != 1 || token.Audience[0] != a.resourceURL {
 		return nil, auth.ErrInvalidToken
 	}
 	var claims struct {

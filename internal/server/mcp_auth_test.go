@@ -70,6 +70,9 @@ func TestNewDescopeMCPAuthorization_rejectsInvalidDiscovery(t *testing.T) {
 		{"OIDC discovery failure", func(d *fakeDescopeServer, _ *DescopeMCPAuthConfig) {
 			d.secondDiscoveryStatus = http.StatusInternalServerError
 		}},
+		{"oversized discovery", func(d *fakeDescopeServer, _ *DescopeMCPAuthConfig) {
+			d.discoveryPadding = maxMCPAuthResponseBytes
+		}},
 		{"invalid well-known path", func(_ *fakeDescopeServer, c *DescopeMCPAuthConfig) { c.WellKnownURL = "https://api.descope.com/config" }},
 		{"invalid resource URL", func(_ *fakeDescopeServer, c *DescopeMCPAuthConfig) { c.ResourceURL = "://bad" }},
 		{"resource path prefix", func(_ *fakeDescopeServer, c *DescopeMCPAuthConfig) {
@@ -96,6 +99,27 @@ func TestNewDescopeMCPAuthorization_rejectsInvalidDiscovery(t *testing.T) {
 				t.Fatal("expected authorization configuration error")
 			}
 		})
+	}
+}
+
+func TestMCPAuthorization_rejectsOversizedJWKS(t *testing.T) {
+	// Given: discovery is valid but the advertised key set exceeds the auth-response limit.
+	descope := newFakeDescopeServer(t)
+	authz, err := NewDescopeMCPAuthorization(context.Background(), descope.config("https://pgpeek.example.com/mcp", "mcp:pgpeek.read"))
+	if err != nil {
+		t.Fatalf("NewDescopeMCPAuthorization: %v", err)
+	}
+	descope.jwksPadding = maxMCPAuthResponseBytes
+	recorder := httptest.NewRecorder()
+
+	// When: token verification fetches the oversized key set.
+	authz.protect(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("oversized JWKS must not reach the protected handler")
+	})).ServeHTTP(recorder, bearerRequest(t, http.MethodPost, "https://pgpeek.example.com/mcp", descope.token(t, "https://pgpeek.example.com/mcp", nil)))
+
+	// Then: authentication fails closed.
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", recorder.Code)
 	}
 }
 

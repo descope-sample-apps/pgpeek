@@ -31,6 +31,8 @@ type fakeDescopeServer struct {
 	secondDiscoveryStatus int
 	discoveryRequests     int
 	jwksStatus            int
+	discoveryPadding      int
+	jwksPadding           int
 }
 
 func newFakeDescopeServer(t *testing.T) *fakeDescopeServer {
@@ -64,10 +66,12 @@ func (f *fakeDescopeServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			status = f.secondDiscoveryStatus
 		}
 		if status == http.StatusOK {
-			f.writeJSON(w, struct {
+			value := struct {
 				oauthex.AuthServerMeta
 				IDTokenSigningAlgValuesSupported []string `json:"id_token_signing_alg_values_supported"`
-			}{AuthServerMeta: f.metadata, IDTokenSigningAlgValuesSupported: f.signingAlgs})
+				Padding                          string   `json:"padding,omitempty"`
+			}{AuthServerMeta: f.metadata, IDTokenSigningAlgValuesSupported: f.signingAlgs, Padding: strings.Repeat("x", f.discoveryPadding)}
+			f.writeJSON(w, value)
 		} else {
 			w.WriteHeader(status)
 		}
@@ -78,7 +82,7 @@ func (f *fakeDescopeServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 				KeyID:     f.keyID,
 				Algorithm: string(jose.RS256),
 				Use:       "sig",
-			}}})
+			}}, "padding": strings.Repeat("x", f.jwksPadding)})
 		} else {
 			w.WriteHeader(f.jwksStatus)
 		}

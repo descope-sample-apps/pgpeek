@@ -18,17 +18,18 @@ import (
 )
 
 type fakeQuerier struct {
-	result    *db.Result
-	err       error
-	pingErr   error
-	called    bool
-	lastSQL   string
-	tables    []db.TableInfo
-	cols      []db.ColumnInfo
-	fks       []db.ForeignKey
-	catErr    error
-	lastQuery db.TableQuery
-	lastArgs  struct {
+	result       *db.Result
+	err          error
+	pingErr      error
+	called       bool
+	lastSQL      string
+	tables       []db.TableInfo
+	cols         []db.ColumnInfo
+	fks          []db.ForeignKey
+	catErr       error
+	catTruncated bool
+	lastQuery    db.TableQuery
+	lastArgs     struct {
 		schema, table string
 		limit, offset int
 	}
@@ -40,18 +41,18 @@ func (f *fakeQuerier) Query(_ context.Context, sql string) (*db.Result, error) {
 	return f.result, f.err
 }
 
-func (f *fakeQuerier) Tables(context.Context) ([]db.TableInfo, error) {
-	return f.tables, f.catErr
+func (f *fakeQuerier) Tables(context.Context) ([]db.TableInfo, bool, error) {
+	return f.tables, f.catTruncated, f.catErr
 }
 
-func (f *fakeQuerier) Columns(_ context.Context, schema, table string) ([]db.ColumnInfo, error) {
+func (f *fakeQuerier) Columns(_ context.Context, schema, table string) ([]db.ColumnInfo, bool, error) {
 	f.lastArgs.schema, f.lastArgs.table = schema, table
-	return f.cols, f.catErr
+	return f.cols, f.catTruncated, f.catErr
 }
 
-func (f *fakeQuerier) ForeignKeys(_ context.Context, schema, table string) ([]db.ForeignKey, error) {
+func (f *fakeQuerier) ForeignKeys(_ context.Context, schema, table string) ([]db.ForeignKey, bool, error) {
 	f.lastArgs.schema, f.lastArgs.table = schema, table
-	return f.fks, f.catErr
+	return f.fks, f.catTruncated, f.catErr
 }
 
 func (f *fakeQuerier) TableRows(_ context.Context, q db.TableQuery) (*db.Result, error) {

@@ -5,11 +5,13 @@ import (
 	"errors"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/descope-sample-apps/pgpeek/internal/db"
 )
 
 const (
 	maxMCPResponseBytes          = 512 << 10
-	maxMCPStructuredContentBytes = 448 << 10
+	maxMCPStructuredContentBytes = db.MaxResultBytes
 )
 
 var errMCPResultMetadataExceedsLimit = errors.New("tool result metadata exceeds MCP response limit")

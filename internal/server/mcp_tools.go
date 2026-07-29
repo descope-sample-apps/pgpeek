@@ -17,6 +17,8 @@ var (
 	errMCPRelationRequired    = errors.New("schema and table are required")
 )
 
+const maxMCPErrorBytes = 4 << 10
+
 type mcpDatabaseInput struct {
 	DatabaseID string `json:"databaseId,omitempty" jsonschema:"configured database ID; omit to use the default database"`
 }
@@ -79,12 +81,12 @@ func (s *Server) mcpListTables(ctx context.Context, _ *mcp.CallToolRequest, inpu
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, s.queryWait)
 	defer cancel()
-	tables, err := pool.Tables(queryCtx)
+	tables, truncated, err := pool.Tables(queryCtx)
 	if err != nil {
 		s.log.Error("mcp list tables", "databaseID", databaseID, "err", err)
 		return nil, mcpListTablesOutput{}, errors.New("failed to list tables")
 	}
-	output, err := capMCPListTablesOutput(mcpListTablesOutput{DatabaseID: databaseID, Tables: nonNil(tables)})
+	output, err := capMCPListTablesOutput(mcpListTablesOutput{DatabaseID: databaseID, Tables: nonNil(tables), Truncated: truncated})
 	return mcpStructuredOutput("Table list completed. The result is available in structuredContent.", output, err)
 }
 
@@ -100,12 +102,12 @@ func (s *Server) mcpDescribeTable(ctx context.Context, _ *mcp.CallToolRequest, i
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, s.queryWait)
 	defer cancel()
-	columns, err := pool.Columns(queryCtx, schema, table)
+	columns, columnsTruncated, err := pool.Columns(queryCtx, schema, table)
 	if err != nil {
 		s.log.Error("mcp describe table columns", "databaseID", databaseID, "err", err)
 		return nil, mcpDescribeTableOutput{}, errors.New("failed to read columns")
 	}
-	foreignKeys, err := pool.ForeignKeys(queryCtx, schema, table)
+	foreignKeys, foreignKeysTruncated, err := pool.ForeignKeys(queryCtx, schema, table)
 	if err != nil {
 		s.log.Error("mcp describe table foreign keys", "databaseID", databaseID, "err", err)
 		return nil, mcpDescribeTableOutput{}, errors.New("failed to read foreign keys")
@@ -116,6 +118,7 @@ func (s *Server) mcpDescribeTable(ctx context.Context, _ *mcp.CallToolRequest, i
 		Table:       table,
 		Columns:     nonNil(columns),
 		ForeignKeys: nonNil(foreignKeys),
+		Truncated:   columnsTruncated || foreignKeysTruncated,
 	})
 	return mcpStructuredOutput("Table description completed. The result is available in structuredContent.", output, err)
 }
@@ -134,7 +137,11 @@ func (s *Server) mcpQuery(ctx context.Context, _ *mcp.CallToolRequest, input mcp
 	result, err := pool.Query(queryCtx, sql)
 	if err != nil {
 		s.log.Error("mcp query", "databaseID", databaseID, "err", err)
-		return nil, mcpQueryOutput{}, errors.New(queryErrorMessage(err))
+		message := queryErrorMessage(err)
+		if len(message) > maxMCPErrorBytes {
+			message = "database query failed: error detail exceeds limit"
+		}
+		return nil, mcpQueryOutput{}, errors.New(message)
 	}
 	output := mcpQueryOutput{
 		DatabaseID: databaseID,

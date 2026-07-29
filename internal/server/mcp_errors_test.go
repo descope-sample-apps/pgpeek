@@ -142,16 +142,16 @@ type describeErrorQuerier struct {
 	foreignKeysErr error
 }
 
-func (q *describeErrorQuerier) Columns(_ context.Context, _, _ string) ([]db.ColumnInfo, error) {
+func (q *describeErrorQuerier) Columns(_ context.Context, _, _ string) ([]db.ColumnInfo, bool, error) {
 	if q.columnsErr != nil {
-		return nil, q.columnsErr
+		return nil, false, q.columnsErr
 	}
-	return q.cols, nil
+	return q.cols, false, nil
 }
 
-func (q *describeErrorQuerier) ForeignKeys(_ context.Context, _, _ string) ([]db.ForeignKey, error) {
+func (q *describeErrorQuerier) ForeignKeys(_ context.Context, _, _ string) ([]db.ForeignKey, bool, error) {
 	if q.foreignKeysErr != nil {
-		return nil, q.foreignKeysErr
+		return nil, false, q.foreignKeysErr
 	}
-	return q.fks, nil
+	return q.fks, false, nil
 }

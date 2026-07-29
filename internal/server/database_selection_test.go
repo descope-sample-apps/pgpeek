@@ -56,19 +56,19 @@ func (q *selectedQuerier) Query(context.Context, string) (*db.Result, error) {
 	return okResult(), nil
 }
 
-func (q *selectedQuerier) Tables(context.Context) ([]db.TableInfo, error) {
+func (q *selectedQuerier) Tables(context.Context) ([]db.TableInfo, bool, error) {
 	q.used = true
-	return []db.TableInfo{}, nil
+	return []db.TableInfo{}, false, nil
 }
 
-func (q *selectedQuerier) Columns(context.Context, string, string) ([]db.ColumnInfo, error) {
+func (q *selectedQuerier) Columns(context.Context, string, string) ([]db.ColumnInfo, bool, error) {
 	q.used = true
-	return []db.ColumnInfo{}, nil
+	return []db.ColumnInfo{}, false, nil
 }
 
-func (q *selectedQuerier) ForeignKeys(context.Context, string, string) ([]db.ForeignKey, error) {
+func (q *selectedQuerier) ForeignKeys(context.Context, string, string) ([]db.ForeignKey, bool, error) {
 	q.used = true
-	return []db.ForeignKey{}, nil
+	return []db.ForeignKey{}, false, nil
 }
 
 func (q *selectedQuerier) TableRows(context.Context, db.TableQuery) (*db.Result, error) {

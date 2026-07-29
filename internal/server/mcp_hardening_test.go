@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/descope-sample-apps/pgpeek/internal/db"
 )
 
@@ -128,6 +130,17 @@ func TestMCP_list_tables_caps_serialized_output(t *testing.T) {
 	assertMCPResultWithinBudget(t, result)
 }
 
+func TestMCP_list_tables_preserves_database_truncation(t *testing.T) {
+	session := connectMCP(t, newMCPTestServer(t, &fakeQuerier{catTruncated: true}))
+	result := callMCPTool(t, session, "list_tables", map[string]any{})
+	got := decodeMCPOutput[struct {
+		Truncated bool `json:"truncated"`
+	}](t, result)
+	if !got.Truncated {
+		t.Fatal("truncated = false, want true")
+	}
+}
+
 func TestMCP_describe_table_caps_serialized_output(t *testing.T) {
 	// Given: relation metadata contains more columns and foreign keys than fit.
 	largeValue := strings.Repeat("x", maxMCPStructuredContentBytes/4)
@@ -198,6 +211,21 @@ func TestMCP_query_reports_response_limit_error(t *testing.T) {
 	if !result.IsError || !strings.Contains(mcpText(t, result), "metadata exceeds") {
 		t.Fatalf("result = %+v", result)
 	}
+}
+
+func TestMCP_query_caps_database_error_on_wire(t *testing.T) {
+	// Given: PostgreSQL returns an attacker-controlled oversized error message.
+	q := &fakeQuerier{err: &pgconn.PgError{Message: strings.Repeat("x", maxMCPStructuredContentBytes)}}
+	session := connectMCP(t, newMCPTestServer(t, q))
+
+	// When: the client executes a valid query.
+	result := callMCPTool(t, session, "query", map[string]any{"sql": "SELECT fail()"})
+
+	// Then: the tool error remains within the MCP wire budget.
+	if !result.IsError {
+		t.Fatalf("result = %+v", result)
+	}
+	assertMCPResultWithinBudget(t, result)
 }
 
 func assertMCPResultWithinBudget(t *testing.T, result any) {

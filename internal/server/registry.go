@@ -12,9 +12,9 @@ import (
 
 type Querier interface {
 	Query(ctx context.Context, sql string) (*db.Result, error)
-	Tables(ctx context.Context) ([]db.TableInfo, error)
-	Columns(ctx context.Context, schema, table string) ([]db.ColumnInfo, error)
-	ForeignKeys(ctx context.Context, schema, table string) ([]db.ForeignKey, error)
+	Tables(ctx context.Context) ([]db.TableInfo, bool, error)
+	Columns(ctx context.Context, schema, table string) ([]db.ColumnInfo, bool, error)
+	ForeignKeys(ctx context.Context, schema, table string) ([]db.ForeignKey, bool, error)
 	TableRows(ctx context.Context, q db.TableQuery) (*db.Result, error)
 	RowCap() int
 	Ping(ctx context.Context) error

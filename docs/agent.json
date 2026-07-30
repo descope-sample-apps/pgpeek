@@ -13,7 +13,7 @@
     "themeCount": 20,
     "safetyLayerCount": 3,
     "documentedConfigCount": 23,
-    "httpRouteCount": 21,
+    "httpRouteCount": 22,
     "defaultRowCap": 1000,
     "defaultStatementTimeout": "30s"
   },
@@ -73,7 +73,7 @@
     ]
   },
   "httpRoutes": {
-    "count": 21,
+    "count": 22,
     "items": [
       {
         "method": "GET",
@@ -164,6 +164,11 @@
         "method": "DELETE",
         "path": "/mcp",
         "description": "Expose protocol-defined Streamable HTTP session termination behavior."
+      },
+      {
+        "method": "OPTIONS",
+        "path": "/mcp",
+        "description": "Allow browser-based OAuth MCP clients to preflight the authenticated endpoint."
       },
       {
         "method": "GET",

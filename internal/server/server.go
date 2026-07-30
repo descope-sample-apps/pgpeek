@@ -80,6 +80,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /mcp", mcpHandler)
 	mux.Handle("DELETE /mcp", mcpHandler)
 	if s.mcpAuthorization != nil {
+		mux.Handle("OPTIONS /mcp", mcpHandler)
 		metadataHandler := s.mcpAuthorization.metadataHandler()
 		mux.Handle("GET /.well-known/oauth-protected-resource", metadataHandler)
 		mux.Handle("OPTIONS /.well-known/oauth-protected-resource", metadataHandler)

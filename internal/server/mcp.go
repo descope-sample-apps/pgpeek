@@ -60,8 +60,26 @@ func (s *Server) mcpHandler() http.Handler {
 	handler := http.MaxBytesHandler(singleMCPMessage(transport), maxMCPRequestBytes)
 	if s.mcpAuthorization != nil {
 		handler = s.mcpAuthorization.protect(handler)
+		return authenticatedMCPCORS(handler)
 	}
 	return http.NewCrossOriginProtection().Handler(handler)
+}
+
+func authenticatedMCPCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if origin := r.Header.Get("Origin"); origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Add("Vary", "Origin")
+		}
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept, MCP-Protocol-Version, MCP-Session-Id, Last-Event-ID")
+		w.Header().Set("Access-Control-Expose-Headers", "WWW-Authenticate, MCP-Session-Id")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func singleMCPMessage(next http.Handler) http.Handler {

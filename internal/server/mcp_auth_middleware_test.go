@@ -161,3 +161,63 @@ func TestMCPRoutes_requireDescopeBearerToken(t *testing.T) {
 		t.Fatalf("status = %d, want 401", resp.StatusCode)
 	}
 }
+
+func TestMCPRoutes_allowAuthenticatedBrowserPreflight(t *testing.T) {
+	descope := newFakeDescopeServer(t)
+	authz, err := NewDescopeMCPAuthorization(context.Background(), descope.config("https://pgpeek.example.com/mcp", "mcp:pgpeek.read"))
+	if err != nil {
+		t.Fatalf("NewDescopeMCPAuthorization: %v", err)
+	}
+	ts := newMCPAuthTestServer(t, authz)
+	req, err := http.NewRequest(http.MethodOptions, ts.URL+"/mcp", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.Header.Set("Origin", "https://www.mcpjam.com")
+	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	req.Header.Set("Access-Control-Request-Headers", "authorization,content-type,mcp-protocol-version")
+
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	}
+	if resp.Header.Get("Access-Control-Allow-Origin") != "https://www.mcpjam.com" {
+		t.Fatalf("Access-Control-Allow-Origin = %q", resp.Header.Get("Access-Control-Allow-Origin"))
+	}
+	if !strings.Contains(resp.Header.Get("Access-Control-Allow-Headers"), "Authorization") {
+		t.Fatalf("Access-Control-Allow-Headers = %q", resp.Header.Get("Access-Control-Allow-Headers"))
+	}
+}
+
+func TestMCPRoutes_exposeOAuthChallengeToAuthenticatedBrowser(t *testing.T) {
+	descope := newFakeDescopeServer(t)
+	authz, err := NewDescopeMCPAuthorization(context.Background(), descope.config("https://pgpeek.example.com/mcp", "mcp:pgpeek.read"))
+	if err != nil {
+		t.Fatalf("NewDescopeMCPAuthorization: %v", err)
+	}
+	ts := newMCPAuthTestServer(t, authz)
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.Header.Set("Origin", "https://www.mcpjam.com")
+
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	}
+	if resp.Header.Get("Access-Control-Allow-Origin") != "https://www.mcpjam.com" {
+		t.Fatalf("Access-Control-Allow-Origin = %q", resp.Header.Get("Access-Control-Allow-Origin"))
+	}
+	if !strings.Contains(resp.Header.Get("WWW-Authenticate"), authz.resourceMetadataURL) {
+		t.Fatalf("WWW-Authenticate = %q", resp.Header.Get("WWW-Authenticate"))
+	}
+}

@@ -53,13 +53,15 @@ func (s *Server) mcpHandler() http.Handler {
 	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return server
 	}, &mcp.StreamableHTTPOptions{
-		Stateless:    true,
-		JSONResponse: true,
-		Logger:       s.log,
+		Stateless:                  true,
+		JSONResponse:               true,
+		Logger:                     s.log,
+		DisableLocalhostProtection: s.mcpAuthorization != nil,
 	})
 	handler := http.MaxBytesHandler(singleMCPMessage(transport), maxMCPRequestBytes)
 	if s.mcpAuthorization != nil {
 		handler = s.mcpAuthorization.protect(handler)
+		handler = s.mcpAuthorization.requireResourceHost(handler)
 		return authenticatedMCPCORS(handler)
 	}
 	return http.NewCrossOriginProtection().Handler(handler)

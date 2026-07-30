@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -36,6 +37,7 @@ type MCPAuthorization struct {
 	verifier            *oidc.IDTokenVerifier
 	metadata            *oauthex.ProtectedResourceMetadata
 	resourceMetadataURL string
+	resourceHost        string
 	requiredScopes      []string
 }
 
@@ -118,6 +120,7 @@ func newDescopeMCPAuthorization(ctx context.Context, cfg DescopeMCPAuthConfig, c
 			ResourceName:           "pgpeek PostgreSQL browser",
 		},
 		resourceMetadataURL: metadataURL.String(),
+		resourceHost:        resourceURL.Host,
 		requiredScopes:      slices.Clone(requiredScopes),
 	}, nil
 }
@@ -217,6 +220,25 @@ func (a *MCPAuthorization) protect(next http.Handler) http.Handler {
 		ResourceMetadataURL: a.resourceMetadataURL,
 		Scopes:              slices.Clone(a.requiredScopes),
 	})(next)
+}
+
+func (a *MCPAuthorization) requireResourceHost(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.EqualFold(r.Host, a.resourceHost) && !isLoopbackAuthority(r.Host) {
+			http.Error(w, "invalid MCP resource host", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isLoopbackAuthority(authority string) bool {
+	host := authority
+	if parsed, _, err := net.SplitHostPort(authority); err == nil {
+		host = parsed
+	}
+	host = strings.Trim(host, "[]")
+	return strings.EqualFold(host, "localhost") || net.ParseIP(host).IsLoopback()
 }
 
 func (a *MCPAuthorization) metadataHandler() http.Handler {

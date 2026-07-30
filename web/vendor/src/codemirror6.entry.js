@@ -59,11 +59,12 @@ const highlight = Prec.highest(
   ),
 );
 
-// mount(parent, doc, onRun) builds an editor inside `parent` and returns the
+// mount(parent, doc, onRun, onChange) builds an editor inside `parent` and returns the
 // tiny imperative surface web/app.js relies on (getValue / setValue / refresh).
-function mount(parent, doc, onRun) {
+function mount(parent, doc, onRun, onChange) {
   const sqlLang = new Compartment();
   const completion = new Compartment();
+  let reportChanges = true;
   const view = new EditorView({
     doc,
     parent,
@@ -72,6 +73,9 @@ function mount(parent, doc, onRun) {
       sqlLang.of(sql({ dialect: PostgreSQL })),
       completion.of([]),
       EditorView.lineWrapping,
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged && reportChanges) onChange(update.state.doc.toString());
+      }),
       highlight,
       // Prec.highest so Mod-Enter beats basicSetup's defaultKeymap, which
       // otherwise binds Mod-Enter to insertBlankLine and swallows the event.
@@ -82,7 +86,11 @@ function mount(parent, doc, onRun) {
   });
   return {
     getValue: () => view.state.doc.toString(),
-    setValue: (v) => view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: v } }),
+    setValue: (v, notify = true) => {
+      reportChanges = notify;
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: v } });
+      reportChanges = true;
+    },
     refresh: () => view.requestMeasure(),
     setSQLConfig: (config) => view.dispatch({
       effects: [

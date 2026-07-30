@@ -13,6 +13,17 @@ function labels(raw, columnsByRelation = { access_key_roles: ["id", "role_name"]
 }
 
 describe("CodeMirror SQL column completion source", () => {
+  it("reports document edits through the adapter callback", () => {
+    const changes = [];
+    const parent = document.createElement("div");
+    const editor = window.cm6.mount(parent, "SELECT 1", () => {}, (sql) => changes.push(sql));
+
+    editor.setValue("SELECT 2");
+    editor.setValue("SELECT 3", false);
+
+    expect(changes).toEqual(["SELECT 2"]);
+  });
+
   it("suggests columns from the query relation in select lists", () => {
     expect(labels("SELECT | FROM access_key_roles")).toEqual(["id", "role_name"]);
     expect(labels("SELECT id, | FROM access_key_roles")).toEqual(["id", "role_name"]);

@@ -63,6 +63,40 @@ describe("API db params — POST requests", () => {
     expect(JSON.parse(call[1].body)).toEqual({ sql: "select 1" });
   });
 
+  it("discards an in-flight query result when the database changes", async () => {
+    let resolveQuery;
+    setRoute("POST /api/query", () => new Promise((resolve) => { resolveQuery = resolve; }));
+    await loadApp();
+    await click("tab-sql");
+    $("sql").value = "select shared";
+    await click("run-btn");
+
+    $("database-select").value = "pg2";
+    $("database-select").dispatchEvent(new Event("change", { bubbles: true }));
+    resolveQuery(makeResp({ json: { columns: ["value"], rows: [["stale"]], rowCount: 1, elapsedMs: 1 } }));
+    await flush();
+
+    expect($("sql-results").textContent).not.toContain("stale");
+    expect($("run-btn").disabled).toBe(false);
+  });
+
+  it("discards an in-flight query result when SQL is edited", async () => {
+    let resolveQuery;
+    setRoute("POST /api/query", () => new Promise((resolve) => { resolveQuery = resolve; }));
+    await loadApp();
+    await click("tab-sql");
+    $("sql").value = "select old";
+    await click("run-btn");
+
+    $("sql").value = "select new";
+    $("sql").dispatchEvent(new Event("input", { bubbles: true }));
+    resolveQuery(makeResp({ json: { columns: ["value"], rows: [["stale"]], rowCount: 1, elapsedMs: 1 } }));
+    await flush();
+
+    expect($("sql-results").textContent).not.toContain("stale");
+    expect($("run-btn").disabled).toBe(false);
+  });
+
   it("sends db as URL param on POST /api/export and keeps body {sql} only", async () => {
     setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
     setRoute("POST /api/export", makeResp({ blob: new Blob(["n\n1"]) }));

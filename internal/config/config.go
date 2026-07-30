@@ -21,6 +21,7 @@ type Config struct {
 	StorePath               string
 	RowCap                  int
 	RequireCloudflareAccess bool
+	MCPAuth                 MCPAuth
 }
 
 // Server holds HTTP server settings.
@@ -61,6 +62,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	mcpAuth, err := loadMCPAuth()
+	if err != nil {
+		return nil, err
+	}
 
 	c := &Config{
 		Server: Server{
@@ -85,6 +90,7 @@ func Load() (*Config, error) {
 		StorePath:               env("PGPEEK_STORE_PATH", "/data/pgpeek.db"),
 		RowCap:                  envInt("PGPEEK_ROW_CAP", 1000),
 		RequireCloudflareAccess: envBool("PGPEEK_REQUIRE_CLOUDFLARE_ACCESS", false),
+		MCPAuth:                 mcpAuth,
 	}
 	if err := applyDefaultDatabase(c); err != nil {
 		return nil, err

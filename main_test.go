@@ -31,6 +31,8 @@ func clearAppEnv(t *testing.T) {
 		"PGPEEK_ROW_CAP", "PGPEEK_MAX_CONNS", "PGPEEK_STATEMENT_TIMEOUT",
 		"PGPEEK_DB_IAM_AUTH", "PGPEEK_AWS_REGION", "AWS_REGION",
 		"PGPEEK_TLS_CERT_FILE", "PGPEEK_TLS_KEY_FILE",
+		"DESCOPE_MCP_SERVER_WELL_KNOWN_URL", "DESCOPE_CONFIG_URL",
+		"PGPEEK_MCP_SERVER_URL", "PGPEEK_MCP_REQUIRED_SCOPES",
 		"PGPEEK_DATABASE_URLS", "PGPEEK_DATABASE_IDS", "PGPEEK_DATABASE_NAMES",
 		"PGPEEK_DATABASES_FILE", "PGPEEK_DEFAULT_DATABASE",
 	} {
@@ -129,6 +131,23 @@ func TestRun_ConfigError(t *testing.T) {
 	clearAppEnv(t) // no DATABASE_URL
 	if err := run(context.Background(), testLogger()); err == nil {
 		t.Fatal("expected config error")
+	}
+}
+
+func TestRun_MCPAuthDiscoveryError(t *testing.T) {
+	// Given: valid local configuration points at an unavailable Descope discovery endpoint.
+	clearAppEnv(t)
+	t.Setenv("DATABASE_URL", "postgres://u:p@127.0.0.1:1/db?connect_timeout=1&sslmode=disable")
+	t.Setenv("DESCOPE_MCP_SERVER_WELL_KNOWN_URL", "http://127.0.0.1:1/issuer/.well-known/openid-configuration")
+	t.Setenv("PGPEEK_MCP_SERVER_URL", "http://127.0.0.1:8080/mcp")
+	t.Setenv("PGPEEK_MCP_REQUIRED_SCOPES", "openid")
+
+	// When: pgpeek starts.
+	err := run(context.Background(), testLogger())
+
+	// Then: it fails before opening the database rather than serving anonymous MCP.
+	if err == nil || !strings.Contains(err.Error(), "configure Descope MCP authorization") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

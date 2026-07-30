@@ -72,6 +72,23 @@ func TestTables_Error(t *testing.T) {
 	}
 }
 
+func TestCatalogHandlers_RejectTruncatedResults(t *testing.T) {
+	tests := []string{
+		"/api/tables",
+		"/api/tables/public/users/columns",
+		"/api/tables/public/users/fks",
+	}
+	for _, path := range tests {
+		t.Run(path, func(t *testing.T) {
+			ts, _ := newTestServer(t, &fakeQuerier{catTruncated: true})
+			resp := mustGet(t, ts, path)
+			if resp.StatusCode != http.StatusInternalServerError {
+				t.Fatalf("status = %d, want 500", resp.StatusCode)
+			}
+		})
+	}
+}
+
 func TestColumns_OK(t *testing.T) {
 	q := &fakeQuerier{cols: []db.ColumnInfo{{Name: "id", Type: "integer"}}}
 	ts, _ := newTestServer(t, q)

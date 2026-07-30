@@ -1,5 +1,5 @@
-// Package server wires the HTTP handlers: the SQL query endpoint (guarded +
-// capped), saved-query CRUD, CSV export, the static UI, and k8s probes.
+// Package server wires the HTTP and MCP handlers for read-only PostgreSQL
+// browsing, saved-query CRUD, CSV export, the static UI, and k8s probes.
 package server
 
 import (
@@ -17,6 +17,8 @@ type Server struct {
 	log                     *slog.Logger
 	queryWait               time.Duration
 	requireCloudflareAccess bool
+	mcpAuthorization        *MCPAuthorization
+	version                 string
 }
 
 type Option func(*Server)
@@ -25,13 +27,21 @@ func RequireCloudflareAccess(require bool) Option {
 	return func(s *Server) { s.requireCloudflareAccess = require }
 }
 
+func Version(version string) Option {
+	return func(s *Server) { s.version = version }
+}
+
+func WithMCPAuthorization(authz *MCPAuthorization) Option {
+	return func(s *Server) { s.mcpAuthorization = authz }
+}
+
 // New constructs a Server.
 func New(pool Querier, st QueryStore, web fs.FS, log *slog.Logger, queryWait time.Duration, opts ...Option) *Server {
 	return NewWithRegistry(NewSingleDatabaseRegistry(pool), st, web, log, queryWait, opts...)
 }
 
 func NewWithRegistry(registry DatabaseRegistry, st QueryStore, web fs.FS, log *slog.Logger, queryWait time.Duration, opts ...Option) *Server {
-	s := &Server{registry: registry, store: st, web: web, log: log, queryWait: queryWait}
+	s := &Server{registry: registry, store: st, web: web, log: log, queryWait: queryWait, version: "dev"}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -63,6 +73,18 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/queries", s.handleCreateQuery)
 	mux.HandleFunc("PUT /api/queries/{id}", s.handleUpdateQuery)
 	mux.HandleFunc("DELETE /api/queries/{id}", s.handleDeleteQuery)
+
+	// MCP (stateless Streamable HTTP, optionally protected by Descope OAuth)
+	mcpHandler := s.mcpHandler()
+	mux.Handle("GET /mcp", mcpHandler)
+	mux.Handle("POST /mcp", mcpHandler)
+	mux.Handle("DELETE /mcp", mcpHandler)
+	if s.mcpAuthorization != nil {
+		mux.Handle("OPTIONS /mcp", mcpHandler)
+		metadataHandler := s.mcpAuthorization.metadataHandler()
+		mux.Handle("GET /.well-known/oauth-protected-resource", metadataHandler)
+		mux.Handle("OPTIONS /.well-known/oauth-protected-resource", metadataHandler)
+	}
 
 	// Static UI
 	mux.Handle("GET /", http.FileServerFS(s.web))

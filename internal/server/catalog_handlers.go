@@ -23,10 +23,14 @@ func (s *Server) handleTables(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
 	defer cancel()
-	tables, err := pool.Tables(ctx)
+	tables, truncated, err := pool.Tables(ctx)
 	if err != nil {
 		s.log.Error("list tables", "err", err)
 		writeError(w, http.StatusInternalServerError, "failed to list tables")
+		return
+	}
+	if truncated {
+		writeError(w, http.StatusInternalServerError, "table catalog exceeds response limit")
 		return
 	}
 	if tables == nil {
@@ -42,10 +46,14 @@ func (s *Server) handleColumns(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
 	defer cancel()
-	cols, err := pool.Columns(ctx, r.PathValue("schema"), r.PathValue("table"))
+	cols, truncated, err := pool.Columns(ctx, r.PathValue("schema"), r.PathValue("table"))
 	if err != nil {
 		s.log.Error("read columns", "err", err)
 		writeError(w, http.StatusInternalServerError, "failed to read columns")
+		return
+	}
+	if truncated {
+		writeError(w, http.StatusInternalServerError, "column catalog exceeds response limit")
 		return
 	}
 	if cols == nil {
@@ -61,10 +69,14 @@ func (s *Server) handleForeignKeys(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
 	defer cancel()
-	fks, err := pool.ForeignKeys(ctx, r.PathValue("schema"), r.PathValue("table"))
+	fks, truncated, err := pool.ForeignKeys(ctx, r.PathValue("schema"), r.PathValue("table"))
 	if err != nil {
 		s.log.Error("read foreign keys", "err", err)
 		writeError(w, http.StatusInternalServerError, "failed to read foreign keys")
+		return
+	}
+	if truncated {
+		writeError(w, http.StatusInternalServerError, "foreign-key catalog exceeds response limit")
 		return
 	}
 	if fks == nil {

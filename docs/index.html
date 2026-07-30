@@ -641,6 +641,7 @@ kbd {
       <a href="#architecture">Architecture</a>
       <a href="#quickstart">Quick start</a>
       <a href="#config">Config</a>
+      <a href="#mcp">MCP</a>
       <a href="#api">API</a>
       <a href="#deploy">Deploy</a>
     </nav>
@@ -666,6 +667,7 @@ kbd {
   <a href="#architecture">Architecture</a>
   <a href="#quickstart">Quick start</a>
   <a href="#config">Configuration</a>
+  <a href="#mcp">MCP</a>
   <a href="#api">HTTP API</a>
   <a href="#deploy">Deploy</a>
   <a href="#quality">Quality</a>
@@ -1049,6 +1051,13 @@ kbd {
         <strong>Cloudflare Access aware.</strong> pgpeek shows the detected <code>Cf-Access-Authenticated-User-Email</code> in the UI. Set <code>PGPEEK_REQUIRE_CLOUDFLARE_ACCESS=true</code> to reject requests without Cloudflare Access headers. This is header enforcement only, not JWT validation; keep the origin reachable only through Cloudflare Access/Tunnel.
       </div>
     </div>
+
+    <div class="callout callout--success reveal">
+      <div class="callout__icon" aria-hidden="true">id</div>
+      <div class="callout__body">
+        <strong>OAuth for public MCP access.</strong> Optionally configure Descope to validate bearer-token issuer, exact <code>/mcp</code> audience, expiry, and required scopes. Descope owns Dynamic Client Registration, login, consent, and token issuance; pgpeek remains the resource server.
+      </div>
+    </div>
   </div>
 </section>
 
@@ -1195,7 +1204,10 @@ docker build -t pgpeek .   <span class="tok-comment"># or the hand-written Docke
           <tr><td class="td-path">PGPEEK_SHUTDOWN_TIMEOUT</td><td><span class="pill-default">15s</span></td><td>Graceful-shutdown grace period.</td></tr>
           <tr><td class="td-path">PGPEEK_TLS_CERT_FILE</td><td><span class="pill-default">—</span></td><td>Enable HTTPS (set with the key file). Otherwise terminate TLS at the ingress.</td></tr>
           <tr><td class="td-path">PGPEEK_TLS_KEY_FILE</td><td><span class="pill-default">—</span></td><td>TLS private key path.</td></tr>
-          <tr><td class="td-path">PGPEEK_REQUIRE_CLOUDFLARE_ACCESS</td><td><span class="pill-default">false</span></td><td>Return 403 unless Cloudflare Access headers are present; probes stay open.</td></tr>
+          <tr><td class="td-path">PGPEEK_REQUIRE_CLOUDFLARE_ACCESS</td><td><span class="pill-default">false</span></td><td>Return 403 unless Cloudflare Access headers are present; probes and OAuth protected-resource metadata stay open.</td></tr>
+          <tr><td class="td-path">DESCOPE_MCP_SERVER_WELL_KNOWN_URL</td><td><span class="pill-default">—</span></td><td>Enable Descope OAuth for <code>/mcp</code> with the MCP Server OpenID discovery URL. <code>DESCOPE_CONFIG_URL</code> is an accepted alias; if both are set, they must match.</td></tr>
+          <tr><td class="td-path">PGPEEK_MCP_SERVER_URL</td><td><span class="pill-default">—</span></td><td>Exact public MCP URL ending in <code>/mcp</code>; used as the protected resource and required JWT audience.</td></tr>
+          <tr><td class="td-path">PGPEEK_MCP_REQUIRED_SCOPES</td><td><span class="pill-default">—</span></td><td>Comma- or whitespace-separated Descope scopes required on every MCP request.</td></tr>
           <tr><td class="td-path">PGPEEK_DB_IAM_AUTH</td><td><span class="pill-default">false</span></td><td>Use RDS/Aurora IAM auth instead of a password.</td></tr>
           <tr><td class="td-path">PGPEEK_AWS_REGION</td><td><span class="pill-default">$AWS_REGION</span></td><td>AWS region for IAM token signing (required when IAM auth is on).</td></tr>
         </tbody>
@@ -1220,6 +1232,57 @@ docker build -t pgpeek .   <span class="tok-comment"># or the hand-written Docke
       <div class="callout__icon" aria-hidden="true">cf</div>
       <div class="callout__body">
         <strong>Cloudflare Access gate.</strong> pgpeek reads <code>Cf-Access-Authenticated-User-Email</code> for the current user banner and can require Access headers with <code>PGPEEK_REQUIRE_CLOUDFLARE_ACCESS=true</code>. Use it only when Cloudflare Access/Tunnel is the only path to the origin.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ MCP ============================ -->
+<section class="section" id="mcp">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-label">Model Context Protocol</span>
+      <h2 class="section-title">Read-only Postgres tools over MCP</h2>
+      <p class="section-desc">Connect an MCP client to the exact public URL <code>https://your-pgpeek.example/mcp</code>. The stateless Streamable HTTP endpoint uses JSON responses and can be protected by Descope OAuth with Dynamic Client Registration.</p>
+    </div>
+
+    <div class="table-wrap reveal">
+      <table class="data-table">
+        <thead><tr><th>Tool</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td class="td-path">list_databases</td><td>List configured database IDs and display names without exposing credentials.</td></tr>
+          <tr><td class="td-path">list_tables</td><td>List user-facing tables and views in the selected database.</td></tr>
+          <tr><td class="td-path">describe_table</td><td>Return columns and single-column foreign keys for a table or view.</td></tr>
+          <tr><td class="td-path">query</td><td>Run one guarded, row-capped, read-only SQL statement.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout--warn reveal">
+      <div class="callout__icon" aria-hidden="true">!</div>
+      <div class="callout__body">
+        <strong>Authentication is optional.</strong> If all three Descope settings are absent, <code>/mcp</code> remains unauthenticated. Keep that deployment on a trusted network or behind an existing access proxy.
+      </div>
+    </div>
+
+    <div class="code-wrap reveal">
+      <button class="copy-btn" type="button" aria-label="Copy">copy</button>
+      <pre><code><span class="tok-key">export</span> DESCOPE_MCP_SERVER_WELL_KNOWN_URL=<span class="tok-string">'https://api.descope.com/.../.well-known/openid-configuration'</span>
+<span class="tok-key">export</span> PGPEEK_MCP_SERVER_URL=<span class="tok-string">'https://pgpeek.example.com/mcp'</span>
+<span class="tok-key">export</span> PGPEEK_MCP_REQUIRED_SCOPES=<span class="tok-string">'mcp:pgpeek.read'</span></code></pre>
+    </div>
+
+    <div class="callout callout--success reveal">
+      <div class="callout__icon" aria-hidden="true">dcr</div>
+      <div class="callout__body">
+        <strong>Descope owns the authorization flow.</strong> Register the same full <code>/mcp</code> Server URL in Descope, enable DCR, and define the required scopes. At startup pgpeek requires an advertised <code>registration_endpoint</code>, matching scopes, a secure <code>jwks_uri</code>, and supported asymmetric signing algorithms. No Descope management key is required.
+      </div>
+    </div>
+
+    <div class="callout callout--success reveal">
+      <div class="callout__icon" aria-hidden="true">pr</div>
+      <div class="callout__body">
+        <strong>Standards-based discovery stays public.</strong> RFC 9728 metadata is served at <code>/.well-known/oauth-protected-resource</code>, and unauthenticated <code>/mcp</code> responses link to it in <code>WWW-Authenticate</code>. When Cloudflare Access is also required, metadata remains public while <code>/mcp</code> must pass both gates.
       </div>
     </div>
   </div>
@@ -1251,6 +1314,8 @@ docker build -t pgpeek .   <span class="tok-comment"># or the hand-written Docke
           <tr><td class="td-path"><span class="method-badge method-post">POST</span> /api/queries</td><td>Create a saved query.</td></tr>
           <tr><td class="td-path"><span class="method-badge method-put">PUT</span> /api/queries/{id}</td><td>Update a saved query.</td></tr>
           <tr><td class="td-path"><span class="method-badge method-del">DEL</span> /api/queries/{id}</td><td>Delete a saved query.</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-post">POST</span> /mcp</td><td>Send stateless Streamable HTTP MCP messages; GET and DELETE retain protocol transport behavior.</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /.well-known/oauth-protected-resource</td><td>Public OAuth protected-resource metadata when Descope MCP auth is enabled.</td></tr>
           <tr><td class="td-path"><span class="method-badge method-get">GET</span> /healthz · /readyz</td><td>Liveness · readiness (pings the DB).</td></tr>
           <tr><td class="td-path"><span class="method-badge method-get">GET</span> /</td><td>The UI.</td></tr>
         </tbody>
@@ -1301,7 +1366,7 @@ docker build -t pgpeek .   <span class="tok-comment"># or the hand-written Docke
     <div class="callout callout--warn reveal">
       <div class="callout__icon" aria-hidden="true">!</div>
       <div class="callout__body">
-        <strong>Deploy behind an access layer.</strong> pgpeek is auth-thin by design. Use oauth2-proxy, Cloudflare Access/Tunnel, VPN, private ingress, or service-mesh auth; do not expose it directly. If <code>PGPEEK_REQUIRE_CLOUDFLARE_ACCESS=true</code>, keep the origin reachable only through Cloudflare. Kubernetes probes stay open on <code>/healthz</code> and <code>/readyz</code>.
+        <strong>Deploy behind an access layer.</strong> The UI and JSON API are auth-thin by design. Use oauth2-proxy, Cloudflare Access/Tunnel, VPN, private ingress, or service-mesh auth; do not expose them directly. Public MCP access can instead use Descope DCR auth. If <code>PGPEEK_REQUIRE_CLOUDFLARE_ACCESS=true</code>, keep the origin reachable only through Cloudflare. Kubernetes probes and OAuth protected-resource metadata stay open.
       </div>
     </div>
 
@@ -1362,6 +1427,7 @@ docker build -t pgpeek .   <span class="tok-comment"># or the hand-written Docke
           <a href="#features">Features</a>
           <a href="#quickstart">Quick start</a>
           <a href="#config">Configuration</a>
+          <a href="#mcp">MCP</a>
           <a href="#api">HTTP API</a>
           <a href="llms.txt">LLMs.txt</a>
         </div>

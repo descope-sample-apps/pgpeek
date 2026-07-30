@@ -114,7 +114,7 @@ func TestIntegrationCatalog(t *testing.T) {
 
 	p := testPool(t, 1000)
 
-	tables, err := p.Tables(ctx)
+	tables, _, err := p.Tables(ctx)
 	if err != nil {
 		t.Fatalf("Tables: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestIntegrationCatalog(t *testing.T) {
 		t.Error("pgpeek_cat not listed by Tables")
 	}
 
-	cols, err := p.Columns(ctx, "public", "pgpeek_cat")
+	cols, _, err := p.Columns(ctx, "public", "pgpeek_cat")
 	if err != nil {
 		t.Fatalf("Columns: %v", err)
 	}
@@ -180,12 +180,27 @@ func TestIntegrationForeignKeys(t *testing.T) {
 		_, _ = raw.Exec(ctx, `DROP TABLE IF EXISTS pgpeek_parent`)
 	})
 
-	fks, err := testPool(t, 1000).ForeignKeys(ctx, "public", "pgpeek_child")
+	fks, _, err := testPool(t, 1000).ForeignKeys(ctx, "public", "pgpeek_child")
 	if err != nil {
 		t.Fatalf("ForeignKeys: %v", err)
 	}
 	if len(fks) != 1 || fks[0] != (ForeignKey{Column: "parent_id", RefSchema: "public", RefTable: "pgpeek_parent", RefColumn: "id"}) {
 		t.Errorf("fks = %+v", fks)
+	}
+}
+
+func TestIntegrationQueryRejectsOversizedBackendMessage(t *testing.T) {
+	p := testPool(t, 10)
+
+	if _, err := p.Query(context.Background(), `SELECT repeat('x', 524288)`); err == nil {
+		t.Fatal("expected oversized backend message error")
+	}
+	result, err := p.Query(context.Background(), `SELECT 1`)
+	if err != nil {
+		t.Fatalf("query after oversized response: %v", err)
+	}
+	if result.RowCount != 1 {
+		t.Fatalf("rowCount = %d, want 1", result.RowCount)
 	}
 }
 

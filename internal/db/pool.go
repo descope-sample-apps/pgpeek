@@ -14,6 +14,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+const (
+	MaxResultBytes    = 448 << 10
+	maxDBMessageBytes = 512 << 10
+)
+
 // Config holds the tunables for the pool.
 type Config struct {
 	DSN              string
@@ -75,6 +80,10 @@ func buildConfig(c Config) (*pgxpool.Config, error) {
 	cfg.ConnConfig.RuntimeParams["default_transaction_read_only"] = "on"
 	cfg.ConnConfig.RuntimeParams["application_name"] = "pgpeek"
 	cfg.BeforeConnect = c.BeforeConnect
+	cfg.AfterConnect = func(_ context.Context, conn *pgx.Conn) error {
+		conn.PgConn().Frontend().SetMaxBodyLen(maxDBMessageBytes)
+		return nil
+	}
 	return cfg, nil
 }
 
@@ -130,6 +139,7 @@ func (p *Pool) collect(rows pgx.Rows, start time.Time) (*Result, error) {
 	}
 
 	out := make([][]any, 0, 128)
+	encodedBytes := 2
 	truncated := false
 	for rows.Next() {
 		if len(out) >= p.rowCap {
@@ -144,6 +154,15 @@ func (p *Pool) collect(rows pgx.Rows, start time.Time) (*Result, error) {
 		for i, v := range vals {
 			row[i] = normalize(v)
 		}
+		encoded, err := json.Marshal(row)
+		if err != nil {
+			return nil, err
+		}
+		if encodedBytes+len(encoded)+1 > MaxResultBytes {
+			truncated = true
+			break
+		}
+		encodedBytes += len(encoded) + 1
 		out = append(out, row)
 	}
 	if !truncated {

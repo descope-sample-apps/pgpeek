@@ -33,7 +33,7 @@ func TestMCPAuthorization_protectsHandler(t *testing.T) {
 		{"malformed token", "not-a-jwt", http.StatusUnauthorized, ""},
 		{"wrong issuer", descope.token(t, resourceURL, map[string]any{"iss": "https://issuer.example.com"}), http.StatusUnauthorized, ""},
 		{"wrong audience", descope.token(t, resourceURL, map[string]any{"aud": []string{"https://other.example.com/mcp"}}), http.StatusUnauthorized, ""},
-		{"additional audience", descope.token(t, resourceURL, map[string]any{"aud": []string{resourceURL, "https://other.example.com/mcp"}}), http.StatusUnauthorized, ""},
+		{"additional audience", descope.token(t, resourceURL, map[string]any{"aud": []string{"client-id", "project-id", resourceURL}}), http.StatusNoContent, "user-123"},
 		{"expired", descope.token(t, resourceURL, map[string]any{"exp": time.Now().Add(-time.Hour).Unix()}), http.StatusUnauthorized, ""},
 		{"malformed scope", descope.token(t, resourceURL, map[string]any{"scope": []string{"mcp:pgpeek.read"}}), http.StatusUnauthorized, ""},
 		{"missing scope", descope.token(t, resourceURL, map[string]any{"scope": "openid"}), http.StatusForbidden, ""},

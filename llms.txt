@@ -16,7 +16,7 @@ full-context: https://descope-sample-apps.github.io/pgpeek/llms-full.txt
 - 20 built-in UI themes.
 - 3 read-only enforcement layers.
 - 23 configuration rows in the website reference.
-- 21 documented HTTP routes, including MCP, OAuth metadata, both probes, and the UI.
+- 22 documented HTTP routes, including MCP, OAuth metadata, both probes, and the UI.
 - Default row cap: 1000 (`PGPEEK_ROW_CAP`).
 - Default statement timeout: 30s (`PGPEEK_STATEMENT_TIMEOUT`).
 - Saved queries use SQLite; browsed data remains in Postgres.

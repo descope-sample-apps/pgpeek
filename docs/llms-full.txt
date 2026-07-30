@@ -27,7 +27,7 @@ task only needs product identity, startup, safety, or probe behavior.
 - Built-in themes: 20
 - Read-only enforcement layers: 3
 - Website configuration rows: 23
-- Documented HTTP routes: 21
+- Documented HTTP routes: 22
 
 ---
 
@@ -497,6 +497,7 @@ Two ways:
 | `GET /mcp`                  | Protocol-defined Streamable HTTP transport behavior. |
 | `POST /mcp`                 | Send stateless Streamable HTTP MCP messages. |
 | `DELETE /mcp`               | Protocol-defined Streamable HTTP session termination behavior. |
+| `OPTIONS /mcp`              | CORS preflight when Descope OAuth protects the MCP endpoint. |
 | `GET /.well-known/oauth-protected-resource` | Public OAuth protected-resource metadata when Descope MCP auth is enabled. |
 | `OPTIONS /.well-known/oauth-protected-resource` | CORS preflight for public OAuth metadata. |
 | `GET /healthz`              | Liveness (always 200 if process is up).   |

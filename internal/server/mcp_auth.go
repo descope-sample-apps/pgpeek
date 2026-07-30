@@ -37,6 +37,7 @@ type MCPAuthorization struct {
 	verifier            *oidc.IDTokenVerifier
 	metadata            *oauthex.ProtectedResourceMetadata
 	resourceMetadataURL string
+	resourceScheme      string
 	resourceHost        string
 	requiredScopes      []string
 }
@@ -120,7 +121,8 @@ func newDescopeMCPAuthorization(ctx context.Context, cfg DescopeMCPAuthConfig, c
 			ResourceName:           "pgpeek PostgreSQL browser",
 		},
 		resourceMetadataURL: metadataURL.String(),
-		resourceHost:        resourceURL.Host,
+		resourceScheme:      resourceURL.Scheme,
+		resourceHost:        normalizeResourceAuthority(resourceURL.Scheme, resourceURL.Host),
 		requiredScopes:      slices.Clone(requiredScopes),
 	}, nil
 }
@@ -224,12 +226,26 @@ func (a *MCPAuthorization) protect(next http.Handler) http.Handler {
 
 func (a *MCPAuthorization) requireResourceHost(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.EqualFold(r.Host, a.resourceHost) && !isLoopbackAuthority(r.Host) {
+		if normalizeResourceAuthority(a.resourceScheme, r.Host) != a.resourceHost && !isLoopbackAuthority(r.Host) {
 			http.Error(w, "invalid MCP resource host", http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func normalizeResourceAuthority(scheme, authority string) string {
+	host, port, err := net.SplitHostPort(authority)
+	if err != nil {
+		return strings.ToLower(authority)
+	}
+	if scheme == "https" && port == "443" || scheme == "http" && port == "80" {
+		if strings.Contains(host, ":") {
+			return "[" + strings.ToLower(host) + "]"
+		}
+		return strings.ToLower(host)
+	}
+	return strings.ToLower(net.JoinHostPort(host, port))
 }
 
 func isLoopbackAuthority(authority string) bool {

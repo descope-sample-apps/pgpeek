@@ -276,6 +276,59 @@ func TestMCPRoutes_allowConfiguredResourceHostBehindLocalProxy(t *testing.T) {
 	}
 }
 
+func TestMCPRoutes_normalizeDefaultResourcePortBehindLocalProxy(t *testing.T) {
+	descope := newFakeDescopeServer(t)
+	resourceURL := "https://pgpeek.example.com:443/mcp"
+	authz, err := NewDescopeMCPAuthorization(context.Background(), descope.config(resourceURL, "mcp:pgpeek.read"))
+	if err != nil {
+		t.Fatalf("NewDescopeMCPAuthorization: %v", err)
+	}
+	ts := newMCPAuthTestServer(t, authz)
+	body := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.Host = "pgpeek.example.com"
+	req.Header.Set("Authorization", "Bearer "+descope.token(t, resourceURL, nil))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestMCPRoutes_retainNonDefaultResourcePort(t *testing.T) {
+	descope := newFakeDescopeServer(t)
+	resourceURL := "https://pgpeek.example.com:8443/mcp"
+	authz, err := NewDescopeMCPAuthorization(context.Background(), descope.config(resourceURL, "mcp:pgpeek.read"))
+	if err != nil {
+		t.Fatalf("NewDescopeMCPAuthorization: %v", err)
+	}
+	ts := newMCPAuthTestServer(t, authz)
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.Host = "pgpeek.example.com"
+	req.Header.Set("Authorization", "Bearer "+descope.token(t, resourceURL, nil))
+
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", resp.StatusCode)
+	}
+}
+
 func TestMCPRoutes_rejectUnexpectedResourceHost(t *testing.T) {
 	descope := newFakeDescopeServer(t)
 	authz, err := NewDescopeMCPAuthorization(context.Background(), descope.config("https://pgpeek.example.com/mcp", "mcp:pgpeek.read"))

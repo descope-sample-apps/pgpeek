@@ -223,3 +223,24 @@ func TestMCPAuthSigningAlgorithms_rejectsProviderWithoutClaims(t *testing.T) {
 		t.Fatal("expected provider claims error")
 	}
 }
+
+func TestNormalizeResourceAuthority(t *testing.T) {
+	tests := []struct {
+		scheme    string
+		authority string
+		want      string
+	}{
+		{"https", "PGPEEK.EXAMPLE.COM", "pgpeek.example.com"},
+		{"https", "pgpeek.example.com:443", "pgpeek.example.com"},
+		{"http", "pgpeek.example.com:80", "pgpeek.example.com"},
+		{"https", "pgpeek.example.com:8443", "pgpeek.example.com:8443"},
+		{"https", "[2001:db8::1]:443", "[2001:db8::1]"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.scheme+"_"+tt.authority, func(t *testing.T) {
+			if got := normalizeResourceAuthority(tt.scheme, tt.authority); got != tt.want {
+				t.Fatalf("normalizeResourceAuthority(%q, %q) = %q, want %q", tt.scheme, tt.authority, got, tt.want)
+			}
+		})
+	}
+}

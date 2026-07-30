@@ -30,7 +30,7 @@ func requireCloudflareAccess(require bool, next http.Handler) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if isCloudflareAccessExemptPath(r.URL.Path) || cloudflareAccessUser(r).Provider == "cloudflare-access" {
+		if isCloudflareAccessExemptRequest(r) || cloudflareAccessUser(r).Provider == "cloudflare-access" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -62,6 +62,10 @@ func isProbePath(path string) bool {
 
 func isCloudflareAccessExemptPath(path string) bool {
 	return isProbePath(path) || path == protectedResourceMetadataPath
+}
+
+func isCloudflareAccessExemptRequest(r *http.Request) bool {
+	return isCloudflareAccessExemptPath(r.URL.Path) || r.Method == http.MethodOptions && r.URL.Path == "/mcp"
 }
 
 type statusWriter struct {

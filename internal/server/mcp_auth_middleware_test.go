@@ -33,7 +33,7 @@ func TestMCPAuthorization_protectsHandler(t *testing.T) {
 		{"malformed token", "not-a-jwt", http.StatusUnauthorized, ""},
 		{"wrong issuer", descope.token(t, resourceURL, map[string]any{"iss": "https://issuer.example.com"}), http.StatusUnauthorized, ""},
 		{"wrong audience", descope.token(t, resourceURL, map[string]any{"aud": []string{"https://other.example.com/mcp"}}), http.StatusUnauthorized, ""},
-		{"additional audience", descope.token(t, resourceURL, map[string]any{"aud": []string{"client-id", "project-id", resourceURL}}), http.StatusNoContent, "user-123"},
+		{"additional audience", descope.token(t, resourceURL, map[string]any{"aud": []string{"client-id", "project-id", resourceURL}, "azp": "client-id"}), http.StatusNoContent, "user-123"},
 		{"expired", descope.token(t, resourceURL, map[string]any{"exp": time.Now().Add(-time.Hour).Unix()}), http.StatusUnauthorized, ""},
 		{"malformed scope", descope.token(t, resourceURL, map[string]any{"scope": []string{"mcp:pgpeek.read"}}), http.StatusUnauthorized, ""},
 		{"missing scope", descope.token(t, resourceURL, map[string]any{"scope": "openid"}), http.StatusForbidden, ""},
@@ -194,7 +194,7 @@ func TestMCPRoutes_allowAuthenticatedBrowserPreflight(t *testing.T) {
 	}
 }
 
-func TestMCPRoutes_exposeOAuthChallengeToAuthenticatedBrowser(t *testing.T) {
+func TestMCPRoutes_exposeOAuthChallengeToBrowserOrigin(t *testing.T) {
 	descope := newFakeDescopeServer(t)
 	authz, err := NewDescopeMCPAuthorization(context.Background(), descope.config("https://pgpeek.example.com/mcp", "mcp:pgpeek.read"))
 	if err != nil {
@@ -221,6 +221,30 @@ func TestMCPRoutes_exposeOAuthChallengeToAuthenticatedBrowser(t *testing.T) {
 	}
 	if !strings.Contains(resp.Header.Get("WWW-Authenticate"), authz.resourceMetadataURL) {
 		t.Fatalf("WWW-Authenticate = %q", resp.Header.Get("WWW-Authenticate"))
+	}
+}
+
+func TestMCPRoutes_allowBrowserPreflightWithCloudflareAccess(t *testing.T) {
+	descope := newFakeDescopeServer(t)
+	authz, err := NewDescopeMCPAuthorization(context.Background(), descope.config("https://pgpeek.example.com/mcp", "mcp:pgpeek.read"))
+	if err != nil {
+		t.Fatalf("NewDescopeMCPAuthorization: %v", err)
+	}
+	ts := newMCPAuthTestServer(t, authz, RequireCloudflareAccess(true))
+	req, err := http.NewRequest(http.MethodOptions, ts.URL+"/mcp", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.Header.Set("Origin", "https://www.mcpjam.com")
+	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", resp.StatusCode)
 	}
 }
 

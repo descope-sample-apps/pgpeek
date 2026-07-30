@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.9.0...v0.10.0) (2026-07-30)
+
+
+### Features
+
+* **web:** make exact locations shareable ([#64](https://github.com/descope-sample-apps/pgpeek/issues/64)) ([c38f948](https://github.com/descope-sample-apps/pgpeek/commit/c38f948849754ac2bb64e9effbd12a1652ba6b92))
+
 ## [0.9.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.8.0...v0.9.0) (2026-07-30)
 
 

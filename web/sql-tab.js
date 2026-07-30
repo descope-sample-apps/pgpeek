@@ -2,12 +2,14 @@
 import { html, useState, useEffect, useRef, useCallback } from "./vendor/preact-htm.js";
 import { dbUrl, getJSON, tablePath } from "./api.js";
 
+const DEFAULT_SQL = "SELECT now();";
+
 async function responseError(r, fallback) {
   const body = await r.json().catch(() => null);
   return (body && body.error) || r.statusText || fallback;
 }
 
-export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables }) {
+export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, initialSQL, onStateChange }) {
   const wrapRef = useRef();
   const taRef = useRef();
   const editorRef = useRef();
@@ -18,9 +20,21 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables }) 
   const [error, setError] = useState("");
   const runningRef = useRef(false);
   const actionRef = useRef(0);
+  const initialSQLRef = useRef(initialSQL);
+  const dbRef = useRef(dbId);
+
+  const invalidate = () => {
+    actionRef.current += 1; runningRef.current = false; setRunning(false);
+    setResult(null); setLastSQL(""); setError("");
+  };
+  const onEdit = (value) => { invalidate(); onStateChange(value); };
+  if (dbRef.current !== dbId) { dbRef.current = dbId; actionRef.current += 1; runningRef.current = false; }
 
   const getSQL = () => (editorRef.current ? editorRef.current.getValue() : taRef.current.value).trim();
-  const setSQL = (v) => { if (editorRef.current) editorRef.current.setValue(v); else taRef.current.value = v; };
+  const setSQL = (v) => {
+    if (editorRef.current) editorRef.current.setValue(v);
+    else { taRef.current.value = v; onEdit(v); }
+  };
 
   const run = useCallback(async () => {
     const sql = getSQL();
@@ -58,28 +72,41 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables }) 
         setStatus({ text: "✗ " + e.message, cls: "error" });
       }
     } finally {
-      runningRef.current = false; setRunning(false);
+      if (action === actionRef.current) { runningRef.current = false; setRunning(false); }
     }
   }, [dbId]);
 
   const runRef = useRef(run);
   useEffect(() => { runRef.current = run; }, [run]);
+  useEffect(invalidate, [dbId]);
 
   // Init CodeMirror once into a Preact-stable wrapper it fully owns.
   useEffect(() => {
     if (window.cm6) {
-      editorRef.current = window.cm6.mount(wrapRef.current, "SELECT now();", () => runRef.current());
+      editorRef.current = window.cm6.mount(wrapRef.current, initialSQL ?? DEFAULT_SQL, () => runRef.current(), onEdit);
       return;
     }
     const ta = document.createElement("textarea");
     ta.id = "sql";
-    ta.value = "SELECT now();";
+    ta.value = initialSQL ?? DEFAULT_SQL;
     wrapRef.current.appendChild(ta);
     taRef.current = ta;
+    ta.addEventListener("input", () => onEdit(ta.value));
     ta.addEventListener("keydown", (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); runRef.current(); }
     });
   }, []);
+
+  useEffect(() => {
+    if (initialSQL === initialSQLRef.current) return;
+    initialSQLRef.current = initialSQL;
+    const value = initialSQL ?? DEFAULT_SQL;
+    const current = editorRef.current ? editorRef.current.getValue() : taRef.current.value;
+    if (current === value) return;
+    invalidate();
+    if (editorRef.current && editorRef.current.getValue() !== value) editorRef.current.setValue(value, false);
+    if (taRef.current && taRef.current.value !== value) taRef.current.value = value;
+  }, [initialSQL]);
 
   // CM6 autocomplete: fetch columns for each table and wire up schema config.
   // Textarea mode skips this entirely (no window.cm6 → no column fetches).
@@ -161,7 +188,6 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables }) 
     const id = e.target.value; setSelected(id);
     const q = saved.find((x) => String(x.id) === id);
     if (q) {
-      actionRef.current += 1;
       setSQL(q.sql); setError(""); setStatus({ text: "Loaded \u201c" + q.name + "\u201d. Press Run.", cls: "ok" });
     }
   };

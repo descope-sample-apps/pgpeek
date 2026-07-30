@@ -36,8 +36,8 @@ This matrix is the checklist for answering â€œis the product behavior covered?â€
 | Structure tab | lazy column loading, loading/empty/error states, nullable/default variants, stale response handling | `web/app.test.js` |
 | Foreign-key navigation | FK buttons, eq filter navigation, non-browsable refs, stale/failing FK introspection | `web/app.test.js` |
 | Saved queries | SQLite CRUD, presets, ordering, validation, not found, bad IDs, closed-store errors | `internal/store/store_test.go`, `internal/server/saved_query_handlers_test.go`, `internal/server/saved_query_errors_test.go`, `web/app.test.js` |
-| Database selector | render/no-render states, DB switching, stale response handling, `?db=` propagation, malformed responses | `web/db-selector.test.js`, `web/db-sql.test.js`, `web/url-state.test.js` |
-| URL state | tab/table/db restoration, filters, sort direction defaults, popstate, malformed filter handling | `web/url-state.test.js`, `web/url-helpers.test.js` |
+| Database selector | render/no-render states, DB switching, stale response handling, compressed URL and API propagation, malformed responses | `web/db-selector.test.js`, `web/db-sql.test.js`, `web/url-state.test.js` |
+| URL state | single-payload compression, legacy links, tab/table/db restoration, filters, sort, pagination, FK destinations, SQL round-trips, popstate, no SQL auto-run, malformed filters | `web/url-state.test.js`, `web/url-helpers.test.js`, `web/app.test.js` |
 | Theme selector | default theme, persistence, clearing, localStorage failures | `web/app.test.js` |
 | Large schema UI | many tables/columns remain scrollable, overflow boundaries are defined | `web/large-schema.test.js` |
 | Health/readiness/static UI | `/healthz`, `/readyz`, static UI serving, security headers, default presets pass guard | `internal/server/server_routes_test.go` |

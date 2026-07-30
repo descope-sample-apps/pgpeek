@@ -184,9 +184,11 @@ supplied from mounted files so they do not live in manifests.
 
 ### Multiple databases / clusters
 
-The UI shows a database selector. The selected ID is kept in the URL as
-`?db=<id>` alongside table, tab, filter, sort, and pagination state, so links are
-bookmarkable and shareable.
+The UI compresses the selected database, table, tab, filters, sort, pagination,
+and SQL editor text into one `?s=...` parameter, so links are bookmarkable and
+shareable. Older readable URL parameters still open and canonicalize to `s`.
+Opening a shared SQL link restores the editor without running the query.
+Packed state is capped at 8 KiB; larger SQL remains editor-only.
 
 Same-env list form:
 

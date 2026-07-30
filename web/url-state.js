@@ -1,8 +1,18 @@
 // URL state helpers — read, push, and replace browser history for pgpeek.
 // Stable param names match API names where they exist.
+import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from "./vendor/lz-string.js";
+
+const MAX_PACKED_STATE_CHARS = 8_192;
 
 export function readUrlState() {
-  const p = new URLSearchParams(window.location.search);
+  let p = new URLSearchParams(window.location.search);
+  if (p.has("s")) {
+    const packed = p.get("s");
+    let unpacked = null;
+    try { if (packed.length <= MAX_PACKED_STATE_CHARS) unpacked = decompressFromEncodedURIComponent(packed); }
+    catch { unpacked = null; }
+    if (unpacked !== null && compressToEncodedURIComponent(unpacked) === packed) p = new URLSearchParams(unpacked);
+  }
   const filters = [];
   for (const f of p.getAll("f")) {
     const first = f.indexOf(":");
@@ -26,29 +36,39 @@ export function readUrlState() {
     search: p.get("search") || "",
     sort,
     filters,
+    sql: p.has("sql") ? p.get("sql") : null,
   };
 }
 
 export function buildUrlParams(state) {
-  const p = new URLSearchParams();
-  if (state.db) p.set("db", state.db);
-  if (state.tab && state.tab !== "data") p.set("tab", state.tab);
-  if (state.schema) p.set("schema", state.schema);
-  if (state.table) p.set("table", state.table);
-  if (state.offset) p.set("offset", String(state.offset));
-  if (state.search) p.set("search", state.search);
-  if (state.sort) { p.set("sort", state.sort.col); p.set("dir", state.sort.dir); }
+  const stateParams = new URLSearchParams();
+  if (state.db) stateParams.set("db", state.db);
+  if (state.tab && state.tab !== "data") stateParams.set("tab", state.tab);
+  if (state.schema) stateParams.set("schema", state.schema);
+  if (state.table) stateParams.set("table", state.table);
+  if (state.offset) stateParams.set("offset", String(state.offset));
+  if (state.search) stateParams.set("search", state.search);
+  if (state.sort) { stateParams.set("sort", state.sort.col); stateParams.set("dir", state.sort.dir); }
+  if (state.sql !== null && state.sql !== undefined) stateParams.set("sql", state.sql);
   if (state.filters) {
     for (const f of state.filters) {
       if (!f || !f.column || !f.op) continue;
       const noVal = f.op === "is_null" || f.op === "is_not_null";
-      p.append("f", noVal ? `${f.column}:${f.op}` : `${f.column}:${f.op}:${f.value || ""}`);
+      stateParams.append("f", noVal ? `${f.column}:${f.op}` : `${f.column}:${f.op}:${f.value || ""}`);
     }
   }
+  let packed = compressToEncodedURIComponent(stateParams.toString());
+  if (packed.length > MAX_PACKED_STATE_CHARS) {
+    stateParams.delete("sql");
+    packed = compressToEncodedURIComponent(stateParams.toString());
+  }
+  if (packed.length > MAX_PACKED_STATE_CHARS) packed = compressToEncodedURIComponent("");
+  const p = new URLSearchParams();
+  p.set("s", packed);
   return p;
 }
 
-function qs(p) { const s = p.toString(); return s ? "?" + s : ""; }
+const qs = (p) => "?" + p.toString();
 
 export const pushUrlState = (state) =>
   window.history.pushState(null, "", window.location.pathname + qs(buildUrlParams(state)));

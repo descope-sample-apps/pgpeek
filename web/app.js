@@ -56,6 +56,7 @@ function App() {
   const [rowCap, setRowCap]           = useState(PAGE_SIZE);
   const [saved, setSaved]             = useState([]);
   const [tab, setTabState]            = useState("data");
+  const [sql, setSql]                 = useState(null);
   const [current, setCurrent]         = useState(null);
   const [navKey, setNavKey]           = useState(0);
   const [pendingFilters, setPendingFilters] = useState(null);
@@ -90,7 +91,7 @@ function App() {
   // Phase 1: fetch /api/databases, resolve active db, restore URL state,
   //          install popstate listener.
   useEffect(() => {
-    const urlState = readUrlState();
+    let urlState = readUrlState();
     urlStateRef.current = urlState;
 
     (async () => {
@@ -100,6 +101,7 @@ function App() {
 
         if (!r.ok) throw new Error(r.statusText || "failed");
         const result = await r.json();
+        urlState = readUrlState(); urlStateRef.current = urlState;
         const dbs = Array.isArray(result.databases) ? result.databases : [];
         setDatabases(dbs);
         const urlDb  = urlState.db;
@@ -109,13 +111,13 @@ function App() {
           setStatus({ text: "✗ unknown database in URL, using default", cls: "error" });
         }
       } catch (e) {
-
+        urlState = readUrlState(); urlStateRef.current = urlState;
         setStatus({ text: "✗ failed to load databases: " + e.message, cls: "error" });
       }
 
 
       // Restore tab from URL; build pending table-restore if schema+table present.
-      setTabState(urlState.tab);
+      setTabState(urlState.tab); setSql(urlState.sql);
       const finalState = { ...urlState, db: dbId };
       replaceUrlState(finalState);
       urlStateRef.current = finalState;
@@ -128,8 +130,7 @@ function App() {
           sort: urlState.sort, filters: urlState.filters,
         });
       }
-      setCurrentDb(dbId);
-      setDbsLoaded(true);
+      setCurrentDb(dbId); setDbsLoaded(true);
     })();
 
     const onPopstate = () => {
@@ -138,6 +139,7 @@ function App() {
       urlStateRef.current = s;
       dbRef.current = s.db;
       setTabState(s.tab);
+      setSql(s.sql);
       setCurrentDb(s.db);
       if (!sameDb) {
         setCurrent(null);
@@ -176,7 +178,7 @@ function App() {
         setUrlInit((prev) => {
           if (!prev) return null;
           const found = t.find((x) => x.schema === prev.schema && x.name === prev.table);
-          if (found) { setCurrent(found); setNavKey((k) => k + 1); }
+          if (found) { setCurrent(found); setNavKey((k) => k + 1); return prev; }
           return null;
         });
       } catch (e) {
@@ -197,7 +199,7 @@ function App() {
     const s = {
       ...urlStateRef.current, tab: null,
       schema: t.schema, table: t.name,
-      offset: 0, search: "", sort: null, filters: [],
+      offset: 0, search: "", sort: null, filters: initFilters || [],
     };
     setCurrent(t); setPendingFilters(initFilters || null); setUrlInit(null);
     setNavKey((n) => n + 1); setTabState("data");
@@ -215,7 +217,7 @@ function App() {
 
   const switchDb = (newDb) => {
     if (newDb === currentDb) return;
-    const s = { db: newDb, tab: null, schema: null, table: null, offset: 0, search: "", sort: null, filters: [] };
+    const s = { db: newDb, tab: null, schema: null, table: null, offset: 0, search: "", sort: null, filters: [], sql: urlStateRef.current.sql };
     setCurrent(null); setPendingFilters(null); setUrlInit(null);
     setTabState("data");
     dbRef.current = newDb; setCurrentDb(newDb);
@@ -224,6 +226,11 @@ function App() {
 
   const onDataStateChange = (dataState) => {
     const s = { ...urlStateRef.current, ...dataState };
+    urlStateRef.current = s; replaceUrlState(s);
+  };
+
+  const onSqlStateChange = (value) => {
+    setSql(value); const s = { ...urlStateRef.current, sql: value };
     urlStateRef.current = s; replaceUrlState(s);
   };
 
@@ -265,7 +272,8 @@ function App() {
         </section>
         <section class="panel" id="panel-sql" role="tabpanel" aria-labelledby="tab-sql" hidden=${tab !== "sql"}>
           <${SqlTab} active=${tab === "sql"} saved=${saved} reloadSaved=${reloadSaved}
-            dbId=${currentDb} setStatus=${setStatus} tables=${tables} />
+            dbId=${currentDb} setStatus=${setStatus} tables=${tables}
+            initialSQL=${sql} onStateChange=${onSqlStateChange} />
         </section>
       </main>
     </div>

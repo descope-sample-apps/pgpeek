@@ -841,9 +841,9 @@ kbd {
       <article class="feature feature--flip reveal">
         <div class="feature__figure">
           <figure class="frame">
-            <div class="frame__toolbar"><span class="frame__dots"><span class="frame__dot frame__dot--red"></span><span class="frame__dot frame__dot--yellow"></span><span class="frame__dot frame__dot--green"></span></span><span class="frame__url">?db=analytics&amp;schema=public&amp;table=users</span></div>
+            <div class="frame__toolbar"><span class="frame__dots"><span class="frame__dot frame__dot--red"></span><span class="frame__dot frame__dot--yellow"></span><span class="frame__dot frame__dot--green"></span></span><span class="frame__url">?s=CYIwvADg5g...</span></div>
             <img src="assets/img/multi-database.png" width="1440" height="900" loading="lazy" decoding="async"
-                 alt="pgpeek with the database selector set to Analytics cluster while browsing public.users, with the selected database encoded in the URL." />
+                 alt="pgpeek with the database selector set to Analytics while browsing public.users, with exact view state compressed in the URL." />
           </figure>
         </div>
         <div class="feature__text">
@@ -851,8 +851,8 @@ kbd {
           <h3 class="feature__title">Switch databases without losing the link</h3>
           <ul class="feature__bullets">
             <li>Pick from named databases or clusters in the header.</li>
-            <li>The selected database is encoded as <code>db=...</code> in the URL.</li>
-            <li>Table, tab, search, filter, sort, and pagination state remain bookmarkable.</li>
+            <li>The selected database and exact view state are compressed into one bookmarkable <code>s</code> parameter.</li>
+            <li>Shared SQL editor text restores without running the query.</li>
           </ul>
         </div>
       </article>

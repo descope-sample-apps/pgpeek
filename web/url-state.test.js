@@ -3,7 +3,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   flush, makeResp, TWO_DBS, SAMPLE_TABLES,
-  makeInstallFetch, $, click, changeSelect, loadApp,
+  makeInstallFetch, $, click, changeSelect, loadApp, callsTo, urlOf,
+  readUrlState, buildUrlParams,
 } from "./test-helpers.js";
 
 let routes;
@@ -50,14 +51,14 @@ afterEach(() => {
 describe("URL db param", () => {
   it("writes defaultId into URL on load when no ?db= in URL", async () => {
     await loadApp();
-    expect(new URLSearchParams(window.location.search).get("db")).toBe("pg1");
+    expect(readUrlState().db).toBe("pg1");
   });
 
   it("uses ?db= from URL when it matches a known database", async () => {
     window.history.replaceState({}, "", "/?db=pg2");
     await loadApp();
     expect($("database-select").value).toBe("pg2");
-    expect(new URLSearchParams(window.location.search).get("db")).toBe("pg2");
+    expect(readUrlState().db).toBe("pg2");
   });
 
   it("falls back to defaultId and shows error when ?db= is unknown", async () => {
@@ -72,13 +73,13 @@ describe("URL db param", () => {
       json: { defaultId: null, databases: [{ id: "first", name: "First" }, { id: "second", name: "Second" }] },
     }));
     await loadApp();
-    expect(new URLSearchParams(window.location.search).get("db")).toBe("first");
+    expect(readUrlState().db).toBe("first");
   });
 
   it("pushes new db into URL when database is switched", async () => {
     await loadApp();
     await changeSelect($("database-select"), "pg2");
-    expect(new URLSearchParams(window.location.search).get("db")).toBe("pg2");
+    expect(readUrlState().db).toBe("pg2");
   });
 
   it("db switch clears schema/table/offset/search from URL", async () => {
@@ -86,12 +87,12 @@ describe("URL db param", () => {
     setRoute("GET /api/tables/*/data", makeResp({ json: { columns: ["id"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
     await loadApp();
     await click($("tables").querySelectorAll(".tbl")[0]);
-    expect(new URLSearchParams(window.location.search).get("table")).toBe("users");
+    expect(readUrlState().table).toBe("users");
     await changeSelect($("database-select"), "pg2");
-    const p = new URLSearchParams(window.location.search);
-    expect(p.has("schema")).toBe(false);
-    expect(p.has("table")).toBe(false);
-    expect(p.has("offset")).toBe(false);
+    const state = readUrlState();
+    expect(state.schema).toBeNull();
+    expect(state.table).toBeNull();
+    expect(state.offset).toBe(0);
   });
 });
 
@@ -106,20 +107,72 @@ describe("URL state — tab and table", () => {
 
   it("data tab is default; URL has no tab param when on data tab after load", async () => {
     await loadApp();
-    expect(new URLSearchParams(window.location.search).has("tab")).toBe(false);
+    expect(readUrlState().tab).toBe("data");
+    expect([...new URLSearchParams(window.location.search).keys()]).toEqual(["s"]);
   });
 
   it("pushes tab into URL when tab changes", async () => {
     await loadApp();
     await click("tab-sql");
-    expect(new URLSearchParams(window.location.search).get("tab")).toBe("sql");
+    expect(readUrlState().tab).toBe("sql");
+  });
+
+  it("restores SQL editor text from the URL and records edits", async () => {
+    window.history.replaceState({}, "", "/?" + buildUrlParams({ db: "pg1", tab: "sql", sql: "SELECT * FROM users" }).toString());
+    await loadApp();
+    expect($("sql").value).toBe("SELECT * FROM users");
+
+    $("sql").value = "SELECT id FROM users WHERE id = 7";
+    $("sql").dispatchEvent(new Event("input", { bubbles: true }));
+    await flush();
+    expect(readUrlState().sql).toBe("SELECT id FROM users WHERE id = 7");
+    expect(new URLSearchParams(window.location.search).has("s")).toBe(true);
+
+    window.history.replaceState({}, "", "/?" + buildUrlParams({ db: "pg1", tab: "sql", sql: "SELECT count(*) FROM users" }).toString());
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await flush();
+    expect($("sql").value).toBe("SELECT count(*) FROM users");
+    expect(callsTo("/api/query")).toHaveLength(0);
+  });
+
+  it("keeps a newer SQL URL when database discovery finishes late", async () => {
+    let resolveDatabases;
+    setRoute("GET /api/databases", () => new Promise((resolve) => { resolveDatabases = resolve; }));
+    window.history.replaceState({}, "", "/?" + buildUrlParams({ db: "pg1", tab: "sql", sql: "SELECT 'first'" }).toString());
+    await loadApp();
+
+    window.history.replaceState({}, "", "/?" + buildUrlParams({ db: "pg2", tab: "sql", sql: "SELECT 'newer'" }).toString());
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await flush();
+    resolveDatabases(makeResp({ json: TWO_DBS }));
+    await flush();
+
+    expect($("database-select").value).toBe("pg2");
+    expect($("sql").value).toBe("SELECT 'newer'");
+  });
+
+  it("discards an in-flight result when popstate restores different SQL", async () => {
+    let resolveQuery;
+    setRoute("POST /api/query", () => new Promise((resolve) => { resolveQuery = resolve; }));
+    window.history.replaceState({}, "", "/?" + buildUrlParams({ db: "pg1", tab: "sql", sql: "SELECT 'old'" }).toString());
+    await loadApp();
+    await click("run-btn");
+
+    window.history.replaceState({}, "", "/?" + buildUrlParams({ db: "pg1", tab: "sql", sql: "SELECT 'new'" }).toString());
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await flush();
+    resolveQuery(makeResp({ json: { columns: ["value"], rows: [["stale"]], rowCount: 1, elapsedMs: 1 } }));
+    await flush();
+
+    expect($("sql").value).toBe("SELECT 'new'");
+    expect($("sql-results").textContent).not.toContain("stale");
   });
 
   it("tab=data is omitted from URL params (canonical form)", async () => {
     await loadApp();
     await click("tab-sql");
     await click("tab-data");
-    expect(new URLSearchParams(window.location.search).has("tab")).toBe(false);
+    expect(readUrlState().tab).toBe("data");
   });
 
   it("pushes schema and table into URL when table is selected", async () => {
@@ -127,9 +180,9 @@ describe("URL state — tab and table", () => {
     setRoute("GET /api/tables/*/data", makeResp({ json: { columns: ["id"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
     await loadApp();
     await click($("tables").querySelectorAll(".tbl")[0]);
-    const p = new URLSearchParams(window.location.search);
-    expect(p.get("schema")).toBe("public");
-    expect(p.get("table")).toBe("users");
+    const state = readUrlState();
+    expect(state.schema).toBe("public");
+    expect(state.table).toBe("users");
   });
 
   it("restores table from URL on initial load", async () => {
@@ -138,6 +191,35 @@ describe("URL state — tab and table", () => {
     setRoute("GET /api/tables/*/data", makeResp({ json: { columns: ["id"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
     await loadApp();
     expect($("tab-title").textContent).toBe("public.users");
+  });
+
+  it("restores the exact data state from a pasted URL", async () => {
+    window.history.replaceState({}, "", "/?db=pg1&schema=public&table=users&offset=50&search=alice&sort=id&dir=desc&f=id:gte:5");
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/data", makeResp({ json: { columns: ["id"], rows: [[5]], rowCount: 1, elapsedMs: 1 } }));
+
+    await loadApp();
+
+    const request = urlOf(callsTo("/api/tables/public/users/data")[0][0]);
+    expect(request.searchParams.get("offset")).toBe("50");
+    expect(request.searchParams.get("search")).toBe("alice");
+    expect(request.searchParams.get("sort")).toBe("id");
+    expect(request.searchParams.get("dir")).toBe("desc");
+    expect(request.searchParams.get("f")).toBe("id:gte:5");
+  });
+
+  it("records a foreign-key destination filter in the URL", async () => {
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/data", makeResp({ json: { columns: ["post_id"], rows: [[7]], rowCount: 1, elapsedMs: 1 } }));
+    setRoute("GET /api/tables/*/fks", makeResp({ json: [{ column: "post_id", refSchema: "public", refTable: "posts", refColumn: "id" }] }));
+    await loadApp();
+    await click($("tables").querySelectorAll(".tbl")[0]);
+
+    await click(document.querySelector(".fk"));
+
+    const state = readUrlState();
+    expect(state.table).toBe("posts");
+    expect(state.filters).toContainEqual({ column: "id", op: "eq", value: "7" });
   });
 
   it("gracefully ignores unknown table in URL on initial load", async () => {

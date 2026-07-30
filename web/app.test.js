@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { readUrlState } from "./url-state.js";
 
 // allow: SIZE_OK — characterization suite pins one frozen component tree end-to-end.
 
@@ -962,7 +963,7 @@ describe("CodeMirror 6 mode", () => {
     setRoute("GET /api/queries", makeResp({ json: [{ id: 9, name: "CM", sql: "select picked", isPreset: false }] }));
     await loadApp();
 
-    expect(mount).toHaveBeenCalledWith(expect.any(HTMLElement), "SELECT now();", expect.any(Function));
+    expect(mount).toHaveBeenCalledWith(expect.any(HTMLElement), "SELECT now();", expect.any(Function), expect.any(Function));
     expect(editor.refresh).not.toHaveBeenCalled();
     await click("tab-sql");
     expect(editor.refresh).toHaveBeenCalled();
@@ -973,6 +974,10 @@ describe("CodeMirror 6 mode", () => {
     await flush();
     expect(editor.getValue).toHaveBeenCalled();
     expect(postBody("/api/query")).toEqual({ sql: "select cm" });
+
+    mount.mock.calls[0][3]("select linked");
+    await flush();
+    expect(readUrlState().sql).toBe("select linked");
 
     await changeSelect($("presets"), "9");
     expect(editor.setValue).toHaveBeenCalledWith("select picked");

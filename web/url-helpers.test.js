@@ -2,6 +2,17 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { readUrlState, buildUrlParams, dbUrl } from "./test-helpers.js";
 import { appendDataParams, getJSON } from "./api.js";
+import { compressToEncodedURIComponent } from "./vendor/lz-string.js";
+
+function oversizedSQL() {
+  let seed = 1;
+  let sql = "SELECT '";
+  for (let i = 0; i < 20_000; i += 1) {
+    seed = (seed * 48_271) % 2_147_483_647;
+    sql += String.fromCharCode(32 + (seed % 95));
+  }
+  return sql + "'";
+}
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -108,6 +119,33 @@ describe("url-state edge cases", () => {
     const p = buildUrlParams({});
     window.history.replaceState({}, "", "/?" + p.toString() + "&db=legacy");
     expect(readUrlState().db).toBeNull();
+  });
+
+  it("rejects an oversized valid packed state before restoring it", async () => {
+    const packed = compressToEncodedURIComponent(new URLSearchParams({ sql: oversizedSQL() }).toString());
+    expect(packed.length).toBeGreaterThan(8_192);
+    window.history.replaceState({}, "", "/?" + new URLSearchParams({ s: packed, db: "legacy" }).toString());
+    const state = readUrlState();
+    expect(state.db).toBe("legacy");
+    expect(state.sql).toBeNull();
+  });
+
+  it("omits SQL when generated packed state exceeds the sharing limit", async () => {
+    const p = buildUrlParams({ db: "x", tab: "sql", sql: oversizedSQL() });
+    expect(p.get("s").length).toBeLessThanOrEqual(8_192);
+    window.history.replaceState({}, "", "/?" + p.toString());
+    const state = readUrlState();
+    expect(state.db).toBe("x");
+    expect(state.sql).toBeNull();
+  });
+
+  it("falls back to empty state when non-SQL state exceeds the sharing limit", async () => {
+    const p = buildUrlParams({ db: "x", search: oversizedSQL() });
+    expect(p.get("s").length).toBeLessThanOrEqual(8_192);
+    window.history.replaceState({}, "", "/?" + p.toString());
+    const state = readUrlState();
+    expect(state.db).toBeNull();
+    expect(state.search).toBe("");
   });
 
   it("readUrlState skips malformed filter entries that lack a colon", async () => {

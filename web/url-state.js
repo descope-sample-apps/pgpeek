@@ -2,12 +2,14 @@
 // Stable param names match API names where they exist.
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from "./vendor/lz-string.js";
 
+const MAX_PACKED_STATE_CHARS = 8_192;
+
 export function readUrlState() {
   let p = new URLSearchParams(window.location.search);
   if (p.has("s")) {
     const packed = p.get("s");
     let unpacked = null;
-    try { unpacked = decompressFromEncodedURIComponent(packed); }
+    try { if (packed.length <= MAX_PACKED_STATE_CHARS) unpacked = decompressFromEncodedURIComponent(packed); }
     catch { unpacked = null; }
     if (unpacked !== null && compressToEncodedURIComponent(unpacked) === packed) p = new URLSearchParams(unpacked);
   }
@@ -55,8 +57,14 @@ export function buildUrlParams(state) {
       stateParams.append("f", noVal ? `${f.column}:${f.op}` : `${f.column}:${f.op}:${f.value || ""}`);
     }
   }
+  let packed = compressToEncodedURIComponent(stateParams.toString());
+  if (packed.length > MAX_PACKED_STATE_CHARS) {
+    stateParams.delete("sql");
+    packed = compressToEncodedURIComponent(stateParams.toString());
+  }
+  if (packed.length > MAX_PACKED_STATE_CHARS) packed = compressToEncodedURIComponent("");
   const p = new URLSearchParams();
-  p.set("s", compressToEncodedURIComponent(stateParams.toString()));
+  p.set("s", packed);
   return p;
 }
 

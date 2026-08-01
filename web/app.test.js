@@ -74,6 +74,7 @@ beforeEach(() => {
     // empty databases: keeps existing tests db-param-free and selector-hidden
     "GET /api/databases": makeResp({ json: { defaultId: null, databases: [] } }),
     "GET /api/user": makeResp({ json: { provider: "anonymous", email: "" } }),
+    "GET /healthz": makeResp({ json: { status: "ok", version: "1.2.3", commit: "abc1234", buildDate: "2026-08-01T00:00:00Z" } }),
     "GET /api/meta": makeResp({ json: { rowCap: 1000 } }),
     "GET /api/tables": makeResp({ json: [] }),
     "GET /api/tables/*/columns": makeResp({ json: [] }),
@@ -91,6 +92,8 @@ beforeEach(() => {
   globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
   window.requestAnimationFrame = globalThis.requestAnimationFrame;
   window.cancelAnimationFrame = globalThis.cancelAnimationFrame;
+  HTMLDialogElement.prototype.showModal = function showModal() { this.open = true; };
+  HTMLDialogElement.prototype.close = function close() { this.open = false; this.dispatchEvent(new Event("close")); };
   delete window.cm6;
   delete globalThis.cm6;
 });
@@ -162,6 +165,17 @@ function deferred() {
 }
 
 describe("sidebar and tabs", () => {
+  it("shows build and connected database details in About", async () => {
+    setRoute("GET /api/databases", makeResp({ json: { defaultId: "prod", databases: [{ id: "prod", name: "Production" }] } }));
+    await loadApp();
+
+    await click(document.querySelector(".about-button"));
+
+    expect(document.querySelector(".about-card").textContent).toContain("1.2.3");
+    expect(document.querySelector(".about-card").textContent).toContain("abc1234");
+    expect(document.querySelector(".about-card").textContent).toContain("Production");
+  });
+
   it("renders initial shell, empty-table copy, and no-table panel hints", async () => {
     await loadApp();
 

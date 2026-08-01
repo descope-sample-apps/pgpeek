@@ -46,6 +46,33 @@ function UserBadge({ user }) {
   return html`<span class="badge" id="current-user" title="Cloudflare Access user">${user.email || "Cloudflare Access"}</span>`;
 }
 
+function About({ open, onClose, databases, build }) {
+  const dialog = useRef(null);
+  useEffect(() => {
+    if (open && !dialog.current.open) dialog.current.showModal();
+  }, [open]);
+  if (!open) return null;
+  const closeFromBackdrop = (e) => {
+    const box = e.currentTarget.getBoundingClientRect();
+    if (e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom) e.currentTarget.close();
+  };
+  return html`<dialog class="about" ref=${dialog} aria-labelledby="about-title" onClose=${onClose} onClick=${closeFromBackdrop}>
+    <section class="about-card">
+      <div class="about-head"><h2 id="about-title">About pgpeek</h2><button class="ghost" autofocus onClick=${() => dialog.current.close()}>Close</button></div>
+      <p>A minimal, read-only, team-shared PostgreSQL browser for browsing tables, inspecting schemas, and running guarded queries.</p>
+      <dl>
+        <dt>Version</dt><dd>${build.version || "unknown"}</dd>
+        <dt>Git commit</dt><dd>${build.commit || "unknown"}</dd>
+        <dt>Built</dt><dd>${build.buildDate || "unknown"}</dd>
+      </dl>
+      <h3>Connected databases</h3>
+      ${databases.length
+        ? html`<ul>${databases.map(({ id, name }) => html`<li key=${id}><strong>${name}</strong> <span class="context-meta">${id}</span></li>`)}</ul>`
+        : html`<p>No databases reported.</p>`}
+    </section>
+  </dialog>`;
+}
+
 // ---- App ----
 function App() {
   const [databases, setDatabases]     = useState([]);
@@ -62,6 +89,8 @@ function App() {
   const [pendingFilters, setPendingFilters] = useState(null);
   const [urlInit, setUrlInit]         = useState(null);
   const [user, setUser]               = useState(null);
+  const [aboutOpen, setAboutOpen]     = useState(false);
+  const [build, setBuild]             = useState({});
   const [status, setStatus]           = useState({ text: "Ready.", cls: "ok" });
   // Refs so popstate handler always sees the latest values.
   const urlStateRef = useRef({});
@@ -87,6 +116,11 @@ function App() {
       .catch(() => {});
     return () => { live = false; };
   }, []);
+
+  useEffect(() => {
+    if (!aboutOpen || build.version) return;
+    getJSON("/healthz").then(setBuild).catch(() => {});
+  }, [aboutOpen]);
 
   // Phase 1: fetch /api/databases, resolve active db, restore URL state,
   //          install popstate listener.
@@ -244,6 +278,7 @@ function App() {
       <h1>pgpeek</h1><span class="badge">read-only</span>
       <${UserBadge} user=${user} />
       <${DatabaseSelect} databases=${databases} currentDb=${currentDb} onSwitch=${switchDb} />
+      <button class="about-button" onClick=${() => setAboutOpen(true)}>About</button>
       <${ThemeSelect} />
     </header>
     <div class="body">
@@ -279,7 +314,8 @@ function App() {
             initialSQL=${sql} onStateChange=${onSqlStateChange} />
         </section>
       </main>
-    </div>`;
+    </div>
+    <${About} open=${aboutOpen} onClose=${() => setAboutOpen(false)} databases=${databases} build=${build} />`;
 }
 
 render(html`<${App} />`, document.getElementById("app"));

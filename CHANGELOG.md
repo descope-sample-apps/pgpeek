@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.10.0...v0.11.0) (2026-08-01)
+
+
+### Features
+
+* add About and database diagnostics ([#69](https://github.com/descope-sample-apps/pgpeek/issues/69)) ([c8e1db8](https://github.com/descope-sample-apps/pgpeek/commit/c8e1db80123764098c2ab9ec40bae3ff198810ec))
+* **web:** group table partitions in sidebar ([#67](https://github.com/descope-sample-apps/pgpeek/issues/67)) ([ed32d2e](https://github.com/descope-sample-apps/pgpeek/commit/ed32d2ea5ef34b77930bbcb93bedf4e0136d1d58))
+
+
+### Bug Fixes
+
+* **web:** surface status feedback inline ([#66](https://github.com/descope-sample-apps/pgpeek/issues/66)) ([4ced47f](https://github.com/descope-sample-apps/pgpeek/commit/4ced47f5fd6cba175d69473efa4313d6541eac4d))
+
 ## [0.10.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.9.0...v0.10.0) (2026-07-30)
 
 

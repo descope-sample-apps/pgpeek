@@ -9,18 +9,20 @@ import (
 
 func TestTables_Success(t *testing.T) {
 	rows := &fakeRows{
-		cols: []string{"schema", "name", "type", "est"},
+		cols: []string{"schema", "name", "type", "est", "is_partition", "parent_schema", "parent_name"},
 		data: [][]any{
-			{"public", "users", "table", int64(42)},
-			{"public", "v_active", "view", int64(0)},
+			{"public", "users", "table", int64(42), false, "", ""},
+			{"public", "users_2026_01", "table", int64(12), true, "public", "users"},
+			{"public", "v_active", "view", int64(0), false, "", ""},
 		},
 	}
-	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
+	fp := &fakePool{rows: rows}
+	p := &Pool{pool: fp, rowCap: 10}
 	got, truncated, err := p.Tables(context.Background())
 	if err != nil {
 		t.Fatalf("Tables: %v", err)
 	}
-	if len(got) != 2 {
+	if len(got) != 3 {
 		t.Fatalf("len = %d", len(got))
 	}
 	if truncated {
@@ -29,8 +31,17 @@ func TestTables_Success(t *testing.T) {
 	if got[0] != (TableInfo{Schema: "public", Name: "users", Type: "table", EstRows: 42}) {
 		t.Errorf("row0 = %+v", got[0])
 	}
-	if got[1].Type != "view" {
-		t.Errorf("row1 type = %q", got[1].Type)
+	if got[1].ParentSchema != "public" || got[1].ParentName != "users" {
+		t.Errorf("row1 parent = %q.%q", got[1].ParentSchema, got[1].ParentName)
+	}
+	if !got[1].IsPartition {
+		t.Error("row1 is not marked as a partition")
+	}
+	if got[2].Type != "view" {
+		t.Errorf("row2 type = %q", got[2].Type)
+	}
+	if !strings.Contains(fp.lastSQL, "LEFT JOIN pg_inherits i ON c.relispartition") {
+		t.Errorf("tables query groups non-partition inheritance: %q", fp.lastSQL)
 	}
 }
 

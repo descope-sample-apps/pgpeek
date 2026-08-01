@@ -36,6 +36,28 @@ CREATE TABLE IF NOT EXISTS auth.sessions (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS public.audit_events (
+  id          bigint GENERATED ALWAYS AS IDENTITY,
+  user_id     integer     NOT NULL REFERENCES public.users(id),
+  event_type  text        NOT NULL,
+  occurred_at timestamptz NOT NULL
+) PARTITION BY RANGE (occurred_at);
+
+DO $$
+DECLARE
+  partition_month date;
+BEGIN
+  FOR month_number IN 0..23 LOOP
+    partition_month := date '2025-01-01' + make_interval(months => month_number);
+    EXECUTE format(
+      'CREATE TABLE IF NOT EXISTS %I PARTITION OF public.audit_events FOR VALUES FROM (%L::timestamptz) TO (%L::timestamptz)',
+      'audit_events_' || to_char(partition_month, 'YYYY_MM'),
+      to_char(partition_month, 'YYYY-MM-DD') || ' 00:00:00+00',
+      to_char(partition_month + interval '1 month', 'YYYY-MM-DD') || ' 00:00:00+00'
+    );
+  END LOOP;
+END $$;
+
 INSERT INTO public.companies (name, plan, seats) VALUES
   ('Acme Inc',            'enterprise', 250),
   ('Globex',              'pro',         40),
@@ -122,3 +144,10 @@ BEGIN
     ' || extra_values || '
   FROM generate_series(1, 18) AS g';
 END $$;
+
+INSERT INTO public.audit_events (user_id, event_type, occurred_at)
+SELECT
+  1 + (g % 45),
+  (ARRAY['login','logout','profile.updated','report.exported'])[1 + (g % 4)],
+  timestamptz '2025-01-01 00:00:00+00' + (g * interval '48 hours')
+FROM generate_series(0, 359) AS g;

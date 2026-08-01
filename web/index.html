@@ -193,6 +193,13 @@
   #tables .tbl.active::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: var(--space-2); border-radius: 999px; background: var(--accent); vertical-align: 1px; }
   #tables .tbl.view { font-style: italic; color: var(--muted); }
   #tables .tbl.view.active { color: var(--on-accent); }
+  #tables .table-row { display: flex; align-items: center; gap: var(--space-1); }
+  #tables .table-row .tbl { flex: 1; min-width: 0; width: auto; }
+  #tables .partition-toggle { flex: none; padding: var(--space-1) var(--space-2); border-color: transparent; background: transparent; color: var(--muted); font-size: 11px; white-space: nowrap; }
+  #tables .partition-toggle:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+  #tables .partition-list { max-height: min(35vh, 280px); overflow: auto; }
+  #tables .tbl.partition { padding-left: var(--space-5); }
+  #tables .tbl.partition:not(.active) { color: var(--muted); }
 
   /* main */
   main { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
@@ -301,7 +308,8 @@
     header .theme-select { margin-left: 0; }
     header .db-select select, header .theme-select select { min-width: 0; width: 100%; }
     .body { flex-direction: column; }
-    .sidebar { width: 100%; max-height: 36vh; border-right: 0; border-bottom: 1px solid var(--border); }
+    .sidebar { width: 100%; max-height: 42vh; border-right: 0; border-bottom: 1px solid var(--border); }
+    #tables .partition-list { max-height: 120px; }
     .tabs, .toolbar, .context-bar { align-items: stretch; }
     .tabs .title { display: none; }
     .context-bar { flex-direction: column; gap: var(--space-1); }

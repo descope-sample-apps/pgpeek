@@ -9,8 +9,6 @@
 -- Already ran compose before this file existed? The seed only fires on an empty
 -- data dir, so reset the volume first:  docker compose down -v && docker compose up
 
-SET TIME ZONE 'UTC';
-
 CREATE TABLE IF NOT EXISTS public.companies (
   id         serial PRIMARY KEY,
   name       text        NOT NULL,
@@ -52,10 +50,10 @@ BEGIN
   FOR month_number IN 0..23 LOOP
     partition_month := date '2025-01-01' + make_interval(months => month_number);
     EXECUTE format(
-      'CREATE TABLE IF NOT EXISTS %I PARTITION OF public.audit_events FOR VALUES FROM (%L) TO (%L)',
+      'CREATE TABLE IF NOT EXISTS %I PARTITION OF public.audit_events FOR VALUES FROM (%L::timestamptz) TO (%L::timestamptz)',
       'audit_events_' || to_char(partition_month, 'YYYY_MM'),
-      partition_month,
-      partition_month + interval '1 month'
+      to_char(partition_month, 'YYYY-MM-DD') || ' 00:00:00+00',
+      to_char(partition_month + interval '1 month', 'YYYY-MM-DD') || ' 00:00:00+00'
     );
   END LOOP;
 END $$;

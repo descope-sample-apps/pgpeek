@@ -17,7 +17,7 @@ func TestCatalogQueries_ReportEncodingError(t *testing.T) {
 		run  func() error
 	}{
 		{"tables", func() error {
-			p := &Pool{pool: &fakePool{rows: &fakeRows{data: [][]any{{"public", "users", "table", int64(1)}}}}, rowCap: 10}
+			p := &Pool{pool: &fakePool{rows: &fakeRows{data: [][]any{{"public", "users", "table", int64(1), "", ""}}}}, rowCap: 10}
 			_, _, err := p.Tables(context.Background())
 			return err
 		}},
@@ -43,7 +43,7 @@ func TestCatalogQueries_ReportEncodingError(t *testing.T) {
 
 func TestTables_ByteCap(t *testing.T) {
 	large := strings.Repeat("x", MaxResultBytes/2)
-	rows := &fakeRows{data: [][]any{{"public", large, "table", int64(1)}, {"public", large, "table", int64(2)}, {"public", large, "table", int64(3)}}}
+	rows := &fakeRows{data: [][]any{{"public", large, "table", int64(1), "", ""}, {"public", large, "table", int64(2), "", ""}, {"public", large, "table", int64(3), "", ""}}}
 	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
 	got, truncated, err := p.Tables(context.Background())
 	if err != nil {

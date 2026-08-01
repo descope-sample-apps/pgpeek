@@ -9,10 +9,10 @@ import (
 
 func TestTables_Success(t *testing.T) {
 	rows := &fakeRows{
-		cols: []string{"schema", "name", "type", "est"},
+		cols: []string{"schema", "name", "type", "est", "parent_schema", "parent_name"},
 		data: [][]any{
-			{"public", "users", "table", int64(42)},
-			{"public", "v_active", "view", int64(0)},
+			{"public", "users", "table", int64(42), "", ""},
+			{"public", "users_2026_01", "table", int64(12), "public", "users"},
 		},
 	}
 	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
@@ -29,8 +29,8 @@ func TestTables_Success(t *testing.T) {
 	if got[0] != (TableInfo{Schema: "public", Name: "users", Type: "table", EstRows: 42}) {
 		t.Errorf("row0 = %+v", got[0])
 	}
-	if got[1].Type != "view" {
-		t.Errorf("row1 type = %q", got[1].Type)
+	if got[1].ParentSchema != "public" || got[1].ParentName != "users" {
+		t.Errorf("row1 parent = %q.%q", got[1].ParentSchema, got[1].ParentName)
 	}
 }
 

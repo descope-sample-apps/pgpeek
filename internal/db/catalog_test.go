@@ -9,13 +9,14 @@ import (
 
 func TestTables_Success(t *testing.T) {
 	rows := &fakeRows{
-		cols: []string{"schema", "name", "type", "est", "parent_schema", "parent_name"},
+		cols: []string{"schema", "name", "type", "est", "is_partition", "parent_schema", "parent_name"},
 		data: [][]any{
-			{"public", "users", "table", int64(42), "", ""},
-			{"public", "users_2026_01", "table", int64(12), "public", "users"},
+			{"public", "users", "table", int64(42), false, "", ""},
+			{"public", "users_2026_01", "table", int64(12), true, "public", "users"},
 		},
 	}
-	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
+	fp := &fakePool{rows: rows}
+	p := &Pool{pool: fp, rowCap: 10}
 	got, truncated, err := p.Tables(context.Background())
 	if err != nil {
 		t.Fatalf("Tables: %v", err)
@@ -31,6 +32,12 @@ func TestTables_Success(t *testing.T) {
 	}
 	if got[1].ParentSchema != "public" || got[1].ParentName != "users" {
 		t.Errorf("row1 parent = %q.%q", got[1].ParentSchema, got[1].ParentName)
+	}
+	if !got[1].IsPartition {
+		t.Error("row1 is not marked as a partition")
+	}
+	if !strings.Contains(fp.lastSQL, "LEFT JOIN pg_inherits i ON c.relispartition") {
+		t.Errorf("tables query groups non-partition inheritance: %q", fp.lastSQL)
 	}
 }
 

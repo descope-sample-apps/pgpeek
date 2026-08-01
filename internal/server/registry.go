@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/descope-sample-apps/pgpeek/internal/db"
 	"github.com/descope-sample-apps/pgpeek/internal/store"
@@ -17,6 +18,7 @@ type Querier interface {
 	ForeignKeys(ctx context.Context, schema, table string) ([]db.ForeignKey, bool, error)
 	TableRows(ctx context.Context, q db.TableQuery) (*db.Result, error)
 	RowCap() int
+	MaxConns() int32
 	Ping(ctx context.Context) error
 }
 
@@ -69,8 +71,19 @@ type dbRegistryAdapter struct {
 }
 
 type databasesResponse struct {
-	DefaultID string            `json:"defaultId"`
-	Databases []db.PoolMetadata `json:"databases"`
+	DefaultID string         `json:"defaultId"`
+	Databases []databaseInfo `json:"databases"`
+}
+
+type databaseInfo struct {
+	db.PoolMetadata
+	Version            string `json:"version,omitempty"`
+	UptimeSeconds      int64  `json:"uptimeSeconds,omitempty"`
+	DatabaseSize       string `json:"databaseSize,omitempty"`
+	ActiveConnections  int64  `json:"activeConnections,omitempty"`
+	MaxConnections     int64  `json:"maxConnections,omitempty"`
+	PoolMaxConnections int32  `json:"poolMaxConnections"`
+	Error              string `json:"error,omitempty"`
 }
 
 func (r dbRegistryAdapter) List() []db.PoolMetadata { return r.registry.List() }
@@ -83,8 +96,32 @@ func (r dbRegistryAdapter) Pool(id string) (Querier, error) {
 
 func (r dbRegistryAdapter) Ping(ctx context.Context) error { return r.registry.Ping(ctx) }
 
-func (s *Server) handleDatabases(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, databasesResponse{DefaultID: s.registry.DefaultID(), Databases: s.registry.List()})
+func (s *Server) handleDatabases(w http.ResponseWriter, r *http.Request) {
+	metadata := s.registry.List()
+	databases := make([]databaseInfo, 0, len(metadata))
+	for _, item := range metadata {
+		info := databaseInfo{PoolMetadata: item}
+		pool, err := s.registry.Pool(item.ID)
+		if err == nil {
+			info.PoolMaxConnections = pool.MaxConns()
+			queryCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			result, queryErr := pool.Query(queryCtx, `SELECT current_setting('server_version'), EXTRACT(EPOCH FROM (clock_timestamp() - pg_postmaster_start_time()))::bigint, pg_size_pretty(pg_database_size(current_database())), (SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()), current_setting('max_connections')::bigint`)
+			cancel()
+			if queryErr == nil && result != nil && len(result.Rows) == 1 && len(result.Rows[0]) == 5 {
+				info.Version, _ = result.Rows[0][0].(string)
+				info.UptimeSeconds, _ = result.Rows[0][1].(int64)
+				info.DatabaseSize, _ = result.Rows[0][2].(string)
+				info.ActiveConnections, _ = result.Rows[0][3].(int64)
+				info.MaxConnections, _ = result.Rows[0][4].(int64)
+			} else {
+				info.Error = "details unavailable"
+			}
+		} else {
+			info.Error = "unavailable"
+		}
+		databases = append(databases, info)
+	}
+	writeJSON(w, http.StatusOK, databasesResponse{DefaultID: s.registry.DefaultID(), Databases: databases})
 }
 
 func (s *Server) poolForRequest(w http.ResponseWriter, r *http.Request) (Querier, bool) {

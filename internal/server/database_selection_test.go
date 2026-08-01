@@ -46,13 +46,19 @@ func (f fakeRegistry) Ping(ctx context.Context) error {
 }
 
 type selectedQuerier struct {
-	rowCap int
-	used   bool
-	pinged bool
+	rowCap   int
+	maxConns int32
+	used     bool
+	pinged   bool
+	result   *db.Result
+	err      error
 }
 
 func (q *selectedQuerier) Query(context.Context, string) (*db.Result, error) {
 	q.used = true
+	if q.result != nil || q.err != nil {
+		return q.result, q.err
+	}
 	return okResult(), nil
 }
 
@@ -81,6 +87,8 @@ func (q *selectedQuerier) RowCap() int {
 	return q.rowCap
 }
 
+func (q *selectedQuerier) MaxConns() int32 { return q.maxConns }
+
 func (q *selectedQuerier) Ping(context.Context) error {
 	q.pinged = true
 	return nil
@@ -102,24 +110,25 @@ func newRegistryTestServer(t *testing.T, registry DatabaseRegistry, opts ...Opti
 }
 
 func TestDatabases_lists_safe_metadata(t *testing.T) {
-	primary := &selectedQuerier{rowCap: 1000}
+	primary := &selectedQuerier{rowCap: 1000, maxConns: 8, result: &db.Result{Rows: [][]any{{"PostgreSQL 16.4", int64(7200), "24 MB", int64(3), int64(100)}}}}
+	analytics := &selectedQuerier{rowCap: 500, maxConns: 4, result: &db.Result{Rows: [][]any{{"PostgreSQL 17.1", int64(1800), "12 MB", int64(1), int64(200)}}}}
 	registry := fakeRegistry{
 		defaultID: "primary",
 		metadata: []db.PoolMetadata{
 			{ID: "primary", Name: "Primary"},
 			{ID: "analytics", Name: "Analytics"},
 		},
-		pools: map[string]Querier{"primary": primary, "analytics": &selectedQuerier{}},
+		pools: map[string]Querier{"primary": primary, "analytics": analytics},
 	}
 	ts := newRegistryTestServer(t, registry)
 
 	resp := mustGet(t, ts, "/api/databases")
 	got := decode[struct {
-		DefaultID string            `json:"defaultId"`
-		Databases []db.PoolMetadata `json:"databases"`
+		DefaultID string         `json:"defaultId"`
+		Databases []databaseInfo `json:"databases"`
 	}](t, resp)
 
-	if got.DefaultID != "primary" || len(got.Databases) != 2 || got.Databases[0].ID != "primary" || got.Databases[1].Name != "Analytics" {
+	if got.DefaultID != "primary" || len(got.Databases) != 2 || got.Databases[0].Version != "PostgreSQL 16.4" || got.Databases[0].UptimeSeconds != 7200 || got.Databases[0].PoolMaxConnections != 8 || got.Databases[1].DatabaseSize != "12 MB" || got.Databases[1].MaxConnections != 200 || got.Databases[1].PoolMaxConnections != 4 {
 		t.Fatalf("databases = %+v", got)
 	}
 	body := marshalString(t, got)

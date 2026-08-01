@@ -64,6 +64,8 @@ func (f *fakeQuerier) TableRows(_ context.Context, q db.TableQuery) (*db.Result,
 
 func (f *fakeQuerier) RowCap() int { return 1000 }
 
+func (f *fakeQuerier) MaxConns() int32 { return 8 }
+
 func (f *fakeQuerier) Ping(_ context.Context) error { return f.pingErr }
 
 func newTestServer(t *testing.T, q Querier) (*httptest.Server, *store.Store) {

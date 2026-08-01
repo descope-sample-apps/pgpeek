@@ -13,6 +13,7 @@ func TestTables_Success(t *testing.T) {
 		data: [][]any{
 			{"public", "users", "table", int64(42), false, "", ""},
 			{"public", "users_2026_01", "table", int64(12), true, "public", "users"},
+			{"public", "v_active", "view", int64(0), false, "", ""},
 		},
 	}
 	fp := &fakePool{rows: rows}
@@ -21,7 +22,7 @@ func TestTables_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Tables: %v", err)
 	}
-	if len(got) != 2 {
+	if len(got) != 3 {
 		t.Fatalf("len = %d", len(got))
 	}
 	if truncated {
@@ -35,6 +36,9 @@ func TestTables_Success(t *testing.T) {
 	}
 	if !got[1].IsPartition {
 		t.Error("row1 is not marked as a partition")
+	}
+	if got[2].Type != "view" {
+		t.Errorf("row2 type = %q", got[2].Type)
 	}
 	if !strings.Contains(fp.lastSQL, "LEFT JOIN pg_inherits i ON c.relispartition") {
 		t.Errorf("tables query groups non-partition inheritance: %q", fp.lastSQL)

@@ -15,15 +15,16 @@ export function Sidebar({ tables, loaded, currentKey, onSelect }) {
     if (active && active.scrollIntoView) active.scrollIntoView({ block: "nearest" });
   }, [currentKey, filter]);
 
-  const byKey = new Map(tables.map((t) => [tableKey(t), t]));
+  const relationKey = (table) => JSON.stringify([table.schema, table.name]);
+  const byKey = new Map(tables.map((t) => [relationKey(t), t]));
   const children = new Map();
 
   const rootKey = (table) => {
     if (!table.isPartition || !table.parentSchema || !table.parentName) return null;
-    let key = table.parentSchema + "." + table.parentName;
+    let key = relationKey({ schema: table.parentSchema, name: table.parentName });
     while (byKey.has(key) && byKey.get(key).isPartition) {
       const parent = byKey.get(key);
-      key = parent.parentSchema + "." + parent.parentName;
+      key = relationKey({ schema: parent.parentSchema, name: parent.parentName });
     }
     return key;
   };
@@ -31,7 +32,8 @@ export function Sidebar({ tables, loaded, currentKey, onSelect }) {
   for (const t of tables) {
     const root = rootKey(t);
     if (!root || !byKey.has(root)) continue;
-    children.set(root, [...(children.get(root) || []), t]);
+    if (!children.has(root)) children.set(root, []);
+    children.get(root).push(t);
   }
 
   const tableButton = (t, child = false) => {
@@ -48,7 +50,7 @@ export function Sidebar({ tables, loaded, currentKey, onSelect }) {
     const label = tableKey(t);
     const root = rootKey(t);
     if (root && byKey.has(root)) continue;
-    const group = children.get(label) || [];
+    const group = children.get(relationKey(t)) || [];
     const matchingChildren = f ? group.filter((child) => tableKey(child).toLowerCase().includes(f)) : group;
     if (f && !label.toLowerCase().includes(f) && matchingChildren.length === 0) continue;
     if (t.schema !== schema) {

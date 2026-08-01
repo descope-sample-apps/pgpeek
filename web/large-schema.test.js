@@ -231,4 +231,22 @@ describe("large schema rendering", () => {
     expect($("tables").textContent).toContain("events_2026_01");
     expect($("tables").querySelector(".partition-toggle").disabled).toBe(true);
   });
+
+  it("groups partitions with dotted identifiers without key collisions", async () => {
+    routes["GET /api/tables"] = makeResp({ json: [
+      { schema: "a.b", name: "events", type: "table", estRows: 10 },
+      {
+        schema: "a", name: "b.events", type: "table", estRows: 5, isPartition: true,
+        parentSchema: "a.b", parentName: "events",
+      },
+      TABLES[0],
+    ] });
+
+    await loadApp();
+
+    expect($("tables").querySelectorAll(".table-group")).toHaveLength(1);
+    expect($("tables").querySelectorAll(".tbl")).toHaveLength(2);
+    await click($("tables").querySelector(".partition-toggle"));
+    expect($("tables").querySelector(".partition-list .tbl").textContent).toBe("b.events");
+  });
 });

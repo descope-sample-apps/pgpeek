@@ -49,8 +49,9 @@ var newPool = func(ctx context.Context, cfg *pgxpool.Config) (pgxPool, error) {
 
 // Pool is a thin wrapper around a pgx pool with a row cap.
 type Pool struct {
-	pool   pgxPool
-	rowCap int
+	pool     pgxPool
+	rowCap   int
+	maxConns int32
 }
 
 // Result is a fully-materialized (but row-capped) query result, ready to be
@@ -103,11 +104,13 @@ func New(ctx context.Context, c Config) (*Pool, error) {
 		pool.Close()
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
-	return &Pool{pool: pool, rowCap: c.RowCap}, nil
+	return &Pool{pool: pool, rowCap: c.RowCap, maxConns: cfg.MaxConns}, nil
 }
 
 // RowCap is the maximum number of rows any query or page returns.
 func (p *Pool) RowCap() int { return p.rowCap }
+
+func (p *Pool) MaxConns() int32 { return p.maxConns }
 
 // Ping checks connectivity (used by /readyz).
 func (p *Pool) Ping(ctx context.Context) error { return p.pool.Ping(ctx) }

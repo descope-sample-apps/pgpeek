@@ -251,6 +251,8 @@ describe("sidebar and tabs", () => {
     setRoute("GET /api/tables", makeResp({ ok: false, status: 500, json: { error: "catalog down" } }));
     await loadApp();
     expect($("status").classList.contains("error")).toBe(true);
+    expect($("status").getAttribute("role")).toBe("status");
+    expect($("status").hasAttribute("aria-live")).toBe(false);
     expect($("status").textContent).toContain("failed to load tables: catalog down");
     expect($("tables").textContent).toContain("No tables.");
   });
@@ -535,6 +537,7 @@ describe("structure tab", () => {
     expect($("status").textContent).toContain("Loading structure for public.users");
     pending.resolve(makeResp({ json: [] }));
     await flush();
+    expect($("status").textContent).toContain("✓ 0 columns loaded");
   });
 
   it("shows loading, renders columns, and ignores stale column responses", async () => {

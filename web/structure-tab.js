@@ -10,7 +10,10 @@ export function StructureTab({ table, dbId, setStatus }) {
     (async () => {
       try {
         const c = await getJSON(tablePath(table) + "/columns", dbId);
-        if (live) setCols(c);
+        if (live) {
+          setCols(c);
+          setStatus({ text: "✓ " + c.length + " column" + (c.length === 1 ? "" : "s") + " loaded", cls: "ok" });
+        }
       } catch (e) {
         if (live) setStatus({ text: "✗ " + e.message, cls: "error" });
       }

@@ -252,6 +252,9 @@ function App() {
       <main id="main">
         <${Tabs} tab=${tab} setTab=${setTab} title=${title} />
         <${TableContext} table=${current} />
+        <div class=${"status " + status.cls} id="status" role="status">
+          ${status.text}${status.warn ? html`<span class="warn"> ${status.warn}</span>` : ""}
+        </div>
         <section class="panel" id="panel-data" role="tabpanel" aria-labelledby="tab-data" hidden=${tab !== "data"}>
           ${current
             ? html`<${DataTab} key=${navKey} table=${current} pageSize=${pageSize}
@@ -276,9 +279,6 @@ function App() {
             initialSQL=${sql} onStateChange=${onSqlStateChange} />
         </section>
       </main>
-    </div>
-    <div class=${"status " + status.cls} id="status">
-      ${status.text}${status.warn ? html`<span class="warn"> ${status.warn}</span>` : ""}
     </div>`;
 }
 

@@ -85,7 +85,7 @@ type databaseInfo struct {
 	PoolMaxConnections int32  `json:"poolMaxConnections"`
 	Commits            int64  `json:"commits,omitempty"`
 	Rollbacks          int64  `json:"rollbacks,omitempty"`
-	CacheHitPercent    int64  `json:"cacheHitPercent,omitempty"`
+	CacheHitPercent    *int64 `json:"cacheHitPercent,omitempty"`
 	TempFiles          int64  `json:"tempFiles,omitempty"`
 	TempBytes          string `json:"tempBytes,omitempty"`
 	Deadlocks          int64  `json:"deadlocks,omitempty"`
@@ -126,7 +126,8 @@ func (s *Server) handleDatabases(w http.ResponseWriter, r *http.Request) {
 				blocksRead, _ := result.Rows[0][7].(int64)
 				blocksHit, _ := result.Rows[0][8].(int64)
 				if blocksRead+blocksHit > 0 {
-					info.CacheHitPercent = blocksHit * 100 / (blocksRead + blocksHit)
+					percentage := blocksHit * 100 / (blocksRead + blocksHit)
+					info.CacheHitPercent = &percentage
 				}
 				info.TempFiles, _ = result.Rows[0][9].(int64)
 				info.TempBytes, _ = result.Rows[0][10].(string)

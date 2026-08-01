@@ -205,6 +205,7 @@ describe("sidebar and tabs", () => {
     expect(text).toContain("< 1m");
     expect(text).toContain("details unavailable");
     expect(text).toContain("unknown");
+    expect(text).toContain("not measured");
     await click(document.querySelector(".about-head button"));
     expect(document.querySelector(".about")).toBeNull();
   });
@@ -229,6 +230,7 @@ describe("sidebar and tabs", () => {
     await click(document.querySelector(".about-button"));
 
     expect(document.querySelector(".about-card").textContent).toContain("unknown");
+    expect(document.querySelector(".about-card").textContent).toContain("No databases reported.");
   });
 
   it("handles malformed database refresh results", async () => {

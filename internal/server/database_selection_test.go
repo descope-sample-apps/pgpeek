@@ -129,7 +129,7 @@ func TestDatabases_lists_safe_metadata(t *testing.T) {
 		Databases []databaseInfo `json:"databases"`
 	}](t, resp)
 
-	if got.DefaultID != "primary" || len(got.Databases) != 2 || got.Databases[0].Version != "PostgreSQL 16.4" || got.Databases[0].UptimeSeconds != 7200 || got.Databases[0].PoolMaxConnections != 8 || got.Databases[0].CacheHitPercent != 90 || got.Databases[0].TempFiles != 2 || got.Databases[0].Extensions != "pg_stat_statements 1.10, pgcrypto 1.3" || got.Databases[1].DatabaseSize != "12 MB" || got.Databases[1].MaxConnections != 200 || got.Databases[1].PoolMaxConnections != 4 {
+	if got.DefaultID != "primary" || len(got.Databases) != 2 || got.Databases[0].Version != "PostgreSQL 16.4" || got.Databases[0].UptimeSeconds != 7200 || got.Databases[0].PoolMaxConnections != 8 || got.Databases[0].CacheHitPercent == nil || *got.Databases[0].CacheHitPercent != 90 || got.Databases[0].TempFiles != 2 || got.Databases[0].Extensions != "pg_stat_statements 1.10, pgcrypto 1.3" || got.Databases[1].DatabaseSize != "12 MB" || got.Databases[1].MaxConnections != 200 || got.Databases[1].PoolMaxConnections != 4 || got.Databases[1].CacheHitPercent == nil {
 		t.Fatalf("databases = %+v", got)
 	}
 	body := marshalString(t, got)

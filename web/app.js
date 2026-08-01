@@ -88,7 +88,7 @@ function About({ open, onClose, databases, build }) {
                   <dt>Connections</dt><dd>${database.activeConnections || 0} / ${database.maxConnections || "unknown"}</dd>
                   <dt>pgpeek pool</dt><dd>${database.poolMaxConnections || "unknown"} max</dd>
                   <dt>Transactions</dt><dd>${database.commits || 0} committed / ${database.rollbacks || 0} rolled back</dd>
-                  <dt>Cache hit</dt><dd>${database.cacheHitPercent || 0}%</dd>
+                  <dt>Cache hit</dt><dd>${database.cacheHitPercent == null ? "not measured" : `${database.cacheHitPercent}%`}</dd>
                   <dt>Temp spill</dt><dd>${database.tempFiles || 0} files / ${database.tempBytes || "0 bytes"}</dd>
                   <dt>Deadlocks</dt><dd>${database.deadlocks || 0}</dd>
                   <dt>Sessions</dt><dd>${database.sessions || 0}</dd>

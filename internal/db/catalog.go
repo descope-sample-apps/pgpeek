@@ -12,10 +12,13 @@ import (
 
 // TableInfo describes a browsable relation (table or view).
 type TableInfo struct {
-	Schema  string `json:"schema"`
-	Name    string `json:"name"`
-	Type    string `json:"type"`    // "table" | "view"
-	EstRows int64  `json:"estRows"` // planner estimate (reltuples), -1 if unknown
+	Schema       string `json:"schema"`
+	Name         string `json:"name"`
+	Type         string `json:"type"`    // "table" | "view"
+	EstRows      int64  `json:"estRows"` // planner estimate (reltuples), -1 if unknown
+	IsPartition  bool   `json:"isPartition,omitempty"`
+	ParentSchema string `json:"parentSchema,omitempty"`
+	ParentName   string `json:"parentName,omitempty"`
 }
 
 // ColumnInfo describes one column of a relation.
@@ -29,12 +32,18 @@ type ColumnInfo struct {
 // User-facing relations only: skip system + TOAST schemas. relkind r/p = table,
 // v/m = view/materialized view. reltuples is the planner's row estimate (fast).
 const tablesSQL = `
-SELECT n.nspname,
-       c.relname,
-       CASE WHEN c.relkind IN ('v','m') THEN 'view' ELSE 'table' END,
-       c.reltuples::bigint
-FROM pg_class c
-JOIN pg_namespace n ON n.oid = c.relnamespace
+	SELECT n.nspname,
+	       c.relname,
+	       CASE WHEN c.relkind IN ('v','m') THEN 'view' ELSE 'table' END,
+	       c.reltuples::bigint,
+	       c.relispartition,
+	       COALESCE(pn.nspname, ''),
+	       COALESCE(pc.relname, '')
+	FROM pg_class c
+	JOIN pg_namespace n ON n.oid = c.relnamespace
+	LEFT JOIN pg_inherits i ON c.relispartition AND i.inhrelid = c.oid AND i.inhseqno = 1
+	LEFT JOIN pg_class pc ON pc.oid = i.inhparent
+	LEFT JOIN pg_namespace pn ON pn.oid = pc.relnamespace
 WHERE c.relkind IN ('r','p','v','m')
   AND n.nspname NOT IN ('pg_catalog','information_schema')
   AND n.nspname NOT LIKE 'pg_toast%'
@@ -68,7 +77,7 @@ func (p *Pool) Tables(ctx context.Context) ([]TableInfo, bool, error) {
 	out := catalogCollector[TableInfo]{items: make([]TableInfo, 0, 64), bytes: 2}
 	for rows.Next() {
 		var t TableInfo
-		if err := rows.Scan(&t.Schema, &t.Name, &t.Type, &t.EstRows); err != nil {
+		if err := rows.Scan(&t.Schema, &t.Name, &t.Type, &t.EstRows, &t.IsPartition, &t.ParentSchema, &t.ParentName); err != nil {
 			return nil, false, err
 		}
 		keep, err := out.add(t)

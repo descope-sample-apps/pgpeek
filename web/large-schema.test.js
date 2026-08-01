@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import {
-  makeResp, ONE_DB, makeInstallFetch, $, changeSelect, click, flush, loadApp,
+  makeResp, ONE_DB, TWO_DBS, makeInstallFetch, $, changeSelect, click, flush, loadApp,
 } from "./test-helpers.js";
 
 let routes;
@@ -166,6 +166,8 @@ describe("large schema rendering", () => {
     const html = readFileSync("web/index.html", "utf8");
 
     expect(html).toMatch(/#tables\s*\{[^}]*overflow:\s*auto/s);
+    expect(html).toMatch(/\.partition-toggle:hover:not\(:disabled\)/s);
+    expect(html).toMatch(/\.tbl\.partition:not\(\.active\)\s*\{[^}]*color:\s*var\(--muted\)/s);
     expect(html).toMatch(/\.results\s*\{[^}]*overflow:\s*auto/s);
     expect(html).toMatch(/table\s*\{[^}]*min-width:\s*max-content/s);
     expect(html).toMatch(/\.cell-detail\s*>\s*summary/s);
@@ -176,5 +178,104 @@ describe("large schema rendering", () => {
     expect(html).toMatch(/main\s*\{[^}]*min-width:\s*0/s);
     expect(html).toMatch(/\.panel\s*\{[^}]*min-height:\s*0/s);
     expect(html).toMatch(/#app\s*\{[^}]*min-height:\s*0/s);
+  });
+
+  it("collapses partitions under their parent while keeping search useful", async () => {
+    const parent = { schema: "public", name: "events", type: "table", estRows: 100 };
+    const partitions = Array.from({ length: 22 }, (_, i) => ({
+      schema: "public",
+      name: `events_${String(i + 1).padStart(2, "0")}`,
+      type: "table",
+      estRows: 10,
+      isPartition: true,
+      parentSchema: "public",
+      parentName: "events",
+    }));
+    const subpartition = {
+      schema: "public", name: "events_2026", type: "table", estRows: 10, isPartition: true,
+      parentSchema: "public", parentName: "events",
+    };
+    const nestedPartition = {
+      schema: "public", name: "events_2026_01", type: "table", estRows: 10, isPartition: true,
+      parentSchema: "public", parentName: "events_2026",
+    };
+    const inherited = {
+      schema: "public", name: "legacy_events", type: "table", estRows: 10,
+      parentSchema: "public", parentName: "events",
+    };
+    routes["GET /api/tables"] = makeResp({ json: [parent, ...partitions, subpartition, nestedPartition, inherited, TABLES[0]] });
+
+    await loadApp();
+
+    expect($("tables").querySelectorAll(".tbl")).toHaveLength(3);
+    expect($("tables").textContent).toContain("24 partitions");
+    expect($("tables").textContent).toContain("table_01");
+    expect($("tables").textContent).toContain("legacy_events");
+    expect($("tables").textContent).not.toContain("events_2026_01");
+
+    await click($("tables").querySelector(".partition-toggle"));
+    expect($("tables").querySelectorAll(".tbl")).toHaveLength(27);
+    expect($("tables").querySelector(".partition-list").querySelectorAll(".tbl")).toHaveLength(24);
+    expect($("tables").textContent).toContain("events_2026_01");
+
+    await click([...$("tables").querySelectorAll(".tbl")].find((el) => el.textContent === "events_2026_01"));
+    await click($("tables").querySelector(".partition-toggle"));
+    expect($("tables").querySelectorAll(".tbl")).toHaveLength(3);
+
+    await click($("tables").querySelector(".partition-toggle"));
+
+    const filter = $("tbl-filter");
+    filter.value = "events_2026_01";
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect($("tables").querySelectorAll(".tbl")).toHaveLength(2);
+    expect($("tables").textContent).toContain("events_2026_01");
+    expect($("tables").querySelector(".partition-toggle").disabled).toBe(true);
+  });
+
+  it("groups partitions with dotted identifiers without key collisions", async () => {
+    routes["GET /api/tables"] = makeResp({ json: [
+      { schema: "a.b", name: "events", type: "table", estRows: 10 },
+      {
+        schema: "a.b", name: "events_01", type: "table", estRows: 5, isPartition: true,
+        parentSchema: "a.b", parentName: "events",
+      },
+      { schema: "a", name: "b.events", type: "table", estRows: 10 },
+      {
+        schema: "a", name: "b.events_01", type: "table", estRows: 5, isPartition: true,
+        parentSchema: "a", parentName: "b.events",
+      },
+      TABLES[0],
+    ] });
+
+    await loadApp();
+
+    const groups = $("tables").querySelectorAll(".table-group");
+    expect(groups).toHaveLength(2);
+    expect($("tables").querySelectorAll(".tbl")).toHaveLength(3);
+    await click(groups[0].querySelector(".tbl"));
+    expect($("tables").querySelectorAll(".tbl.active")).toHaveLength(1);
+    await click(groups[0].querySelector(".partition-toggle"));
+    expect(groups[0].querySelector(".partition-list .tbl").textContent).toBe("events_01");
+    expect(groups[1].querySelector(".partition-list")).toBeNull();
+  });
+
+  it("resets expanded partition groups when switching databases", async () => {
+    const tables = [
+      { schema: "public", name: "events", type: "table", estRows: 10 },
+      {
+        schema: "public", name: "events_01", type: "table", estRows: 5, isPartition: true,
+        parentSchema: "public", parentName: "events",
+      },
+    ];
+    routes["GET /api/databases"] = makeResp({ json: TWO_DBS });
+    routes["GET /api/tables"] = makeResp({ json: tables });
+
+    await loadApp();
+    await click($("tables").querySelector(".partition-toggle"));
+    expect($("tables").querySelector(".partition-list")).not.toBeNull();
+
+    await changeSelect($("database-select"), "pg2");
+    expect($("tables").querySelector(".partition-list")).toBeNull();
   });
 });

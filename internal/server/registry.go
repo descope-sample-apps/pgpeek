@@ -83,6 +83,14 @@ type databaseInfo struct {
 	ActiveConnections  int64  `json:"activeConnections,omitempty"`
 	MaxConnections     int64  `json:"maxConnections,omitempty"`
 	PoolMaxConnections int32  `json:"poolMaxConnections"`
+	Commits            int64  `json:"commits,omitempty"`
+	Rollbacks          int64  `json:"rollbacks,omitempty"`
+	CacheHitPercent    int64  `json:"cacheHitPercent,omitempty"`
+	TempFiles          int64  `json:"tempFiles,omitempty"`
+	TempBytes          string `json:"tempBytes,omitempty"`
+	Deadlocks          int64  `json:"deadlocks,omitempty"`
+	Sessions           int64  `json:"sessions,omitempty"`
+	Extensions         string `json:"extensions,omitempty"`
 	Error              string `json:"error,omitempty"`
 }
 
@@ -105,14 +113,26 @@ func (s *Server) handleDatabases(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			info.PoolMaxConnections = pool.MaxConns()
 			queryCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-			result, queryErr := pool.Query(queryCtx, `SELECT current_setting('server_version'), EXTRACT(EPOCH FROM (clock_timestamp() - pg_postmaster_start_time()))::bigint, pg_size_pretty(pg_database_size(current_database())), (SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()), current_setting('max_connections')::bigint`)
+			result, queryErr := pool.Query(queryCtx, `SELECT current_setting('server_version'), EXTRACT(EPOCH FROM (clock_timestamp() - pg_postmaster_start_time()))::bigint, pg_size_pretty(pg_database_size(current_database())), d.numbackends::bigint, current_setting('max_connections')::bigint, d.xact_commit, d.xact_rollback, d.blks_read, d.blks_hit, d.temp_files, pg_size_pretty(d.temp_bytes), d.deadlocks, d.sessions, COALESCE((SELECT string_agg(extname || ' ' || extversion, ', ' ORDER BY extname) FROM pg_extension), 'none') FROM pg_stat_database d WHERE d.datname = current_database()`)
 			cancel()
-			if queryErr == nil && result != nil && len(result.Rows) == 1 && len(result.Rows[0]) == 5 {
+			if queryErr == nil && result != nil && len(result.Rows) == 1 && len(result.Rows[0]) == 14 {
 				info.Version, _ = result.Rows[0][0].(string)
 				info.UptimeSeconds, _ = result.Rows[0][1].(int64)
 				info.DatabaseSize, _ = result.Rows[0][2].(string)
 				info.ActiveConnections, _ = result.Rows[0][3].(int64)
 				info.MaxConnections, _ = result.Rows[0][4].(int64)
+				info.Commits, _ = result.Rows[0][5].(int64)
+				info.Rollbacks, _ = result.Rows[0][6].(int64)
+				blocksRead, _ := result.Rows[0][7].(int64)
+				blocksHit, _ := result.Rows[0][8].(int64)
+				if blocksRead+blocksHit > 0 {
+					info.CacheHitPercent = blocksHit * 100 / (blocksRead + blocksHit)
+				}
+				info.TempFiles, _ = result.Rows[0][9].(int64)
+				info.TempBytes, _ = result.Rows[0][10].(string)
+				info.Deadlocks, _ = result.Rows[0][11].(int64)
+				info.Sessions, _ = result.Rows[0][12].(int64)
+				info.Extensions, _ = result.Rows[0][13].(string)
 			} else {
 				info.Error = "details unavailable"
 			}

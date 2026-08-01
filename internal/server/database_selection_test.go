@@ -111,8 +111,8 @@ func newRegistryTestServer(t *testing.T, registry DatabaseRegistry, opts ...Opti
 }
 
 func TestDatabases_lists_safe_metadata(t *testing.T) {
-	primary := &selectedQuerier{rowCap: 1000, maxConns: 8, result: &db.Result{Rows: [][]any{{"PostgreSQL 16.4", int64(7200), "24 MB", int64(3), int64(100)}}}}
-	analytics := &selectedQuerier{rowCap: 500, maxConns: 4, result: &db.Result{Rows: [][]any{{"PostgreSQL 17.1", int64(1800), "12 MB", int64(1), int64(200)}}}}
+	primary := &selectedQuerier{rowCap: 1000, maxConns: 8, result: &db.Result{Rows: [][]any{{"PostgreSQL 16.4", int64(7200), "24 MB", int64(3), int64(100), int64(90), int64(10), int64(100), int64(900), int64(2), "8 kB", int64(1), int64(12), "pg_stat_statements 1.10, pgcrypto 1.3"}}}}
+	analytics := &selectedQuerier{rowCap: 500, maxConns: 4, result: &db.Result{Rows: [][]any{{"PostgreSQL 17.1", int64(1800), "12 MB", int64(1), int64(200), int64(50), int64(5), int64(20), int64(180), int64(0), "0 bytes", int64(0), int64(3), "none"}}}}
 	registry := fakeRegistry{
 		defaultID: "primary",
 		metadata: []db.PoolMetadata{
@@ -129,7 +129,7 @@ func TestDatabases_lists_safe_metadata(t *testing.T) {
 		Databases []databaseInfo `json:"databases"`
 	}](t, resp)
 
-	if got.DefaultID != "primary" || len(got.Databases) != 2 || got.Databases[0].Version != "PostgreSQL 16.4" || got.Databases[0].UptimeSeconds != 7200 || got.Databases[0].PoolMaxConnections != 8 || got.Databases[1].DatabaseSize != "12 MB" || got.Databases[1].MaxConnections != 200 || got.Databases[1].PoolMaxConnections != 4 {
+	if got.DefaultID != "primary" || len(got.Databases) != 2 || got.Databases[0].Version != "PostgreSQL 16.4" || got.Databases[0].UptimeSeconds != 7200 || got.Databases[0].PoolMaxConnections != 8 || got.Databases[0].CacheHitPercent != 90 || got.Databases[0].TempFiles != 2 || got.Databases[0].Extensions != "pg_stat_statements 1.10, pgcrypto 1.3" || got.Databases[1].DatabaseSize != "12 MB" || got.Databases[1].MaxConnections != 200 || got.Databases[1].PoolMaxConnections != 4 {
 		t.Fatalf("databases = %+v", got)
 	}
 	body := marshalString(t, got)

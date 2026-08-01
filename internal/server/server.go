@@ -19,6 +19,8 @@ type Server struct {
 	requireCloudflareAccess bool
 	mcpAuthorization        *MCPAuthorization
 	version                 string
+	commit                  string
+	buildDate               string
 }
 
 type Option func(*Server)
@@ -29,6 +31,14 @@ func RequireCloudflareAccess(require bool) Option {
 
 func Version(version string) Option {
 	return func(s *Server) { s.version = version }
+}
+
+func BuildInfo(version, commit, buildDate string) Option {
+	return func(s *Server) {
+		s.version = version
+		s.commit = commit
+		s.buildDate = buildDate
+	}
 }
 
 func WithMCPAuthorization(authz *MCPAuthorization) Option {
@@ -54,8 +64,12 @@ func (s *Server) Routes() http.Handler {
 
 	// Probes
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
+		writeJSON(w, http.StatusOK, map[string]string{
+			"status":    "ok",
+			"version":   s.version,
+			"commit":    s.commit,
+			"buildDate": s.buildDate,
+		})
 	})
 	mux.HandleFunc("GET /readyz", s.handleReady)
 

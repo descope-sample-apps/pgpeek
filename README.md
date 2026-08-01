@@ -450,7 +450,7 @@ Two ways:
 
 | Method & path                                 | Purpose                                        |
 | --------------------------------------------- | ---------------------------------------------- |
-| `GET /api/databases`                          | List configured databases → `{defaultId, databases:[{id,name}]}`. |
+| `GET /api/databases`                          | List configured databases with safe runtime details (version, uptime, size, workload/cache/temp/deadlock/session counters, extensions, and connection limits). Core PostgreSQL does not expose portable host CPU, RAM, or free-disk metrics. |
 | `GET /api/user`                               | Current detected user (`anonymous` or Cloudflare Access email).    |
 | `POST /api/query?db=<id>`                     | Run a query → JSON `{columns, rows, …}`.       |
 | `POST /api/export?db=<id>`                    | Run a query → CSV download.                    |
@@ -469,6 +469,6 @@ Two ways:
 | `OPTIONS /mcp`              | CORS preflight when Descope OAuth protects the MCP endpoint. |
 | `GET /.well-known/oauth-protected-resource` | Public OAuth protected-resource metadata when Descope MCP auth is enabled. |
 | `OPTIONS /.well-known/oauth-protected-resource` | CORS preflight for public OAuth metadata. |
-| `GET /healthz`              | Liveness (always 200 if process is up).   |
+| `GET /healthz`              | Liveness plus `{status,version,commit,buildDate}` metadata. |
 | `GET /readyz`               | Readiness (pings the DB).                 |
 | `GET /`                     | The UI.                                   |

@@ -5,20 +5,37 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
+	"time"
 
 	"github.com/descope-sample-apps/pgpeek/internal/guard"
 	"github.com/descope-sample-apps/pgpeek/internal/store"
 )
 
 func TestHealthz(t *testing.T) {
-	ts, _ := newTestServer(t, &fakeQuerier{})
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	web := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("pgpeek")}}
+	srv := New(&fakeQuerier{}, st, web, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Second,
+		BuildInfo("1.2.3", "abc1234", "2026-08-01T00:00:00Z"))
+	ts := httptest.NewServer(srv.Routes())
+	t.Cleanup(ts.Close)
 	resp := mustGet(t, ts, "/healthz")
-	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("healthz = %d", resp.StatusCode)
+	}
+	got := decode[map[string]string](t, resp)
+	if got["status"] != "ok" || got["version"] != "1.2.3" || got["commit"] != "abc1234" || got["buildDate"] != "2026-08-01T00:00:00Z" {
+		t.Fatalf("healthz = %#v", got)
 	}
 }
 

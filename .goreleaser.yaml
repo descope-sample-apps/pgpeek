@@ -26,7 +26,7 @@ builds:
     flags:
       - -trimpath
     ldflags:
-      - -s -w -X main.version={{ .Version }}
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .ShortCommit }} -X main.buildDate={{ .CommitDate }}
 
 # ko builds distroless, reproducible, multi-arch images straight from Go source.
 kos:
@@ -42,7 +42,7 @@ kos:
     flags:
       - -trimpath
     ldflags:
-      - -s -w -X main.version={{ .Version }}
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .ShortCommit }} -X main.buildDate={{ .CommitDate }}
     tags:
       - "{{ .Version }}"
       - "{{ .Major }}.{{ .Minor }}"

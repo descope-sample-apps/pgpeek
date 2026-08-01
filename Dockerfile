@@ -6,6 +6,9 @@ COPY web/vendor/src ./web/vendor/src
 RUN npm run vendor
 
 FROM ghcr.io/verity-org/golang:1.26-fips@sha256:c1689432748fd0cbeccec073c1d0d0a9a46acbfdc51e1ffaa16ea408871dca02 AS build
+ARG VERSION=0.0.0-dev
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
 SHELL ["/usr/bin/bash", "-c"]
 ENV GOFIPS140=v1.0.0 \
     GODEBUG=fips140=on
@@ -16,7 +19,7 @@ RUN go mod download
 
 COPY . .
 COPY --from=web-vendor /src/web/vendor ./web/vendor
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /src/pgpeek .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildDate=${BUILD_DATE}" -o /src/pgpeek .
 RUN printf '' > /src/data.keep
 
 # --- runtime stage -------------------------------------------------------

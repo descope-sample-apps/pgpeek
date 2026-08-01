@@ -74,6 +74,7 @@ beforeEach(() => {
     // empty databases: keeps existing tests db-param-free and selector-hidden
     "GET /api/databases": makeResp({ json: { defaultId: null, databases: [] } }),
     "GET /api/user": makeResp({ json: { provider: "anonymous", email: "" } }),
+    "GET /healthz": makeResp({ json: { status: "ok", version: "1.2.3", commit: "abc1234", buildDate: "2026-08-01T00:00:00Z" } }),
     "GET /api/meta": makeResp({ json: { rowCap: 1000 } }),
     "GET /api/tables": makeResp({ json: [] }),
     "GET /api/tables/*/columns": makeResp({ json: [] }),
@@ -91,6 +92,8 @@ beforeEach(() => {
   globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
   window.requestAnimationFrame = globalThis.requestAnimationFrame;
   window.cancelAnimationFrame = globalThis.cancelAnimationFrame;
+  HTMLDialogElement.prototype.showModal = function showModal() { this.open = true; };
+  HTMLDialogElement.prototype.close = function close() { this.open = false; this.dispatchEvent(new Event("close")); };
   delete window.cm6;
   delete globalThis.cm6;
 });
@@ -162,6 +165,83 @@ function deferred() {
 }
 
 describe("sidebar and tabs", () => {
+  it("shows build and connected database details in About", async () => {
+    setRoute("GET /api/databases", makeResp({ json: { defaultId: "prod", databases: [
+      { id: "prod", name: "Production", version: "16.4", uptimeSeconds: 90061, databaseSize: "24 MB", activeConnections: 3, maxConnections: 100, poolMaxConnections: 8, commits: 90, rollbacks: 10, cacheHitPercent: 90, tempFiles: 2, tempBytes: "8 kB", deadlocks: 1, sessions: 12, extensions: "pg_stat_statements 1.10" },
+      { id: "analytics", name: "Analytics", version: "17.1", uptimeSeconds: 60, databaseSize: "12 MB", activeConnections: 1, maxConnections: 200, poolMaxConnections: 4, extensions: "none" },
+    ] } }));
+    await loadApp();
+
+    await click(document.querySelector(".about-button"));
+
+    expect(document.querySelector(".about-card").textContent).toContain("1.2.3");
+    expect(document.querySelector(".about-card").textContent).toContain("abc1234");
+    expect(document.querySelector(".about-card").textContent).toContain("Production");
+    expect(document.querySelector(".about-card").textContent).toContain("1d 1h 1m");
+    expect(document.querySelector(".about-card").textContent).toContain("3 / 100");
+    expect(document.querySelector(".about-card").textContent).toContain("24 MB");
+    expect(document.querySelectorAll(".database-card")[0].open).toBe(true);
+    expect(document.querySelectorAll(".database-card")[1].open).toBe(false);
+    expect(document.querySelector(".about-card").textContent).toContain("90%");
+    expect(document.querySelector(".about-card").textContent).toContain("pg_stat_statements 1.10");
+
+    const dialog = document.querySelector(".about");
+    Object.defineProperty(dialog, "getBoundingClientRect", { value: () => ({ left: 100, right: 200, top: 100, bottom: 200 }) });
+    dialog.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 50, clientY: 50 }));
+    await flush();
+    expect(document.querySelector(".about")).toBeNull();
+  });
+
+  it("shows database detail errors and uptime fallbacks in About", async () => {
+    setRoute("GET /api/databases", makeResp({ json: { defaultId: "prod", databases: [
+      { id: "prod", name: "Production", uptimeSeconds: 30 },
+      { id: "analytics", name: "Analytics", error: "details unavailable" },
+    ] } }));
+    await loadApp();
+
+    await click(document.querySelector(".about-button"));
+
+    const text = document.querySelector(".about-card").textContent;
+    expect(text).toContain("< 1m");
+    expect(text).toContain("details unavailable");
+    expect(text).toContain("unknown");
+    expect(text).toContain("not measured");
+    await click(document.querySelector(".about-head button"));
+    expect(document.querySelector(".about")).toBeNull();
+  });
+
+  it("formats missing database uptime and reopens About", async () => {
+    setRoute("GET /api/databases", makeResp({ json: { defaultId: "prod", databases: [{ id: "prod", name: "Production", uptimeSeconds: 0 }] } }));
+    await loadApp();
+
+    await click(document.querySelector(".about-button"));
+
+    expect(document.querySelector(".about-card").textContent).toContain("unknown");
+    await click(document.querySelector(".about-head button"));
+    await click(document.querySelector(".about-button"));
+    await click(document.querySelector(".about-head button"));
+  });
+
+  it("keeps About usable when metadata refresh fails", async () => {
+    await loadApp();
+    setRoute("GET /healthz", new Error("offline"));
+    setRoute("GET /api/databases", new Error("offline"));
+
+    await click(document.querySelector(".about-button"));
+
+    expect(document.querySelector(".about-card").textContent).toContain("unknown");
+    expect(document.querySelector(".about-card").textContent).toContain("No databases reported.");
+  });
+
+  it("handles malformed database refresh results", async () => {
+    setRoute("GET /api/databases", makeResp({ json: { defaultId: null, databases: null } }));
+    await loadApp();
+
+    await click(document.querySelector(".about-button"));
+
+    expect(document.querySelector(".about-card").textContent).toContain("No databases reported.");
+  });
+
   it("renders initial shell, empty-table copy, and no-table panel hints", async () => {
     await loadApp();
 

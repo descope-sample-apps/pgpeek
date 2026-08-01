@@ -58,7 +58,8 @@ Do not expose pgpeek publicly without SSO or another authentication proxy.
 
 - API errors are JSON: `{"error":"<message>"}` with an appropriate non-2xx status.
 - An empty saved-query list is the explicit JSON array `[]`.
-- `GET /healthz` returns `ok` when the process is alive.
+- `GET /healthz` returns JSON with `status`, semantic `version`, Git `commit`,
+  and `buildDate` when the process is alive.
 - `GET /readyz` returns `ready` when Postgres is reachable; otherwise it returns
   `503` with `{"error":"database not ready"}`.
 - `POST /mcp` sends stateless Streamable HTTP MCP messages; `GET` and `DELETE`

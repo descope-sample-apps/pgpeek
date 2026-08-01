@@ -78,7 +78,7 @@
       {
         "method": "GET",
         "path": "/healthz",
-        "description": "Process liveness probe; returns plain text ok."
+        "description": "Process liveness probe; returns JSON status and build metadata."
       },
       {
         "method": "GET",
@@ -195,7 +195,12 @@
       }
     },
     "emptySavedQueries": [],
-    "healthz": "ok",
+    "healthz": {
+      "status": "ok",
+      "version": "<semantic-version>",
+      "commit": "<git-commit>",
+      "buildDate": "<RFC3339>"
+    },
     "readyz": "ready"
   },
   "help": [

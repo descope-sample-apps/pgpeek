@@ -450,7 +450,7 @@ Two ways:
 
 | Method & path                                 | Purpose                                        |
 | --------------------------------------------- | ---------------------------------------------- |
-| `GET /api/databases`                          | List configured databases with safe runtime details (version, uptime, size, and connection limits). |
+| `GET /api/databases`                          | List configured databases with safe runtime details (version, uptime, size, workload/cache/temp/deadlock/session counters, extensions, and connection limits). Core PostgreSQL does not expose portable host CPU, RAM, or free-disk metrics. |
 | `GET /api/user`                               | Current detected user (`anonymous` or Cloudflare Access email).    |
 | `POST /api/query?db=<id>`                     | Run a query → JSON `{columns, rows, …}`.       |
 | `POST /api/export?db=<id>`                    | Run a query → CSV download.                    |

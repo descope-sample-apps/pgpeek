@@ -247,7 +247,7 @@ function App() {
       <${ThemeSelect} />
     </header>
     <div class="body">
-      <${Sidebar} tables=${tables} loaded=${tablesLoaded}
+      <${Sidebar} key=${currentDb} tables=${tables} loaded=${tablesLoaded}
         current=${current} onSelect=${(t) => open(t)} />
       <main id="main">
         <${Tabs} tab=${tab} setTab=${setTab} title=${title} />

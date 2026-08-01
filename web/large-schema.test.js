@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import {
-  makeResp, ONE_DB, makeInstallFetch, $, changeSelect, click, flush, loadApp,
+  makeResp, ONE_DB, TWO_DBS, makeInstallFetch, $, changeSelect, click, flush, loadApp,
 } from "./test-helpers.js";
 
 let routes;
@@ -166,6 +166,7 @@ describe("large schema rendering", () => {
     const html = readFileSync("web/index.html", "utf8");
 
     expect(html).toMatch(/#tables\s*\{[^}]*overflow:\s*auto/s);
+    expect(html).toMatch(/\.partition-toggle:hover:not\(:disabled\)/s);
     expect(html).toMatch(/\.tbl\.partition:not\(\.active\)\s*\{[^}]*color:\s*var\(--muted\)/s);
     expect(html).toMatch(/\.results\s*\{[^}]*overflow:\s*auto/s);
     expect(html).toMatch(/table\s*\{[^}]*min-width:\s*max-content/s);
@@ -257,5 +258,24 @@ describe("large schema rendering", () => {
     await click(groups[0].querySelector(".partition-toggle"));
     expect(groups[0].querySelector(".partition-list .tbl").textContent).toBe("events_01");
     expect(groups[1].querySelector(".partition-list")).toBeNull();
+  });
+
+  it("resets expanded partition groups when switching databases", async () => {
+    const tables = [
+      { schema: "public", name: "events", type: "table", estRows: 10 },
+      {
+        schema: "public", name: "events_01", type: "table", estRows: 5, isPartition: true,
+        parentSchema: "public", parentName: "events",
+      },
+    ];
+    routes["GET /api/databases"] = makeResp({ json: TWO_DBS });
+    routes["GET /api/tables"] = makeResp({ json: tables });
+
+    await loadApp();
+    await click($("tables").querySelector(".partition-toggle"));
+    expect($("tables").querySelector(".partition-list")).not.toBeNull();
+
+    await changeSelect($("database-select"), "pg2");
+    expect($("tables").querySelector(".partition-list")).toBeNull();
   });
 });

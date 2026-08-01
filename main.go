@@ -33,12 +33,15 @@ import (
 //go:embed web
 var webFiles embed.FS
 
-// version is overridden at build time via -ldflags "-X main.version=...".
-var version = "dev"
+var (
+	version   = "0.0.0-dev"
+	commit    = "unknown"
+	buildDate = "unknown"
+)
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	log.Info("starting pgpeek", "version", version)
+	log.Info("starting pgpeek", "version", version, "commit", commit, "buildDate", buildDate)
 	if err := run(context.Background(), log); err != nil {
 		log.Error("fatal", "err", err)
 		os.Exit(1)
@@ -55,7 +58,7 @@ func run(ctx context.Context, log *slog.Logger) error {
 	defer stop()
 	serverOptions := []server.Option{
 		server.RequireCloudflareAccess(cfg.RequireCloudflareAccess),
-		server.Version(version),
+		server.BuildInfo(version, commit, buildDate),
 	}
 	if cfg.MCPAuth.Enabled() {
 		authz, authErr := server.NewDescopeMCPAuthorization(signalCtx, server.DescopeMCPAuthConfig{

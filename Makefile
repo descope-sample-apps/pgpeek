@@ -2,6 +2,10 @@
 SHELL := bash
 GO ?= go
 PROFILE ?= cover.out
+VERSION ?= $(shell tag=$$(git describe --tags --exact-match 2>/dev/null) && printf '%s' "$${tag#v}" || { base=$$(git describe --tags --abbrev=0 2>/dev/null || printf 'v0.0.0'); printf '%s-dev+%s' "$${base#v}" "$$(git rev-parse --short=12 HEAD 2>/dev/null || printf 'unknown')"; })
+COMMIT ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || printf 'unknown')
+BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
 
 # PGPEEK_TEST_DATABASE_URL enables the db/main integration tests. Override as needed:
 #   make test-integration PGPEEK_TEST_DATABASE_URL=postgres://...
@@ -70,7 +74,7 @@ docs-css: ## Synchronize inline critical CSS and deferred documentation styles
 
 .PHONY: build
 build: web-vendor ## Build the static binary
-	CGO_ENABLED=0 GOFIPS140=v1.0.0 GODEBUG=fips140=on $(GO) build -trimpath -ldflags="-s -w" -o pgpeek .
+	CGO_ENABLED=0 GOFIPS140=v1.0.0 GODEBUG=fips140=on $(GO) build -trimpath -ldflags="$(LDFLAGS)" -o pgpeek .
 
 .PHONY: image
 image: ## Build a snapshot image via goreleaser+ko

@@ -252,6 +252,8 @@ describe("large schema rendering", () => {
     const groups = $("tables").querySelectorAll(".table-group");
     expect(groups).toHaveLength(2);
     expect($("tables").querySelectorAll(".tbl")).toHaveLength(3);
+    await click(groups[0].querySelector(".tbl"));
+    expect($("tables").querySelectorAll(".tbl.active")).toHaveLength(1);
     await click(groups[0].querySelector(".partition-toggle"));
     expect(groups[0].querySelector(".partition-list .tbl").textContent).toBe("events_01");
     expect(groups[1].querySelector(".partition-list")).toBeNull();

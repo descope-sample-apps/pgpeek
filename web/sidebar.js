@@ -2,7 +2,7 @@
 import { html, useEffect, useRef, useState } from "./vendor/preact-htm.js";
 import { tableKey } from "./api.js";
 
-export function Sidebar({ tables, loaded, currentKey, onSelect }) {
+export function Sidebar({ tables, loaded, current, onSelect }) {
   const [filter, setFilter] = useState("");
   const [expanded, setExpanded] = useState({});
   const listRef = useRef();
@@ -13,20 +13,26 @@ export function Sidebar({ tables, loaded, currentKey, onSelect }) {
   useEffect(() => {
     const active = listRef.current && listRef.current.querySelector(".tbl.active");
     if (active && active.scrollIntoView) active.scrollIntoView({ block: "nearest" });
-  }, [currentKey, filter]);
+  }, [current, filter]);
 
   const relationKey = (table) => JSON.stringify([table.schema, table.name]);
   const byKey = new Map(tables.map((t) => [relationKey(t), t]));
   const children = new Map();
+  const roots = new Map();
+  const currentKey = current && relationKey(current);
 
   const rootKey = (table) => {
-    if (!table.isPartition || !table.parentSchema || !table.parentName) return null;
-    let key = relationKey({ schema: table.parentSchema, name: table.parentName });
-    while (byKey.has(key) && byKey.get(key).isPartition) {
-      const parent = byKey.get(key);
-      key = relationKey({ schema: parent.parentSchema, name: parent.parentName });
+    const id = relationKey(table);
+    if (roots.has(id)) return roots.get(id);
+    if (!table.isPartition || !table.parentSchema || !table.parentName) {
+      roots.set(id, null);
+      return null;
     }
-    return key;
+    const parentKey = relationKey({ schema: table.parentSchema, name: table.parentName });
+    const parent = byKey.get(parentKey);
+    const root = parent && parent.isPartition ? rootKey(parent) : parentKey;
+    roots.set(id, root);
+    return root;
   };
 
   for (const t of tables) {
@@ -38,9 +44,9 @@ export function Sidebar({ tables, loaded, currentKey, onSelect }) {
 
   const tableButton = (t, child = false) => {
     const label = tableKey(t);
-    const active = label === currentKey;
+    const active = relationKey(t) === currentKey;
     const cls = "tbl" + (child ? " partition" : "") + (t.type === "view" ? " view" : "") + (active ? " active" : "");
-    return html`<button class=${cls} key=${label}
+    return html`<button class=${cls} key=${relationKey(t)}
       title=${label + (t.estRows >= 0 ? " (~" + t.estRows + " rows)" : "")}
       aria-current=${active ? "true" : undefined}
       onClick=${() => onSelect(t)}>${t.name}</button>`;
@@ -62,14 +68,15 @@ export function Sidebar({ tables, loaded, currentKey, onSelect }) {
       items.push(tableButton(t));
       continue;
     }
-    const open = Boolean(f ? matchingChildren.length : (expanded[id] ?? group.some((child) => tableKey(child) === currentKey)));
-    items.push(html`<div class="table-group" key=${"g:" + label}>
+    const open = Boolean(f ? matchingChildren.length : (expanded[id] ?? group.some((child) => relationKey(child) === currentKey)));
+    const count = f ? matchingChildren.length : group.length;
+    items.push(html`<div class="table-group" key=${"g:" + id}>
       <div class="table-row">
         ${tableButton(t)}
         <button class="partition-toggle" type="button" aria-expanded=${open ? "true" : "false"} disabled=${Boolean(f)}
           title=${f ? "Clear filter to hide partitions" : (open ? "Hide partitions" : "Show partitions")}
           onClick=${() => setExpanded((value) => ({ ...value, [id]: !open }))}>
-          <span aria-hidden="true">${open ? "▾" : "▸"}</span> ${group.length} partitions
+          <span aria-hidden="true">${open ? "▾" : "▸"}</span> ${count} ${count === 1 ? "partition" : "partitions"}
         </button>
       </div>
       ${open ? html`<div class="partition-list">${matchingChildren.map((child) => tableButton(child, true))}</div>` : ""}

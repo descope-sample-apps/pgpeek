@@ -248,7 +248,7 @@ function App() {
     </header>
     <div class="body">
       <${Sidebar} tables=${tables} loaded=${tablesLoaded}
-        currentKey=${current && tableKey(current)} onSelect=${(t) => open(t)} />
+        current=${current} onSelect=${(t) => open(t)} />
       <main id="main">
         <${Tabs} tab=${tab} setTab=${setTab} title=${title} />
         <${TableContext} table=${current} />

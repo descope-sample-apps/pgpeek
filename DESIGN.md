@@ -167,6 +167,9 @@ metadata and safe database display metadata only; connection strings never
 appear. Native dialog semantics provide focus containment, Escape handling,
 and focus restoration. The backdrop closes on direct click and the explicit
 Close action uses the standard hover, pressed, and focus-visible states.
+Each connected database uses a nested token-driven card for version, uptime,
+database size, server connections, and pgpeek pool capacity. These cards stack
+in one column so long values remain readable at every viewport.
 
 ### Data tables
 - Scrollable wrapper (`.table-wrap`): `overflow-x: auto`, `--r-xl` radius, `--c-border` border.

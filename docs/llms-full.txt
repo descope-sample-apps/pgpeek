@@ -484,7 +484,7 @@ Two ways:
 
 | Method & path                                 | Purpose                                        |
 | --------------------------------------------- | ---------------------------------------------- |
-| `GET /api/databases`                          | List configured databases → `{defaultId, databases:[{id,name}]}`. |
+| `GET /api/databases`                          | List configured databases with safe runtime details (version, uptime, size, and connection limits). |
 | `GET /api/user`                               | Current detected user (`anonymous` or Cloudflare Access email).    |
 | `POST /api/query?db=<id>`                     | Run a query → JSON `{columns, rows, …}`.       |
 | `POST /api/export?db=<id>`                    | Run a query → CSV download.                    |

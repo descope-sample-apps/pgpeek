@@ -252,8 +252,7 @@ function App() {
       <main id="main">
         <${Tabs} tab=${tab} setTab=${setTab} title=${title} />
         <${TableContext} table=${current} />
-        <div class=${"status " + status.cls} id="status"
-          role=${status.cls === "error" ? "alert" : "status"} aria-live=${status.cls === "error" ? "assertive" : "polite"}>
+        <div class=${"status " + status.cls} id="status" role="status">
           ${status.text}${status.warn ? html`<span class="warn"> ${status.warn}</span>` : ""}
         </div>
         <section class="panel" id="panel-data" role="tabpanel" aria-labelledby="tab-data" hidden=${tab !== "data"}>

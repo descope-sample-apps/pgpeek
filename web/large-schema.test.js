@@ -236,17 +236,24 @@ describe("large schema rendering", () => {
     routes["GET /api/tables"] = makeResp({ json: [
       { schema: "a.b", name: "events", type: "table", estRows: 10 },
       {
-        schema: "a", name: "b.events", type: "table", estRows: 5, isPartition: true,
+        schema: "a.b", name: "events_01", type: "table", estRows: 5, isPartition: true,
         parentSchema: "a.b", parentName: "events",
+      },
+      { schema: "a", name: "b.events", type: "table", estRows: 10 },
+      {
+        schema: "a", name: "b.events_01", type: "table", estRows: 5, isPartition: true,
+        parentSchema: "a", parentName: "b.events",
       },
       TABLES[0],
     ] });
 
     await loadApp();
 
-    expect($("tables").querySelectorAll(".table-group")).toHaveLength(1);
-    expect($("tables").querySelectorAll(".tbl")).toHaveLength(2);
-    await click($("tables").querySelector(".partition-toggle"));
-    expect($("tables").querySelector(".partition-list .tbl").textContent).toBe("b.events");
+    const groups = $("tables").querySelectorAll(".table-group");
+    expect(groups).toHaveLength(2);
+    expect($("tables").querySelectorAll(".tbl")).toHaveLength(3);
+    await click(groups[0].querySelector(".partition-toggle"));
+    expect(groups[0].querySelector(".partition-list .tbl").textContent).toBe("events_01");
+    expect(groups[1].querySelector(".partition-list")).toBeNull();
   });
 });

@@ -48,6 +48,7 @@ export function Sidebar({ tables, loaded, currentKey, onSelect }) {
 
   for (const t of tables) {
     const label = tableKey(t);
+    const id = relationKey(t);
     const root = rootKey(t);
     if (root && byKey.has(root)) continue;
     const group = children.get(relationKey(t)) || [];
@@ -61,13 +62,13 @@ export function Sidebar({ tables, loaded, currentKey, onSelect }) {
       items.push(tableButton(t));
       continue;
     }
-    const open = Boolean(f ? matchingChildren.length : (expanded[label] ?? group.some((child) => tableKey(child) === currentKey)));
+    const open = Boolean(f ? matchingChildren.length : (expanded[id] ?? group.some((child) => tableKey(child) === currentKey)));
     items.push(html`<div class="table-group" key=${"g:" + label}>
       <div class="table-row">
         ${tableButton(t)}
         <button class="partition-toggle" type="button" aria-expanded=${open ? "true" : "false"} disabled=${Boolean(f)}
           title=${f ? "Clear filter to hide partitions" : (open ? "Hide partitions" : "Show partitions")}
-          onClick=${() => setExpanded((value) => ({ ...value, [label]: !open }))}>
+          onClick=${() => setExpanded((value) => ({ ...value, [id]: !open }))}>
           <span aria-hidden="true">${open ? "▾" : "▸"}</span> ${group.length} partitions
         </button>
       </div>

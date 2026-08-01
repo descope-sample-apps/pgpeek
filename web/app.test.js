@@ -535,6 +535,7 @@ describe("structure tab", () => {
     expect($("status").textContent).toContain("Loading structure for public.users");
     pending.resolve(makeResp({ json: [] }));
     await flush();
+    expect($("status").textContent).toContain("✓ 0 columns loaded");
   });
 
   it("shows loading, renders columns, and ignores stale column responses", async () => {

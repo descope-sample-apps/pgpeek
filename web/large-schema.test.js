@@ -180,37 +180,54 @@ describe("large schema rendering", () => {
 
   it("collapses partitions under their parent while keeping search useful", async () => {
     const parent = { schema: "public", name: "events", type: "table", estRows: 100 };
-    const partitions = Array.from({ length: 24 }, (_, i) => ({
+    const partitions = Array.from({ length: 22 }, (_, i) => ({
       schema: "public",
       name: `events_${String(i + 1).padStart(2, "0")}`,
       type: "table",
       estRows: 10,
+      isPartition: true,
       parentSchema: "public",
       parentName: "events",
     }));
-    routes["GET /api/tables"] = makeResp({ json: [parent, ...partitions, TABLES[0]] });
+    const subpartition = {
+      schema: "public", name: "events_2026", type: "table", estRows: 10, isPartition: true,
+      parentSchema: "public", parentName: "events",
+    };
+    const nestedPartition = {
+      schema: "public", name: "events_2026_01", type: "table", estRows: 10, isPartition: true,
+      parentSchema: "public", parentName: "events_2026",
+    };
+    const inherited = {
+      schema: "public", name: "legacy_events", type: "table", estRows: 10,
+      parentSchema: "public", parentName: "events",
+    };
+    routes["GET /api/tables"] = makeResp({ json: [parent, ...partitions, subpartition, nestedPartition, inherited, TABLES[0]] });
 
     await loadApp();
 
-    expect($("tables").querySelectorAll(".tbl")).toHaveLength(2);
+    expect($("tables").querySelectorAll(".tbl")).toHaveLength(3);
     expect($("tables").textContent).toContain("24 partitions");
     expect($("tables").textContent).toContain("table_01");
-    expect($("tables").textContent).not.toContain("events_24");
+    expect($("tables").textContent).toContain("legacy_events");
+    expect($("tables").textContent).not.toContain("events_2026_01");
 
     await click($("tables").querySelector(".partition-toggle"));
-    expect($("tables").querySelectorAll(".tbl")).toHaveLength(26);
+    expect($("tables").querySelectorAll(".tbl")).toHaveLength(27);
     expect($("tables").querySelector(".partition-list").querySelectorAll(".tbl")).toHaveLength(24);
-    expect($("tables").textContent).toContain("events_24");
+    expect($("tables").textContent).toContain("events_2026_01");
 
-    await click([...$("tables").querySelectorAll(".tbl")].find((el) => el.textContent === "events_24"));
+    await click([...$("tables").querySelectorAll(".tbl")].find((el) => el.textContent === "events_2026_01"));
     await click($("tables").querySelector(".partition-toggle"));
-    expect($("tables").querySelectorAll(".tbl")).toHaveLength(2);
+    expect($("tables").querySelectorAll(".tbl")).toHaveLength(3);
+
+    await click($("tables").querySelector(".partition-toggle"));
 
     const filter = $("tbl-filter");
-    filter.value = "events_24";
+    filter.value = "events_2026_01";
     filter.dispatchEvent(new Event("input", { bubbles: true }));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect($("tables").querySelectorAll(".tbl")).toHaveLength(2);
-    expect($("tables").textContent).toContain("events_24");
+    expect($("tables").textContent).toContain("events_2026_01");
+    expect($("tables").querySelector(".partition-toggle").disabled).toBe(true);
   });
 });

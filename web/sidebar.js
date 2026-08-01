@@ -17,10 +17,24 @@ export function Sidebar({ tables, loaded, currentKey, onSelect }) {
 
   const byKey = new Map(tables.map((t) => [tableKey(t), t]));
   const children = new Map();
+
+  const rootKey = (table) => {
+    if (!table.isPartition || !table.parentSchema || !table.parentName) return null;
+    let key = table.parentSchema + "." + table.parentName;
+    const seen = new Set([tableKey(table)]);
+    while (byKey.has(key) && byKey.get(key).isPartition && !seen.has(key)) {
+      seen.add(key);
+      const parent = byKey.get(key);
+      if (!parent.parentSchema || !parent.parentName) break;
+      key = parent.parentSchema + "." + parent.parentName;
+    }
+    return key;
+  };
+
   for (const t of tables) {
-    const parentKey = t.parentSchema && t.parentName && t.parentSchema + "." + t.parentName;
-    if (!parentKey || !byKey.has(parentKey)) continue;
-    children.set(parentKey, [...(children.get(parentKey) || []), t]);
+    const root = rootKey(t);
+    if (!root || !byKey.has(root)) continue;
+    children.set(root, [...(children.get(root) || []), t]);
   }
 
   const tableButton = (t, child = false) => {
@@ -35,8 +49,8 @@ export function Sidebar({ tables, loaded, currentKey, onSelect }) {
 
   for (const t of tables) {
     const label = tableKey(t);
-    const parentKey = t.parentSchema && t.parentName && t.parentSchema + "." + t.parentName;
-    if (parentKey && byKey.has(parentKey)) continue;
+    const root = rootKey(t);
+    if (root && byKey.has(root)) continue;
     const group = children.get(label) || [];
     const matchingChildren = f ? group.filter((child) => tableKey(child).toLowerCase().includes(f)) : group;
     if (f && !label.toLowerCase().includes(f) && matchingChildren.length === 0) continue;
@@ -48,12 +62,12 @@ export function Sidebar({ tables, loaded, currentKey, onSelect }) {
       items.push(tableButton(t));
       continue;
     }
-    const open = Boolean(f || (expanded[label] ?? group.some((child) => tableKey(child) === currentKey)));
+    const open = Boolean(f ? matchingChildren.length : (expanded[label] ?? group.some((child) => tableKey(child) === currentKey)));
     items.push(html`<div class="table-group" key=${"g:" + label}>
       <div class="table-row">
         ${tableButton(t)}
-        <button class="partition-toggle" type="button" aria-expanded=${open ? "true" : "false"}
-          title=${open ? "Hide partitions" : "Show partitions"}
+        <button class="partition-toggle" type="button" aria-expanded=${open ? "true" : "false"} disabled=${Boolean(f)}
+          title=${f ? "Clear filter to hide partitions" : (open ? "Hide partitions" : "Show partitions")}
           onClick=${() => setExpanded((value) => ({ ...value, [label]: !open }))}>
           <span aria-hidden="true">${open ? "▾" : "▸"}</span> ${group.length} partitions
         </button>

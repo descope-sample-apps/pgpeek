@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -49,5 +50,13 @@ func TestSeedSupportsWestOfUTCSession(t *testing.T) {
 	}
 	if rows != 360 {
 		t.Fatalf("audit event rows = %d, want 360", rows)
+	}
+	var latest time.Time
+	if err := tx.QueryRow(ctx, `SELECT max(occurred_at) FROM public.audit_events`).Scan(&latest); err != nil {
+		t.Fatalf("latest audit event: %v", err)
+	}
+	want := time.Date(2026, time.December, 20, 0, 0, 0, 0, time.UTC)
+	if !latest.Equal(want) {
+		t.Fatalf("latest audit event = %s, want %s", latest, want)
 	}
 }

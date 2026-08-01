@@ -149,5 +149,5 @@ INSERT INTO public.audit_events (user_id, event_type, occurred_at)
 SELECT
   1 + (g % 45),
   (ARRAY['login','logout','profile.updated','report.exported'])[1 + (g % 4)],
-  timestamptz '2025-01-01 00:00:00+00' + (g * interval '2 days')
+  timestamptz '2025-01-01 00:00:00+00' + (g * interval '48 hours')
 FROM generate_series(0, 359) AS g;

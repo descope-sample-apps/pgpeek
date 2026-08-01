@@ -9,6 +9,8 @@
 -- Already ran compose before this file existed? The seed only fires on an empty
 -- data dir, so reset the volume first:  docker compose down -v && docker compose up
 
+SET TIME ZONE 'UTC';
+
 CREATE TABLE IF NOT EXISTS public.companies (
   id         serial PRIMARY KEY,
   name       text        NOT NULL,

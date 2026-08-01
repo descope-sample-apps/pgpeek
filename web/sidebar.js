@@ -21,11 +21,8 @@ export function Sidebar({ tables, loaded, currentKey, onSelect }) {
   const rootKey = (table) => {
     if (!table.isPartition || !table.parentSchema || !table.parentName) return null;
     let key = table.parentSchema + "." + table.parentName;
-    const seen = new Set([tableKey(table)]);
-    while (byKey.has(key) && byKey.get(key).isPartition && !seen.has(key)) {
-      seen.add(key);
+    while (byKey.has(key) && byKey.get(key).isPartition) {
       const parent = byKey.get(key);
-      if (!parent.parentSchema || !parent.parentName) break;
       key = parent.parentSchema + "." + parent.parentName;
     }
     return key;

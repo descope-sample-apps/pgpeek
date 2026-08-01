@@ -13,7 +13,8 @@ task only needs product identity, startup, safety, or probe behavior.
 - API errors use an appropriate non-2xx status and JSON body
   `{"error":"<message>"}`.
 - An empty saved-query collection is the definitive JSON value `[]`.
-- `GET /healthz` returns plain text `ok`.
+- `GET /healthz` returns JSON build metadata: `status`, semantic `version`, Git
+  `commit`, and `buildDate`.
 - `GET /readyz` returns plain text `ready` or status 503 with
   `{"error":"database not ready"}`.
 - Large query results stop at `PGPEEK_ROW_CAP`; the default is 1000 rows.
@@ -502,6 +503,6 @@ Two ways:
 | `OPTIONS /mcp`              | CORS preflight when Descope OAuth protects the MCP endpoint. |
 | `GET /.well-known/oauth-protected-resource` | Public OAuth protected-resource metadata when Descope MCP auth is enabled. |
 | `OPTIONS /.well-known/oauth-protected-resource` | CORS preflight for public OAuth metadata. |
-| `GET /healthz`              | Liveness (always 200 if process is up).   |
+| `GET /healthz`              | Liveness plus `{status,version,commit,buildDate}` metadata. |
 | `GET /readyz`               | Readiness (pings the DB).                 |
 | `GET /`                     | The UI.                                   |

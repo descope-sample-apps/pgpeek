@@ -469,6 +469,6 @@ Two ways:
 | `OPTIONS /mcp`              | CORS preflight when Descope OAuth protects the MCP endpoint. |
 | `GET /.well-known/oauth-protected-resource` | Public OAuth protected-resource metadata when Descope MCP auth is enabled. |
 | `OPTIONS /.well-known/oauth-protected-resource` | CORS preflight for public OAuth metadata. |
-| `GET /healthz`              | Liveness (always 200 if process is up).   |
+| `GET /healthz`              | Liveness plus `{status,version,commit,buildDate}` metadata. |
 | `GET /readyz`               | Readiness (pings the DB).                 |
 | `GET /`                     | The UI.                                   |

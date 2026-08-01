@@ -160,6 +160,14 @@ Copy button is always visible so mouse, keyboard, and touch users get the same a
 Background `--c-panel`, border `--c-border`, radius `--r-xl`, inner padding `--sp-6`.
 Metric cards stack the value and label as separate blocks with `--sp-1` between them.
 
+### About dialog
+The app console's About action opens a centered modal using existing panel,
+border, radius, spacing, muted-text, and monospace tokens. It lists build
+metadata and safe database display metadata only; connection strings never
+appear. Native dialog semantics provide focus containment, Escape handling,
+and focus restoration. The backdrop closes on direct click and the explicit
+Close action uses the standard hover, pressed, and focus-visible states.
+
 ### Data tables
 - Scrollable wrapper (`.table-wrap`): `overflow-x: auto`, `--r-xl` radius, `--c-border` border.
 - Column 1: monospaced (`.td-path`). All text: `--c-muted`. Row hover: `--c-panel-hi`.

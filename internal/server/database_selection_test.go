@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -134,6 +135,22 @@ func TestDatabases_lists_safe_metadata(t *testing.T) {
 	body := marshalString(t, got)
 	if strings.Contains(body, "postgres://") || strings.Contains(body, "dsn") {
 		t.Fatalf("database metadata leaked secret material: %s", body)
+	}
+}
+
+func TestDatabases_reports_unavailable_details(t *testing.T) {
+	registry := fakeRegistry{
+		defaultID: "primary",
+		metadata:  []db.PoolMetadata{{ID: "primary", Name: "Primary"}, {ID: "missing", Name: "Missing"}},
+		pools:     map[string]Querier{"primary": &selectedQuerier{err: errors.New("down")}},
+	}
+	ts := newRegistryTestServer(t, registry)
+
+	resp := mustGet(t, ts, "/api/databases")
+	got := decode[databasesResponse](t, resp)
+
+	if got.Databases[0].Error != "details unavailable" || got.Databases[1].Error != "unavailable" {
+		t.Fatalf("databases = %+v", got.Databases)
 	}
 }
 

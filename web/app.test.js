@@ -177,6 +177,50 @@ describe("sidebar and tabs", () => {
     expect(document.querySelector(".about-card").textContent).toContain("1d 1h 1m");
     expect(document.querySelector(".about-card").textContent).toContain("3 / 100");
     expect(document.querySelector(".about-card").textContent).toContain("24 MB");
+
+    const dialog = document.querySelector(".about");
+    Object.defineProperty(dialog, "getBoundingClientRect", { value: () => ({ left: 100, right: 200, top: 100, bottom: 200 }) });
+    dialog.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 50, clientY: 50 }));
+    await flush();
+    expect(document.querySelector(".about")).toBeNull();
+  });
+
+  it("shows database detail errors and uptime fallbacks in About", async () => {
+    setRoute("GET /api/databases", makeResp({ json: { defaultId: "prod", databases: [
+      { id: "prod", name: "Production", uptimeSeconds: 30 },
+      { id: "analytics", name: "Analytics", error: "details unavailable" },
+    ] } }));
+    await loadApp();
+
+    await click(document.querySelector(".about-button"));
+
+    const text = document.querySelector(".about-card").textContent;
+    expect(text).toContain("< 1m");
+    expect(text).toContain("details unavailable");
+    expect(text).toContain("unknown");
+    await click(document.querySelector(".about-head button"));
+    expect(document.querySelector(".about")).toBeNull();
+  });
+
+  it("formats missing database uptime and handles database refresh failure", async () => {
+    setRoute("GET /api/databases", makeResp({ json: { defaultId: "prod", databases: [{ id: "prod", name: "Production", uptimeSeconds: 0 }] } }));
+    await loadApp();
+
+    await click(document.querySelector(".about-button"));
+
+    expect(document.querySelector(".about-card").textContent).toContain("unknown");
+    await click(document.querySelector(".about-head button"));
+    await click(document.querySelector(".about-button"));
+    await click(document.querySelector(".about-head button"));
+  });
+
+  it("handles malformed database refresh results", async () => {
+    setRoute("GET /api/databases", makeResp({ json: { defaultId: null, databases: null } }));
+    await loadApp();
+
+    await click(document.querySelector(".about-button"));
+
+    expect(document.querySelector(".about-card").textContent).toContain("No databases reported.");
   });
 
   it("renders initial shell, empty-table copy, and no-table panel hints", async () => {

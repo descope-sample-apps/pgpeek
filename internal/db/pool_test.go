@@ -14,6 +14,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+func TestPoolMaxConns(t *testing.T) {
+	p := &Pool{maxConns: 8}
+	if got := p.MaxConns(); got != 8 {
+		t.Fatalf("MaxConns() = %d, want 8", got)
+	}
+}
+
 // --- fakes ---------------------------------------------------------------
 
 type fakeRows struct {

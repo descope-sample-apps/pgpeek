@@ -138,8 +138,8 @@ function App() {
 
   useEffect(() => {
     if (!aboutOpen) return;
-    if (!build.version) getJSON("/healthz").then(setBuild).catch(() => {});
-    getJSON("/api/databases").then((result) => setDatabases(Array.isArray(result.databases) ? result.databases : [])).catch(() => {});
+    getJSON("/healthz").then(setBuild);
+    getJSON("/api/databases").then((result) => setDatabases(Array.isArray(result.databases) ? result.databases : []));
   }, [aboutOpen]);
 
   // Phase 1: fetch /api/databases, resolve active db, restore URL state,

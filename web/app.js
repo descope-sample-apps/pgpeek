@@ -54,6 +54,8 @@ function formatUptime(seconds) {
   return [days && `${days}d`, hours && `${hours}h`, minutes && `${minutes}m`].filter(Boolean).join(" ") || "< 1m";
 }
 
+const ignoreRefreshError = () => {};
+
 function About({ open, onClose, databases, build }) {
   const dialog = useRef(null);
   useEffect(() => {
@@ -144,8 +146,8 @@ function App() {
 
   useEffect(() => {
     if (!aboutOpen) return;
-    getJSON("/healthz").then(setBuild);
-    getJSON("/api/databases").then((result) => setDatabases(Array.isArray(result.databases) ? result.databases : []));
+    getJSON("/healthz").then(setBuild, ignoreRefreshError);
+    getJSON("/api/databases").then((result) => setDatabases(Array.isArray(result.databases) ? result.databases : []), ignoreRefreshError);
   }, [aboutOpen]);
 
   // Phase 1: fetch /api/databases, resolve active db, restore URL state,

@@ -209,7 +209,7 @@ describe("sidebar and tabs", () => {
     expect(document.querySelector(".about")).toBeNull();
   });
 
-  it("formats missing database uptime and handles database refresh failure", async () => {
+  it("formats missing database uptime and reopens About", async () => {
     setRoute("GET /api/databases", makeResp({ json: { defaultId: "prod", databases: [{ id: "prod", name: "Production", uptimeSeconds: 0 }] } }));
     await loadApp();
 
@@ -219,6 +219,16 @@ describe("sidebar and tabs", () => {
     await click(document.querySelector(".about-head button"));
     await click(document.querySelector(".about-button"));
     await click(document.querySelector(".about-head button"));
+  });
+
+  it("keeps About usable when metadata refresh fails", async () => {
+    await loadApp();
+    setRoute("GET /healthz", new Error("offline"));
+    setRoute("GET /api/databases", new Error("offline"));
+
+    await click(document.querySelector(".about-button"));
+
+    expect(document.querySelector(".about-card").textContent).toContain("unknown");
   });
 
   it("handles malformed database refresh results", async () => {

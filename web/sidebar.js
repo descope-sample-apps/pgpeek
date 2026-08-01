@@ -4,6 +4,7 @@ import { tableKey } from "./api.js";
 
 export function Sidebar({ tables, loaded, currentKey, onSelect }) {
   const [filter, setFilter] = useState("");
+  const [expanded, setExpanded] = useState({});
   const listRef = useRef();
   const f = filter.toLowerCase();
   const items = [];
@@ -14,19 +15,51 @@ export function Sidebar({ tables, loaded, currentKey, onSelect }) {
     if (active && active.scrollIntoView) active.scrollIntoView({ block: "nearest" });
   }, [currentKey, filter]);
 
+  const byKey = new Map(tables.map((t) => [tableKey(t), t]));
+  const children = new Map();
+  for (const t of tables) {
+    const parentKey = t.parentSchema && t.parentName && t.parentSchema + "." + t.parentName;
+    if (!parentKey || !byKey.has(parentKey)) continue;
+    children.set(parentKey, [...(children.get(parentKey) || []), t]);
+  }
+
+  const tableButton = (t, child = false) => {
+    const label = tableKey(t);
+    const active = label === currentKey;
+    const cls = "tbl" + (child ? " partition" : "") + (t.type === "view" ? " view" : "") + (active ? " active" : "");
+    return html`<button class=${cls} key=${label}
+      title=${label + (t.estRows >= 0 ? " (~" + t.estRows + " rows)" : "")}
+      aria-current=${active ? "true" : undefined}
+      onClick=${() => onSelect(t)}>${t.name}</button>`;
+  };
+
   for (const t of tables) {
     const label = tableKey(t);
-    if (f && !label.toLowerCase().includes(f)) continue;
+    const parentKey = t.parentSchema && t.parentName && t.parentSchema + "." + t.parentName;
+    if (parentKey && byKey.has(parentKey)) continue;
+    const group = children.get(label) || [];
+    const matchingChildren = f ? group.filter((child) => tableKey(child).toLowerCase().includes(f)) : group;
+    if (f && !label.toLowerCase().includes(f) && matchingChildren.length === 0) continue;
     if (t.schema !== schema) {
       schema = t.schema;
       items.push(html`<div class="schema" key=${"s:" + schema}>${schema}</div>`);
     }
-    const active = label === currentKey;
-    const cls = "tbl" + (t.type === "view" ? " view" : "") + (active ? " active" : "");
-    items.push(html`<button class=${cls} key=${label}
-      title=${label + (t.estRows >= 0 ? " (~" + t.estRows + " rows)" : "")}
-      aria-current=${active ? "true" : undefined}
-      onClick=${() => onSelect(t)}>${t.name}</button>`);
+    if (group.length === 0) {
+      items.push(tableButton(t));
+      continue;
+    }
+    const open = Boolean(f || (expanded[label] ?? group.some((child) => tableKey(child) === currentKey)));
+    items.push(html`<div class="table-group" key=${"g:" + label}>
+      <div class="table-row">
+        ${tableButton(t)}
+        <button class="partition-toggle" type="button" aria-expanded=${open ? "true" : "false"}
+          title=${open ? "Hide partitions" : "Show partitions"}
+          onClick=${() => setExpanded((value) => ({ ...value, [label]: !open }))}>
+          <span aria-hidden="true">${open ? "▾" : "▸"}</span> ${group.length} partitions
+        </button>
+      </div>
+      ${open ? html`<div class="partition-list">${matchingChildren.map((child) => tableButton(child, true))}</div>` : ""}
+    </div>`);
   }
   return html`
     <aside class="sidebar" aria-label="Database tables">

@@ -177,4 +177,40 @@ describe("large schema rendering", () => {
     expect(html).toMatch(/\.panel\s*\{[^}]*min-height:\s*0/s);
     expect(html).toMatch(/#app\s*\{[^}]*min-height:\s*0/s);
   });
+
+  it("collapses partitions under their parent while keeping search useful", async () => {
+    const parent = { schema: "public", name: "events", type: "table", estRows: 100 };
+    const partitions = Array.from({ length: 24 }, (_, i) => ({
+      schema: "public",
+      name: `events_${String(i + 1).padStart(2, "0")}`,
+      type: "table",
+      estRows: 10,
+      parentSchema: "public",
+      parentName: "events",
+    }));
+    routes["GET /api/tables"] = makeResp({ json: [parent, ...partitions, TABLES[0]] });
+
+    await loadApp();
+
+    expect($("tables").querySelectorAll(".tbl")).toHaveLength(2);
+    expect($("tables").textContent).toContain("24 partitions");
+    expect($("tables").textContent).toContain("table_01");
+    expect($("tables").textContent).not.toContain("events_24");
+
+    await click($("tables").querySelector(".partition-toggle"));
+    expect($("tables").querySelectorAll(".tbl")).toHaveLength(26);
+    expect($("tables").querySelector(".partition-list").querySelectorAll(".tbl")).toHaveLength(24);
+    expect($("tables").textContent).toContain("events_24");
+
+    await click([...$("tables").querySelectorAll(".tbl")].find((el) => el.textContent === "events_24"));
+    await click($("tables").querySelector(".partition-toggle"));
+    expect($("tables").querySelectorAll(".tbl")).toHaveLength(2);
+
+    const filter = $("tbl-filter");
+    filter.value = "events_24";
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect($("tables").querySelectorAll(".tbl")).toHaveLength(2);
+    expect($("tables").textContent).toContain("events_24");
+  });
 });

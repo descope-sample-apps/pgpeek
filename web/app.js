@@ -46,6 +46,14 @@ function UserBadge({ user }) {
   return html`<span class="badge" id="current-user" title="Cloudflare Access user">${user.email || "Cloudflare Access"}</span>`;
 }
 
+function formatUptime(seconds) {
+  if (!seconds) return "unknown";
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return [days && `${days}d`, hours && `${hours}h`, minutes && `${minutes}m`].filter(Boolean).join(" ") || "< 1m";
+}
+
 function About({ open, onClose, databases, build }) {
   const dialog = useRef(null);
   useEffect(() => {
@@ -67,7 +75,18 @@ function About({ open, onClose, databases, build }) {
       </dl>
       <h3>Connected databases</h3>
       ${databases.length
-        ? html`<ul>${databases.map(({ id, name }) => html`<li key=${id}><strong>${name}</strong> <span class="context-meta">${id}</span></li>`)}</ul>`
+        ? html`<div class="database-info">${databases.map((database) => html`<section class="database-card" key=${database.id}>
+            <h4>${database.name} <span>${database.id}</span></h4>
+            ${database.error
+              ? html`<p>${database.error}</p>`
+              : html`<dl>
+                  <dt>PostgreSQL</dt><dd>${database.version || "unknown"}</dd>
+                  <dt>Uptime</dt><dd>${formatUptime(database.uptimeSeconds)}</dd>
+                  <dt>Database size</dt><dd>${database.databaseSize || "unknown"}</dd>
+                  <dt>Connections</dt><dd>${database.activeConnections || 0} / ${database.maxConnections || "unknown"}</dd>
+                  <dt>pgpeek pool</dt><dd>${database.poolMaxConnections || "unknown"} max</dd>
+                </dl>`}
+          </section>`)}</div>`
         : html`<p>No databases reported.</p>`}
     </section>
   </dialog>`;
@@ -118,8 +137,9 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!aboutOpen || build.version) return;
-    getJSON("/healthz").then(setBuild).catch(() => {});
+    if (!aboutOpen) return;
+    if (!build.version) getJSON("/healthz").then(setBuild).catch(() => {});
+    getJSON("/api/databases").then((result) => setDatabases(Array.isArray(result.databases) ? result.databases : [])).catch(() => {});
   }, [aboutOpen]);
 
   // Phase 1: fetch /api/databases, resolve active db, restore URL state,

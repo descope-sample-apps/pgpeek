@@ -166,7 +166,7 @@ function deferred() {
 
 describe("sidebar and tabs", () => {
   it("shows build and connected database details in About", async () => {
-    setRoute("GET /api/databases", makeResp({ json: { defaultId: "prod", databases: [{ id: "prod", name: "Production" }] } }));
+    setRoute("GET /api/databases", makeResp({ json: { defaultId: "prod", databases: [{ id: "prod", name: "Production", version: "16.4", uptimeSeconds: 90061, databaseSize: "24 MB", activeConnections: 3, maxConnections: 100, poolMaxConnections: 8 }] } }));
     await loadApp();
 
     await click(document.querySelector(".about-button"));
@@ -174,6 +174,9 @@ describe("sidebar and tabs", () => {
     expect(document.querySelector(".about-card").textContent).toContain("1.2.3");
     expect(document.querySelector(".about-card").textContent).toContain("abc1234");
     expect(document.querySelector(".about-card").textContent).toContain("Production");
+    expect(document.querySelector(".about-card").textContent).toContain("1d 1h 1m");
+    expect(document.querySelector(".about-card").textContent).toContain("3 / 100");
+    expect(document.querySelector(".about-card").textContent).toContain("24 MB");
   });
 
   it("renders initial shell, empty-table copy, and no-table panel hints", async () => {

@@ -194,7 +194,8 @@
   #tables .partition-toggle { flex: none; padding: var(--space-1) var(--space-2); border-color: transparent; background: transparent; color: var(--muted); font-size: 11px; white-space: nowrap; }
   #tables .partition-toggle:hover { background: var(--hover); color: var(--text); }
   #tables .partition-list { max-height: min(35vh, 280px); overflow: auto; }
-  #tables .tbl.partition { padding-left: var(--space-5); color: var(--muted); }
+  #tables .tbl.partition { padding-left: var(--space-5); }
+  #tables .tbl.partition:not(.active) { color: var(--muted); }
 
   /* main */
   main { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }

@@ -166,6 +166,7 @@ describe("large schema rendering", () => {
     const html = readFileSync("web/index.html", "utf8");
 
     expect(html).toMatch(/#tables\s*\{[^}]*overflow:\s*auto/s);
+    expect(html).toMatch(/\.tbl\.partition:not\(\.active\)\s*\{[^}]*color:\s*var\(--muted\)/s);
     expect(html).toMatch(/\.results\s*\{[^}]*overflow:\s*auto/s);
     expect(html).toMatch(/table\s*\{[^}]*min-width:\s*max-content/s);
     expect(html).toMatch(/\.cell-detail\s*>\s*summary/s);

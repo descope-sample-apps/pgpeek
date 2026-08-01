@@ -166,7 +166,10 @@ function deferred() {
 
 describe("sidebar and tabs", () => {
   it("shows build and connected database details in About", async () => {
-    setRoute("GET /api/databases", makeResp({ json: { defaultId: "prod", databases: [{ id: "prod", name: "Production", version: "16.4", uptimeSeconds: 90061, databaseSize: "24 MB", activeConnections: 3, maxConnections: 100, poolMaxConnections: 8 }] } }));
+    setRoute("GET /api/databases", makeResp({ json: { defaultId: "prod", databases: [
+      { id: "prod", name: "Production", version: "16.4", uptimeSeconds: 90061, databaseSize: "24 MB", activeConnections: 3, maxConnections: 100, poolMaxConnections: 8, commits: 90, rollbacks: 10, cacheHitPercent: 90, tempFiles: 2, tempBytes: "8 kB", deadlocks: 1, sessions: 12, extensions: "pg_stat_statements 1.10" },
+      { id: "analytics", name: "Analytics", version: "17.1", uptimeSeconds: 60, databaseSize: "12 MB", activeConnections: 1, maxConnections: 200, poolMaxConnections: 4, extensions: "none" },
+    ] } }));
     await loadApp();
 
     await click(document.querySelector(".about-button"));
@@ -177,6 +180,10 @@ describe("sidebar and tabs", () => {
     expect(document.querySelector(".about-card").textContent).toContain("1d 1h 1m");
     expect(document.querySelector(".about-card").textContent).toContain("3 / 100");
     expect(document.querySelector(".about-card").textContent).toContain("24 MB");
+    expect(document.querySelectorAll(".database-card")[0].open).toBe(true);
+    expect(document.querySelectorAll(".database-card")[1].open).toBe(false);
+    expect(document.querySelector(".about-card").textContent).toContain("90%");
+    expect(document.querySelector(".about-card").textContent).toContain("pg_stat_statements 1.10");
 
     const dialog = document.querySelector(".about");
     Object.defineProperty(dialog, "getBoundingClientRect", { value: () => ({ left: 100, right: 200, top: 100, bottom: 200 }) });

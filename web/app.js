@@ -75,8 +75,8 @@ function About({ open, onClose, databases, build }) {
       </dl>
       <h3>Connected databases</h3>
       ${databases.length
-        ? html`<div class="database-info">${databases.map((database) => html`<section class="database-card" key=${database.id}>
-            <h4>${database.name} <span>${database.id}</span></h4>
+        ? html`<div class="database-info">${databases.map((database, index) => html`<details class="database-card" key=${database.id} open=${databases.length === 1 || index === 0}>
+            <summary>${database.name} <span>${database.id}</span></summary>
             ${database.error
               ? html`<p>${database.error}</p>`
               : html`<dl>
@@ -85,8 +85,14 @@ function About({ open, onClose, databases, build }) {
                   <dt>Database size</dt><dd>${database.databaseSize || "unknown"}</dd>
                   <dt>Connections</dt><dd>${database.activeConnections || 0} / ${database.maxConnections || "unknown"}</dd>
                   <dt>pgpeek pool</dt><dd>${database.poolMaxConnections || "unknown"} max</dd>
+                  <dt>Transactions</dt><dd>${database.commits || 0} committed / ${database.rollbacks || 0} rolled back</dd>
+                  <dt>Cache hit</dt><dd>${database.cacheHitPercent || 0}%</dd>
+                  <dt>Temp spill</dt><dd>${database.tempFiles || 0} files / ${database.tempBytes || "0 bytes"}</dd>
+                  <dt>Deadlocks</dt><dd>${database.deadlocks || 0}</dd>
+                  <dt>Sessions</dt><dd>${database.sessions || 0}</dd>
+                  <dt>Extensions</dt><dd>${database.extensions || "none"}</dd>
                 </dl>`}
-          </section>`)}</div>`
+          </details>`)}</div>`
         : html`<p>No databases reported.</p>`}
     </section>
   </dialog>`;

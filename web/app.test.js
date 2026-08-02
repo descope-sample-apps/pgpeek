@@ -700,13 +700,21 @@ describe("SQL tab textarea mode", () => {
   }
 
   it("runs queries, renders rows, and shows capped warnings", async () => {
-    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 4, truncated: true } }));
+    const domainMap = { "alpha.example.test": "sso-alpha", "a-very-long-synthetic-domain.example.test": "sso-beta" };
+    setRoute("POST /api/query", makeResp({ json: {
+      columns: ["domains_to_sso", "callback_url", "opaque_token", "optional_value"],
+      rows: [[domainMap, "https://synthetic.example.test/callback/with/a/long/path?mode=visual-check", "tok_" + "x".repeat(96), null]],
+      rowCount: 1,
+      elapsedMs: 4,
+      truncated: true,
+    } }));
     await openSql();
     $("sql").value = " select 1 ";
     await click("run-btn");
 
     expect(postBody("/api/query")).toEqual({ sql: "select 1" });
-    expect($("sql-results").textContent).toContain("1");
+    expect($("sql-results").textContent).toContain('"alpha.example.test":"sso-alpha"');
+    expect(Array.from($("sql-results").querySelectorAll("td")).every((cell) => cell.classList.contains("cell"))).toBe(true);
     expect($("status").textContent).toContain("✓ 1 row in 4 ms");
     expect($("status").querySelector(".warn").textContent).toContain("capped");
     expect($("sql-export-btn").disabled).toBe(false);

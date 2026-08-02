@@ -267,7 +267,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
                 : html`<table>
                     <thead><tr>${result.columns.map((c) => html`<th key=${c}>${c}</th>`)}</tr></thead>
                     <tbody>${result.rows.map((row, rowIndex) =>
-                      html`<tr key=${rowIndex}>${row.map((v, i) => html`<td key=${i}>${v === null ? html`<span class="null">NULL</span>` : (typeof v === "object" ? JSON.stringify(v) : String(v))}</td>`)}</tr>`)}</tbody>
+                      html`<tr key=${rowIndex}>${row.map((v, i) => html`<td class="cell" key=${i}>${v === null ? html`<span class="null">NULL</span>` : (typeof v === "object" ? JSON.stringify(v) : String(v))}</td>`)}</tr>`)}</tbody>
                   </table>`))
         : html`<div class="empty">Run a query to see results.</div>`}
     </div>`;

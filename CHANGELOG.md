@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/descope-sample-apps/pgpeek/compare/v0.11.0...v0.11.1) (2026-08-02)
+
+
+### Bug Fixes
+
+* **web:** wrap SQL result cells ([#70](https://github.com/descope-sample-apps/pgpeek/issues/70)) ([cc40671](https://github.com/descope-sample-apps/pgpeek/commit/cc40671deb8e563ac073ce15eeecf0c7a6dc61f1))
+
 ## [0.11.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.10.0...v0.11.0) (2026-08-01)
 
 

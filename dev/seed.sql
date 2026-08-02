@@ -43,6 +43,16 @@ CREATE TABLE IF NOT EXISTS public.audit_events (
   occurred_at timestamptz NOT NULL
 ) PARTITION BY RANGE (occurred_at);
 
+CREATE TABLE IF NOT EXISTS public.visual_edge_cases (
+  id            serial PRIMARY KEY,
+  case_name     text  NOT NULL,
+  long_text     text  NOT NULL,
+  callback_url  text  NOT NULL,
+  payload       jsonb NOT NULL,
+  optional_text text,
+  multiline     text  NOT NULL
+);
+
 DO $$
 DECLARE
   partition_month date;
@@ -94,6 +104,99 @@ SELECT
          'curl/8.4.0'])[1 + (g % 4)],
   now() + (g || ' hours')::interval
 FROM generate_series(1, 25) AS g;
+
+INSERT INTO public.visual_edge_cases (case_name, long_text, callback_url, payload, optional_text, multiline) VALUES
+  (
+    'long-unbroken-token',
+    'tok_' || repeat('0123456789abcdef', 16),
+    'https://synthetic.example.test/callback',
+    '{"kind":"token","safe":true}',
+    'short',
+    'single line'
+  ),
+  (
+    'long-url',
+    'Readable text around a deliberately long URL.',
+    'https://a-very-long-synthetic-subdomain.example.test/oauth/callback/with/many/path/segments?state=made-up-state-value&mode=visual-check&source=local-seed',
+    '{"kind":"url","environment":"local"}',
+    NULL,
+    'single line'
+  ),
+  (
+    'nested-json',
+    'Nested objects and arrays should wrap without escaping their cell.',
+    'https://synthetic.example.test/nested',
+    '{"providers":[{"kind":"saml","id":"provider-alpha"},{"kind":"oidc","id":"provider-beta"}],"settings":{"enforce":true,"labels":["alpha","beta","gamma"],"metadata":{"source":"synthetic-local-seed","revision":3}}}',
+    'nested',
+    'single line'
+  ),
+  (
+    'multiline-text',
+    'Text containing explicit line breaks.',
+    'https://synthetic.example.test/multiline',
+    '{"kind":"multiline"}',
+    'line breaks',
+    E'first line\nsecond line with more detail\nthird line with a final marker'
+  ),
+  (
+    'unicode-and-direction',
+    '日本語の長い表示確認テキスト 한국어 줄바꿈 확인 العربية لاختبار اتجاه النص',
+    'https://synthetic.example.test/unicode',
+    '{"languages":["日本語","한국어","العربية"],"synthetic":true}',
+    'naïve café — Ελληνικά',
+    'Mixed scripts remain readable inside one table cell.'
+  ),
+  (
+    'empty-and-null',
+    '',
+    '',
+    '{}',
+    NULL,
+    ''
+  ),
+  (
+    'large-array',
+    'A JSON array with many compact entries.',
+    'https://synthetic.example.test/array',
+    jsonb_build_object('items', to_jsonb(ARRAY(SELECT 'synthetic-item-' || i FROM generate_series(1, 24) AS i))),
+    'array',
+    'single line'
+  ),
+  (
+    'long-json-key',
+    'A long JSON key and value must both wrap.',
+    'https://synthetic.example.test/json-key',
+    jsonb_build_object(
+      'a_deliberately_long_synthetic_configuration_key_that_contains_no_spaces_and_must_wrap',
+      repeat('synthetic-value-', 20)
+    ),
+    repeat('optional-', 24),
+    'single line'
+  ),
+  (
+    'whitespace-only',
+    E'   \t   ',
+    'https://synthetic.example.test/whitespace',
+    '{"kind":"whitespace","visibleLabel":"intentionally blank-looking cells"}',
+    E'\t',
+    E'   \n\t\n   '
+  ),
+  (
+    'emoji-graphemes',
+    repeat('界', 110) || '👩‍💻' || repeat('界', 110),
+    'https://synthetic.example.test/emoji',
+    '{"emoji":["👩‍💻","👨‍👩‍👧‍👦","🏳️‍🌈"],"synthetic":true}',
+    'accented: Ångström, São Paulo, crème brûlée',
+    'Grapheme clusters should remain intact when wrapping.'
+  ),
+  (
+    'markup-like-text',
+    '<script>alert("synthetic-only")</script> & <strong>not markup</strong>',
+    'https://synthetic.example.test/?query=%3Ctag%3E&quote=%22made-up%22',
+    '{"html":"<img src=x onerror=synthetic>","escaped":true}',
+    'quotes: ''single'' "double" `backtick`',
+    '<div>This must render as text, never as an element.</div>'
+  );
 
 DO $$
 DECLARE

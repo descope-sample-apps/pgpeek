@@ -51,6 +51,12 @@ func TestSeedSupportsWestOfUTCSession(t *testing.T) {
 	if rows != 360 {
 		t.Fatalf("audit event rows = %d, want 360", rows)
 	}
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM public.visual_edge_cases`).Scan(&rows); err != nil {
+		t.Fatalf("count visual edge cases: %v", err)
+	}
+	if rows != 11 {
+		t.Fatalf("visual edge case rows = %d, want 11", rows)
+	}
 	var latest time.Time
 	if err := tx.QueryRow(ctx, `SELECT max(occurred_at) FROM public.audit_events`).Scan(&latest); err != nil {
 		t.Fatalf("latest audit event: %v", err)

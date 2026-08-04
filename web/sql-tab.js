@@ -1,6 +1,7 @@
 // SqlTab — CodeMirror SQL editor with run, export, and saved-query CRUD.
 import { html, useState, useEffect, useRef, useCallback } from "./vendor/preact-htm.js";
 import { dbUrl, getJSON, tablePath } from "./api.js";
+import { interceptRun, runEasterEgg, EXPLAIN_JOKE, LLAMA_DELAY_MS } from "./easter-eggs.js";
 
 const DEFAULT_SQL = "SELECT now();";
 
@@ -18,6 +19,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
   const [selected, setSelected] = useState("");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
+  const [showLlama, setShowLlama] = useState(false);
   const runningRef = useRef(false);
   const actionRef = useRef(0);
   const initialSQLRef = useRef(initialSQL);
@@ -40,6 +42,12 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
     const sql = getSQL();
     if (!sql) return;
     if (runningRef.current) return;
+    // Easter eggs: magic queries, DROP rewrite, VACUUM/ANALYZE whisper.
+    const eg = interceptRun(sql);
+    if (eg) {
+      runEasterEgg(eg, { sql, setLastSQL, setResult, setError, setSQL, setStatus, wrapRef });
+      return;
+    }
     const action = actionRef.current + 1;
     actionRef.current = action;
     runningRef.current = true; setRunning(true);
@@ -79,6 +87,14 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
   const runRef = useRef(run);
   useEffect(() => { runRef.current = run; }, [run]);
   useEffect(invalidate, [dbId]);
+
+  // Easter egg: only show the loading llama once a query has been running for
+  // LLAMA_DELAY_MS, so quick queries never make it flicker in and out.
+  useEffect(() => {
+    if (!running) { setShowLlama(false); return; }
+    const timer = setTimeout(() => setShowLlama(true), LLAMA_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [running]);
 
   // Init CodeMirror once into a Preact-stable wrapper it fully owns.
   useEffect(() => {
@@ -241,7 +257,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
   return html`
     <div class="editor-wrap" ref=${wrapRef}></div>
     <div class="toolbar">
-      <button class="primary" id="run-btn" disabled=${running} onClick=${run}>Run ▶</button>
+      <button class="primary" id="run-btn" disabled=${running} onClick=${run}>Run ▶${showLlama ? html`<span class="egg-llama" aria-hidden="true">🦙</span>` : null}</button>
       <button class="ghost" id="sql-export-btn"
         disabled=${running || !result || result.rowCount === 0}
         onClick=${exportCSV}>Export CSV</button>
@@ -255,7 +271,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
       <button class="ghost" id="save-btn" onClick=${onSave}>Save</button>
       <button class="ghost" id="delete-btn"
         disabled=${!(selectedQ && !selectedQ.isPreset)} onClick=${onDelete}>Delete</button>
-      <span class="hint">Ctrl/Cmd\u00a0+\u00a0Enter to run · single SELECT/WITH only</span>
+      <span class="hint">Ctrl/Cmd\u00a0+\u00a0Enter to run · single SELECT/WITH only · ${EXPLAIN_JOKE}</span>
     </div>
     ${error ? html`<div class="query-error" role="alert" aria-live="assertive">${error}</div>` : ""}
     <div class="results" id="sql-results">

@@ -369,7 +369,7 @@ describe("data tab", () => {
 
     document.body.innerHTML = '<div id="app"></div>';
     await selectTable(0, dataResp({ columns: ["id"], rows: [], rowCount: 0 }));
-    expect($("data-results").textContent).toContain("0 rows.");
+    expect($("data-results").textContent).toContain("Zero rows");
     expect($("page-info").textContent).toBe("0–0");
   });
 
@@ -1296,5 +1296,63 @@ describe("export CSV button styling", () => {
     const href = new URL($("data-export-btn").href);
     expect(href.pathname).toBe("/api/tables/public/users/data");
     expect(href.searchParams.get("format")).toBe("csv");
+  });
+});
+
+describe("easter eggs", () => {
+  it("flashes a konami banner when the code is entered", async () => {
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    await loadApp();
+    expect(document.querySelector(".egg-banner")).toBeNull();
+    const seq = ["ArrowUp", "ArrowUp", "ArrowDown", "ArrowDown",
+      "ArrowLeft", "ArrowRight", "ArrowLeft", "ArrowRight", "b", "a"];
+    // Dispatch from the focused table button, as a browser would — not on
+    // `window`, which would mask propagation bugs.
+    const focused = $("tables").querySelector(".tbl");
+    for (const key of seq) {
+      focused.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+    }
+    await flush();
+    const banner = document.querySelector(".egg-banner");
+    expect(banner).not.toBeNull();
+    expect(banner.textContent).toContain("ROOT ACCESS");
+    expect(banner.textContent).toContain("read-only");
+    // Click (or the CSS fade's animationend) dismisses the banner.
+    await click(banner);
+    expect(document.querySelector(".egg-banner")).toBeNull();
+  });
+
+  it("reveals the hidden shuni schema after typing iloveshuni", async () => {
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/data", rowsResp(1));
+    await loadApp();
+    expect(document.querySelector(".egg-tbl")).toBeNull();
+    for (const key of "iloveshuni") await keydown(document.body, key);
+    const egg = document.querySelector(".egg-tbl");
+    expect(egg).not.toBeNull();
+    expect(egg.textContent).toBe("belly_rubs");
+    expect([...document.querySelectorAll(".tbl")]).toHaveLength(4); // egg-tbl excluded from .tbl
+
+    // The relation is fictional: it must render from local data, never the API.
+    const dataCallsBefore = callsTo("/data").length;
+    const fkCallsBefore = callsTo("/fks").length;
+    await click(egg);
+    expect($("tab-title").textContent).toContain("belly_rubs");
+    expect($("table-context").textContent).toContain("shuni");
+    expect(callsTo("/data")).toHaveLength(dataCallsBefore);
+    expect(callsTo("/fks")).toHaveLength(fkCallsBefore);
+    expect($("status").textContent).toContain("good girl");
+    expect($("data-results").textContent).toContain("Shuni");
+    expect($("data-results").textContent).toContain("fetched_prs");
+    expect($("data-search").disabled).toBe(true);
+    expect($("data-export-btn")).toBeNull();
+    expect($("data-results").querySelector("th").classList.contains("sortable")).toBe(false);
+    expect($("data-results").querySelector(".f-op").disabled).toBe(true);
+    expect($("data-results").querySelector(".f-val").disabled).toBe(true);
+
+    // Structure is served locally too.
+    await click("tab-structure");
+    expect($("structure-results").textContent).toContain("good_girl_rating");
+    expect($("status").textContent).toContain("good girl");
   });
 });

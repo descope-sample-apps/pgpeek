@@ -10,6 +10,10 @@ import { StructureTab } from "./structure-tab.js";
 import { SqlTab } from "./sql-tab.js";
 import { getJSON, tableKey } from "./api.js";
 import { readUrlState, pushUrlState, replaceUrlState } from "./url-state.js";
+import {
+  installKonamiCode, installShuniCode, KONAMI_BANNER, KONAMI_TOAST,
+  readTableClicks, bumpTableClicks, footerText,
+} from "./easter-eggs.js";
 
 const PAGE_SIZE = 100;
 
@@ -119,6 +123,10 @@ function App() {
   const [aboutOpen, setAboutOpen]     = useState(false);
   const [build, setBuild]             = useState({});
   const [status, setStatus]           = useState({ text: "Ready.", cls: "ok" });
+  const [eggBanner, setEggBanner]     = useState(false);
+  const [showShuni, setShowShuni]     = useState(false);
+  const [clicks, setClicks]           = useState(() => readTableClicks());
+  const dismissEgg = useCallback(() => setEggBanner(false), []);
   // Refs so popstate handler always sees the latest values.
   const urlStateRef = useRef({});
   const dbRef       = useRef(null);
@@ -143,6 +151,19 @@ function App() {
       .catch(() => {});
     return () => { live = false; };
   }, []);
+
+  // Easter egg: Konami code → flash a "root access" banner, then a read-only wink.
+  // The banner self-dismisses via the CSS egg-fade animation's onAnimationEnd.
+  useEffect(() => installKonamiCode(() => setEggBanner(true)), []);
+  useEffect(() => installShuniCode(() => setShowShuni(true)), []);
+
+  // Fallback dismissal: onAnimationEnd is the usual path, but if animations are
+  // disabled the banner would otherwise never go away.
+  useEffect(() => {
+    if (!eggBanner) return;
+    const timer = setTimeout(dismissEgg, 4500);
+    return () => clearTimeout(timer);
+  }, [eggBanner, dismissEgg]);
 
   useEffect(() => {
     if (!aboutOpen) return;
@@ -258,6 +279,7 @@ function App() {
   }, [currentDb, dbsLoaded]);
 
   const open = (t, initFilters) => {
+    setClicks(bumpTableClicks());
     const s = {
       ...urlStateRef.current, tab: null,
       schema: t.schema, table: t.name,
@@ -302,6 +324,12 @@ function App() {
 
   return html`
     <a class="skip-link" href="#main">Skip to data browser</a>
+    ${eggBanner ? html`<div class="egg-banner" role="status" aria-live="polite"
+      title="Click to dismiss"
+      onClick=${dismissEgg} onAnimationEnd=${dismissEgg}>
+      <span class="egg-flash">${KONAMI_BANNER}</span>
+      <span class="egg-toast">${KONAMI_TOAST}</span>
+    </div>` : null}
     <header>
       <h1>pgpeek</h1><span class="badge">read-only</span>
       <${UserBadge} user=${user} />
@@ -311,7 +339,7 @@ function App() {
     </header>
     <div class="body">
       <${Sidebar} key=${currentDb} tables=${tables} loaded=${tablesLoaded}
-        current=${current} onSelect=${(t) => open(t)} />
+        current=${current} onSelect=${(t) => open(t)} showShuni=${showShuni} />
       <main id="main">
         <${Tabs} tab=${tab} setTab=${setTab} title=${title} />
         <${TableContext} table=${current} />
@@ -343,6 +371,7 @@ function App() {
         </section>
       </main>
     </div>
+    <footer class="egg-footer">${footerText(clicks)}</footer>
     <${About} open=${aboutOpen} onClose=${() => setAboutOpen(false)} databases=${databases} build=${build} />`;
 }
 

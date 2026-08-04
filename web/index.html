@@ -301,6 +301,32 @@
   .database-card[open] summary { margin-bottom: var(--space-3); }
   .database-card summary span { color: var(--muted); font-size: 12px; font-weight: 400; }
   .database-card dl { margin: 0; }
+  /* ---- easter eggs ---- */
+  /* opacity:1 is the base state so the banner is still visible if animations are
+     disabled; egg-fade only handles the fade in/out on top of that. */
+  .egg-banner { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); z-index: 50; cursor: pointer; opacity: 1; animation: egg-fade 4s ease forwards; }
+  .egg-banner .egg-flash { font-size: 28px; font-weight: 800; letter-spacing: .04em; color: var(--ok); text-shadow: 0 0 24px color-mix(in srgb, var(--ok) 60%, transparent); }
+  .egg-banner .egg-toast { font-size: 15px; color: var(--muted); background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-2); padding: var(--space-2) var(--space-4); }
+  @keyframes egg-fade { 0% { opacity: 0; } 8% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+  .egg-shake { animation: egg-shake 0.45s cubic-bezier(.36,.07,.19,.97); }
+  @keyframes egg-shake { 10%,90% { transform: translateX(-1px); } 20%,80% { transform: translateX(2px); } 30%,50%,70% { transform: translateX(-4px); } 40%,60% { transform: translateX(4px); } }
+  .egg-ghost::after { content: "👻"; position: absolute; top: 50%; left: -10%; font-size: 28px; pointer-events: none; animation: egg-drift 2s ease-in-out forwards; z-index: 5; }
+  @keyframes egg-drift { 0% { left: -10%; opacity: 0; } 20% { opacity: 1; } 80% { opacity: 1; } 100% { left: 110%; opacity: 0; } }
+  .editor-wrap { position: relative; }
+  /* Slides in horizontally (max-width, so the button doesn't pop wider), then walks. */
+  .egg-llama { display: inline-block; overflow: hidden; vertical-align: middle; white-space: nowrap;
+    animation: egg-llama-in 240ms cubic-bezier(.2,.9,.25,1) both, egg-walk .8s linear 240ms infinite; }
+  @keyframes egg-llama-in { from { opacity: 0; max-width: 0; margin-left: 0; } to { opacity: 1; max-width: 2em; margin-left: 6px; } }
+  @keyframes egg-walk { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+  @media (prefers-reduced-motion: reduce) {
+    .egg-llama { animation: egg-llama-in 1ms both; }
+  }
+  .egg-footer { padding: var(--space-1) var(--space-4); border-top: 1px solid var(--border); background: var(--panel); color: var(--muted); font-size: 11px; text-align: right; min-height: 24px; }
+  .egg-schema { padding: var(--space-3) var(--space-2) var(--space-1); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); opacity: .8; }
+  .egg-tbl { display: block; width: 100%; text-align: left; border: 1px solid transparent; background: transparent; color: var(--muted); padding: var(--space-2) var(--space-3); cursor: pointer; font: inherit; font-style: italic; border-radius: var(--radius-1); transition: background-color 180ms ease, color 180ms ease; }
+  .egg-tbl:hover { background: var(--hover); color: var(--text); }
+  .egg-creature { padding: 24px 16px; color: var(--muted); line-height: 1.6; }
+
   @media (max-width: 760px) {
     body { height: auto; min-height: 100vh; overflow-x: hidden; }
     header { flex-wrap: wrap; }

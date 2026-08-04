@@ -1,8 +1,9 @@
 // Sidebar (table list) and Tabs bar components.
 import { html, useEffect, useRef, useState } from "./vendor/preact-htm.js";
 import { tableKey } from "./api.js";
+import { SHUNI_SCHEMA, SHUNI_VIEW, SHUNI_COLUMNS } from "./easter-eggs.js";
 
-export function Sidebar({ tables, loaded, current, onSelect }) {
+export function Sidebar({ tables, loaded, current, onSelect, showShuni }) {
   const [filter, setFilter] = useState("");
   const [expanded, setExpanded] = useState({});
   const listRef = useRef();
@@ -92,7 +93,15 @@ export function Sidebar({ tables, loaded, current, onSelect }) {
         ? items
         : html`<div class="empty">${tables.length
             ? "No tables match."
-            : (loaded ? "No tables." : "Loading tables…")}</div>`}</div>
+            : (loaded ? "No tables." : "Loading tables…")}</div>`}
+        ${showShuni && tables.length > 0 && !f
+          ? html`<div class="egg-schema" key="egg-schema">${SHUNI_SCHEMA}</div>
+            <button class="egg-tbl" key="egg-tbl" type="button"
+              title=${SHUNI_SCHEMA + "." + SHUNI_VIEW.name + " · " + SHUNI_COLUMNS.join(", ")}
+              onClick=${() => onSelect({ schema: SHUNI_SCHEMA, name: SHUNI_VIEW.name, type: SHUNI_VIEW.type, estRows: SHUNI_VIEW.estRows })}>
+              ${SHUNI_VIEW.name}
+            </button>`
+          : null}</div>
     </aside>`;
 }
 

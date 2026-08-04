@@ -3,6 +3,7 @@
 // changes so App can replaceState in the browser history.
 import { html, useState, useEffect, useCallback } from "./vendor/preact-htm.js";
 import { getJSON, tablePath, tableKey, appendDataParams, dbUrl } from "./api.js";
+import { emptyCreatureText, shuniData, isShuniRelation, SHUNI_STATUS } from "./easter-eggs.js";
 
 // Allowlisted filter operators.
 const OPS = [
@@ -108,6 +109,7 @@ export function DataTab({
   const [sort, setSort] = useState(initialSort || null);
   const [data, setData] = useState(null);
   const [fks, setFks] = useState({});
+  const shuni = isShuniRelation(table);
 
   // Notify App of URL-trackable state so it can replaceState.
   const notify = useCallback((upd) => {
@@ -115,6 +117,7 @@ export function DataTab({
   }, [onStateChange]);
 
   useEffect(() => {
+    if (isShuniRelation(table)) return;
     let live = true;
     (async () => {
       try {
@@ -129,8 +132,15 @@ export function DataTab({
   }, [table, dbId]);
 
   useEffect(() => {
-    let live = true;
     setStatus({ text: "Loading " + tableKey(table) + "…", cls: "ok" });
+    // Easter egg: the shuni view is fictional — serve it locally, no API call.
+    const egg = shuniData(table);
+    if (egg) {
+      setData(egg);
+      setStatus({ text: SHUNI_STATUS, cls: "ok" });
+      return;
+    }
+    let live = true;
     const p = new URLSearchParams();
     p.set("limit", pageSize);
     p.set("offset", offset);
@@ -183,20 +193,20 @@ export function DataTab({
     grid = html`
       <table>
         <thead>
-          <tr>${data.columns.map((c) => html`<th class="sortable" key=${c} title=${c} tabindex="0"
+          <tr>${data.columns.map((c) => html`<th class=${shuni ? "" : "sortable"} key=${c} title=${c} tabindex=${shuni ? undefined : "0"}
             aria-sort=${sort && sort.col === c ? (sort.dir === "desc" ? "descending" : "ascending") : "none"}
-            onClick=${() => toggleSort(c)} onKeyDown=${(e) => {
+            onClick=${shuni ? undefined : () => toggleSort(c)} onKeyDown=${shuni ? undefined : (e) => {
               if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleSort(c); }
             }}>
             ${c}${sort && sort.col === c ? (sort.dir === "desc" ? " ▼" : " ▲") : ""}</th>`)}</tr>
           <tr class="filter-row">${data.columns.map((c) => {
             const d = filterFor(draft, c);
             return html`<td key=${c}>
-              <select class="f-op" data-col=${c} aria-label=${"Filter operator for " + c} value=${d.op || ""} onChange=${(e) => {
+              <select class="f-op" data-col=${c} aria-label=${"Filter operator for " + c} disabled=${shuni} value=${d.op || ""} onChange=${(e) => {
                 const next = setFilterValue(draft, c, { op: e.target.value, value: d.value || "" });
                 setDraft(next); applyDraft(next);
               }}>${OPS.map(([k, label]) => html`<option value=${k}>${label}</option>`)}</select>
-              <input class="f-val" data-col=${c} aria-label=${"Filter value for " + c} placeholder="filter…" value=${d.value || ""}
+              <input class="f-val" data-col=${c} aria-label=${"Filter value for " + c} placeholder="filter…" disabled=${shuni} value=${d.value || ""}
                 onInput=${(e) => setDraft(setFilterValue(draft, c, { op: d.op || "", value: e.target.value }))}
                 onKeyDown=${(e) => {
                   if (e.key === "Enter") applyDraft(setFilterValue(draft, c, { op: d.op || "", value: e.target.value }));
@@ -206,7 +216,7 @@ export function DataTab({
         </thead>
         <tbody><${BodyRows} rows=${data.rows} columns=${data.columns} fkByCol=${fkByCol} termsByCol=${termsByCol} onNavigate=${onNavigate} /></tbody>
       </table>
-      ${data.rows.length ? "" : html`<div class="empty">0 rows.</div>`}`;
+      ${data.rows.length ? "" : html`<div class="empty egg-creature">${emptyCreatureText(table.name)}</div>`}`;
   }
 
   const rowCount = data && data.rowCount ? data.rowCount : 0;
@@ -224,13 +234,13 @@ export function DataTab({
 
   return html`
     <div class="toolbar">
-      <input id="data-search" type="search" placeholder="Search all columns…" autocomplete="off"
+      <input id="data-search" type="search" placeholder="Search all columns…" autocomplete="off" disabled=${shuni}
         value=${searchBox} onInput=${(e) => setSearchBox(e.target.value)}
         onKeyDown=${(e) => {
           if (e.key === "Enter") doSearch(searchBox.trim());
           else if (e.key === "Escape") doSearch("");
         }} />
-      <button class="ghost" id="data-clear" onClick=${() => {
+      <button class="ghost" id="data-clear" disabled=${shuni} onClick=${() => {
         setSearch(""); setSearchBox(""); setFilters([]); setDraft([]); setSort(null); setOffset(0);
         notify({ schema: table.schema, table: table.name, offset: 0, search: "", sort: null, filters: [] });
       }}>Clear</button>
@@ -240,8 +250,8 @@ export function DataTab({
       <button class="ghost" id="next-btn" disabled=${rowCount < pageSize}
         onClick=${() => goOffset(offset + pageSize)}>Next ▶</button>
       <span class="page-info" id="page-info">${from}–${offset + rowCount}</span>
-      <a class="action secondary" id="data-export-btn" role="button"
-        href=${exportURL()} download=${table.name + ".csv"}>Export CSV</a>
+      ${shuni ? null : html`<a class="action secondary" id="data-export-btn" role="button"
+        href=${exportURL()} download=${table.name + ".csv"}>Export CSV</a>`}
     </div>
     <div class="results" id="data-results">${grid}</div>`;
 }

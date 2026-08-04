@@ -3,6 +3,7 @@
 // changes so App can replaceState in the browser history.
 import { html, useState, useEffect, useCallback } from "./vendor/preact-htm.js";
 import { getJSON, tablePath, tableKey, appendDataParams, dbUrl } from "./api.js";
+import { emptyCreatureText, shuniData, isShuniRelation, SHUNI_STATUS } from "./easter-eggs.js";
 
 // Allowlisted filter operators.
 const OPS = [
@@ -115,6 +116,7 @@ export function DataTab({
   }, [onStateChange]);
 
   useEffect(() => {
+    if (isShuniRelation(table)) return;
     let live = true;
     (async () => {
       try {
@@ -129,8 +131,15 @@ export function DataTab({
   }, [table, dbId]);
 
   useEffect(() => {
-    let live = true;
     setStatus({ text: "Loading " + tableKey(table) + "…", cls: "ok" });
+    // Easter egg: the shuni view is fictional — serve it locally, no API call.
+    const egg = shuniData(table);
+    if (egg) {
+      setData(egg);
+      setStatus({ text: SHUNI_STATUS, cls: "ok" });
+      return;
+    }
+    let live = true;
     const p = new URLSearchParams();
     p.set("limit", pageSize);
     p.set("offset", offset);
@@ -206,7 +215,7 @@ export function DataTab({
         </thead>
         <tbody><${BodyRows} rows=${data.rows} columns=${data.columns} fkByCol=${fkByCol} termsByCol=${termsByCol} onNavigate=${onNavigate} /></tbody>
       </table>
-      ${data.rows.length ? "" : html`<div class="empty">0 rows.</div>`}`;
+      ${data.rows.length ? "" : html`<div class="empty egg-creature">${emptyCreatureText(table.name)}</div>`}`;
   }
 
   const rowCount = data && data.rowCount ? data.rowCount : 0;

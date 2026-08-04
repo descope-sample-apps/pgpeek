@@ -4,6 +4,7 @@ import {
   flush, makeResp, TWO_DBS, NO_DBS,
   makeInstallFetch, $, click, changeSelect, loadApp, urlOf,
 } from "./test-helpers.js";
+import { LLAMA_DELAY_MS } from "./easter-eggs.js";
 
 let routes;
 function setRoute(key, resp) { routes[key] = resp; }
@@ -375,5 +376,68 @@ describe("SQL tab null and object cell rendering", () => {
     expect($("sql-results").querySelector(".null")).toBeTruthy();
     expect($("sql-results").textContent).toContain("NULL");
     expect($("sql-results").textContent).toContain('{"x":1}');
+  });
+});
+
+describe("SQL tab easter eggs", () => {
+  function queryCalls() {
+    return fetch.mock.calls.filter(([u, opts]) => String(u).includes("/api/query") && opts?.method === "POST");
+  }
+
+  it("intercepts magic queries without hitting the API", async () => {
+    await loadApp();
+    await click("tab-sql");
+    $("sql").value = "select * from magic";
+    await click("run-btn");
+    expect($("sql-results").textContent).toContain("pgpeek");
+    expect($("sql-results").textContent).toContain("browse safely");
+    expect(queryCalls()).toHaveLength(0);
+  });
+
+  it("rewrites DROP TABLE to a polite SELECT", async () => {
+    await loadApp();
+    await click("tab-sql");
+    $("sql").value = "drop table users";
+    await click("run-btn");
+    expect($("sql").value).toBe("SELECT * FROM users;");
+    expect(document.querySelector(".query-error").textContent).toContain("read-only");
+    expect(queryCalls()).toHaveLength(0);
+  });
+
+  it("never shows the loading llama for a fast query", async () => {
+    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
+    await loadApp();
+    await click("tab-sql");
+    $("sql").value = "select 1";
+    await click("run-btn");
+    // Resolved well inside the 200ms hold — the llama must never have mounted.
+    expect(document.querySelector(".egg-llama")).toBeFalsy();
+    expect($("sql-results").textContent).toContain("1");
+  });
+
+  it("slides the loading llama in once a query outlasts the delay", async () => {
+    let resolveQuery;
+    setRoute("POST /api/query", () => new Promise((resolve) => { resolveQuery = resolve; }));
+    await loadApp();
+    await click("tab-sql");
+    $("sql").value = "select pg_sleep(1)";
+    await click("run-btn");
+
+    await new Promise((r) => setTimeout(r, LLAMA_DELAY_MS + 120));
+    await flush();
+    expect(document.querySelector(".egg-llama")).toBeTruthy();
+
+    resolveQuery(makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
+    await flush();
+    expect(document.querySelector(".egg-llama")).toBeFalsy();
+  });
+
+  it("whispers for VACUUM without sending it", async () => {
+    await loadApp();
+    await click("tab-sql");
+    $("sql").value = "vacuum";
+    await click("run-btn");
+    expect(document.querySelector(".query-error").textContent).toContain("👻");
+    expect(queryCalls()).toHaveLength(0);
   });
 });

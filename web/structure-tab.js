@@ -1,12 +1,20 @@
 // StructureTab — column metadata for the selected table.
 import { html, useState, useEffect } from "./vendor/preact-htm.js";
 import { getJSON, tablePath } from "./api.js";
+import { shuniColumns, SHUNI_STATUS } from "./easter-eggs.js";
 
 export function StructureTab({ table, dbId, setStatus }) {
   const [cols, setCols] = useState(null);
   useEffect(() => {
-    let live = true;
     setStatus({ text: "Loading structure for " + table.schema + "." + table.name + "…", cls: "ok" });
+    // Easter egg: the shuni view is fictional — serve its columns locally.
+    const egg = shuniColumns(table);
+    if (egg) {
+      setCols(egg);
+      setStatus({ text: SHUNI_STATUS, cls: "ok" });
+      return;
+    }
+    let live = true;
     (async () => {
       try {
         const c = await getJSON(tablePath(table) + "/columns", dbId);

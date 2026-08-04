@@ -193,20 +193,20 @@ export function DataTab({
     grid = html`
       <table>
         <thead>
-          <tr>${data.columns.map((c) => html`<th class="sortable" key=${c} title=${c} tabindex="0"
+          <tr>${data.columns.map((c) => html`<th class=${shuni ? "" : "sortable"} key=${c} title=${c} tabindex=${shuni ? undefined : "0"}
             aria-sort=${sort && sort.col === c ? (sort.dir === "desc" ? "descending" : "ascending") : "none"}
-            onClick=${() => toggleSort(c)} onKeyDown=${(e) => {
+            onClick=${shuni ? undefined : () => toggleSort(c)} onKeyDown=${shuni ? undefined : (e) => {
               if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleSort(c); }
             }}>
             ${c}${sort && sort.col === c ? (sort.dir === "desc" ? " ▼" : " ▲") : ""}</th>`)}</tr>
           <tr class="filter-row">${data.columns.map((c) => {
             const d = filterFor(draft, c);
             return html`<td key=${c}>
-              <select class="f-op" data-col=${c} aria-label=${"Filter operator for " + c} value=${d.op || ""} onChange=${(e) => {
+              <select class="f-op" data-col=${c} aria-label=${"Filter operator for " + c} disabled=${shuni} value=${d.op || ""} onChange=${(e) => {
                 const next = setFilterValue(draft, c, { op: e.target.value, value: d.value || "" });
                 setDraft(next); applyDraft(next);
               }}>${OPS.map(([k, label]) => html`<option value=${k}>${label}</option>`)}</select>
-              <input class="f-val" data-col=${c} aria-label=${"Filter value for " + c} placeholder="filter…" value=${d.value || ""}
+              <input class="f-val" data-col=${c} aria-label=${"Filter value for " + c} placeholder="filter…" disabled=${shuni} value=${d.value || ""}
                 onInput=${(e) => setDraft(setFilterValue(draft, c, { op: d.op || "", value: e.target.value }))}
                 onKeyDown=${(e) => {
                   if (e.key === "Enter") applyDraft(setFilterValue(draft, c, { op: d.op || "", value: e.target.value }));

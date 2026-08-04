@@ -1346,6 +1346,9 @@ describe("easter eggs", () => {
     expect($("data-results").textContent).toContain("fetched_prs");
     expect($("data-search").disabled).toBe(true);
     expect($("data-export-btn")).toBeNull();
+    expect($("data-results").querySelector("th").classList.contains("sortable")).toBe(false);
+    expect($("data-results").querySelector(".f-op").disabled).toBe(true);
+    expect($("data-results").querySelector(".f-val").disabled).toBe(true);
 
     // Structure is served locally too.
     await click("tab-structure");

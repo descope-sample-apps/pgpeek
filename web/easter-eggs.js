@@ -79,7 +79,7 @@ export function interceptMagicQuery(sql) {
 
 // ── Dangerous / no-op SQL detection ─────────────────────────
 const DROP_RE = /^\s*DROP\s+(TABLE|DATABASE|SCHEMA|INDEX|VIEW|MATERIALIZED\s+VIEW)\b/i;
-const VACUUM_RE = /\bVACUUM\b/i;
+const VACUUM_RE = /^\s*VACUUM\b/i;
 const ANALYZE_RE = /^\s*ANALYZE\b/i;
 const EXPLAIN_RE = /^\s*EXPLAIN\b/i;
 
@@ -121,7 +121,8 @@ export function interceptRun(sql) {
 // carries a single `if (eg)` branch.
 export function runEasterEgg(eg, ctx) {
   if (eg.type === "magic") {
-    ctx.setLastSQL(ctx.sql);
+    ctx.setLastSQL("");
+    ctx.setError("");
     ctx.setResult(eg.result);
     const n = eg.result.rowCount;
     ctx.setStatus({ text: "✓ " + n + " row" + (n === 1 ? "" : "s") + " in 0 ms ✨", cls: "ok" });
@@ -181,12 +182,12 @@ export function emptyCreatureText(seed) {
 const CLICK_KEY = "pgpeek-table-clicks";
 
 export function readTableClicks() {
-  try { return parseInt(localStorage.getItem(CLICK_KEY) || "0", 10) || 0; } catch { return 0; }
+  try { return parseInt(sessionStorage.getItem(CLICK_KEY) || "0", 10) || 0; } catch { return 0; }
 }
 
 export function bumpTableClicks() {
   const n = readTableClicks() + 1;
-  try { localStorage.setItem(CLICK_KEY, String(n)); } catch { /* best-effort */ }
+  try { sessionStorage.setItem(CLICK_KEY, String(n)); } catch { /* best-effort */ }
   return n;
 }
 

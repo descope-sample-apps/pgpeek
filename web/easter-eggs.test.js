@@ -4,13 +4,14 @@ import {
   installKonamiCode, KONAMI_BANNER, KONAMI_TOAST,
   interceptMagicQuery, interceptRun, runEasterEgg,
   detectDangerousSQL, rewriteDropToSelect,
-  pickCreature, emptyCreatureText,
+  emptyCreatureText,
   readTableClicks, bumpTableClicks, footerText,
   SHUNI_SCHEMA, SHUNI_VIEW, SHUNI_COLUMNS, EXPLAIN_JOKE,
 } from "./easter-eggs.js";
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
 });
 
 describe("konami code", () => {
@@ -117,6 +118,10 @@ describe("detectDangerousSQL", () => {
     expect(detectDangerousSQL("vacuum")).toBe("vacuum");
     expect(detectDangerousSQL("VACUUM ANALYZE")).toBe("vacuum");
   });
+  it("does not intercept VACUUM inside a SELECT", () => {
+    expect(detectDangerousSQL("SELECT 'vacuum'")).toBeNull();
+    expect(detectDangerousSQL("SELECT vacuum FROM metrics")).toBeNull();
+  });
   it("flags standalone ANALYZE but not EXPLAIN ANALYZE", () => {
     expect(detectDangerousSQL("analyze users")).toBe("analyze");
     expect(detectDangerousSQL("explain analyze select 1")).toBeNull();
@@ -174,6 +179,8 @@ describe("runEasterEgg", () => {
     const c = ctx();
     runEasterEgg(interceptRun("select * from magic"), c);
     expect(c.setResult).toHaveBeenCalled();
+    expect(c.setLastSQL).toHaveBeenCalledWith("");
+    expect(c.setError).toHaveBeenCalledWith("");
     expect(c.setStatus.mock.calls[0][0].cls).toBe("ok");
   });
   it("rewrites SQL and errors for drop eggs", () => {

@@ -1344,6 +1344,8 @@ describe("easter eggs", () => {
     expect($("status").textContent).toContain("good girl");
     expect($("data-results").textContent).toContain("Shuni");
     expect($("data-results").textContent).toContain("fetched_prs");
+    expect($("data-search").disabled).toBe(true);
+    expect($("data-export-btn")).toBeNull();
 
     // Structure is served locally too.
     await click("tab-structure");

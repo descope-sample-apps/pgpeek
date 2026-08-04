@@ -109,6 +109,7 @@ export function DataTab({
   const [sort, setSort] = useState(initialSort || null);
   const [data, setData] = useState(null);
   const [fks, setFks] = useState({});
+  const shuni = isShuniRelation(table);
 
   // Notify App of URL-trackable state so it can replaceState.
   const notify = useCallback((upd) => {
@@ -233,13 +234,13 @@ export function DataTab({
 
   return html`
     <div class="toolbar">
-      <input id="data-search" type="search" placeholder="Search all columns…" autocomplete="off"
+      <input id="data-search" type="search" placeholder="Search all columns…" autocomplete="off" disabled=${shuni}
         value=${searchBox} onInput=${(e) => setSearchBox(e.target.value)}
         onKeyDown=${(e) => {
           if (e.key === "Enter") doSearch(searchBox.trim());
           else if (e.key === "Escape") doSearch("");
         }} />
-      <button class="ghost" id="data-clear" onClick=${() => {
+      <button class="ghost" id="data-clear" disabled=${shuni} onClick=${() => {
         setSearch(""); setSearchBox(""); setFilters([]); setDraft([]); setSort(null); setOffset(0);
         notify({ schema: table.schema, table: table.name, offset: 0, search: "", sort: null, filters: [] });
       }}>Clear</button>
@@ -249,8 +250,8 @@ export function DataTab({
       <button class="ghost" id="next-btn" disabled=${rowCount < pageSize}
         onClick=${() => goOffset(offset + pageSize)}>Next ▶</button>
       <span class="page-info" id="page-info">${from}–${offset + rowCount}</span>
-      <a class="action secondary" id="data-export-btn" role="button"
-        href=${exportURL()} download=${table.name + ".csv"}>Export CSV</a>
+      ${shuni ? null : html`<a class="action secondary" id="data-export-btn" role="button"
+        href=${exportURL()} download=${table.name + ".csv"}>Export CSV</a>`}
     </div>
     <div class="results" id="data-results">${grid}</div>`;
 }

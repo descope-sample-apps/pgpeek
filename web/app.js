@@ -154,7 +154,7 @@ function App() {
 
   // Easter egg: Konami code → flash a "root access" banner, then a read-only wink.
   // The banner self-dismisses via the CSS egg-fade animation's onAnimationEnd.
-  useEffect(() => { installKonamiCode(() => setEggBanner(true)); }, []);
+  useEffect(() => installKonamiCode(() => setEggBanner(true)), []);
   useEffect(() => installShuniCode(() => setShowShuni(true)), []);
 
   // Fallback dismissal: onAnimationEnd is the usual path, but if animations are

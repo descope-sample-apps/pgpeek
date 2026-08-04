@@ -79,7 +79,7 @@ export function interceptMagicQuery(sql) {
 
 // ── Dangerous / no-op SQL detection ─────────────────────────
 const DROP_RE = /^\s*DROP\s+(TABLE|DATABASE|SCHEMA|INDEX|VIEW|MATERIALIZED\s+VIEW)\b/i;
-const VACUUM_RE = /^\s*VACUUM\b/i;
+const VACUUM_RE = /^(?:\s|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)*VACUUM\b/i;
 const ANALYZE_RE = /^\s*ANALYZE\b/i;
 const EXPLAIN_RE = /^\s*EXPLAIN\b/i;
 
@@ -178,7 +178,7 @@ export function emptyCreatureText(seed) {
   return c.emoji + "  " + c.quip;
 }
 
-// ── Footer table-click counter (localStorage) ───────────────
+// ── Footer table-click counter (sessionStorage) ─────────────
 const CLICK_KEY = "pgpeek-table-clicks";
 
 export function readTableClicks() {

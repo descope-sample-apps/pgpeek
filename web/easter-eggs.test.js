@@ -122,6 +122,10 @@ describe("detectDangerousSQL", () => {
     expect(detectDangerousSQL("SELECT 'vacuum'")).toBeNull();
     expect(detectDangerousSQL("SELECT vacuum FROM metrics")).toBeNull();
   });
+  it("detects VACUUM after leading SQL comments", () => {
+    expect(detectDangerousSQL("-- maintenance note\nVACUUM")).toBe("vacuum");
+    expect(detectDangerousSQL("/* maintenance note */ VACUUM")).toBe("vacuum");
+  });
   it("flags standalone ANALYZE but not EXPLAIN ANALYZE", () => {
     expect(detectDangerousSQL("analyze users")).toBe("analyze");
     expect(detectDangerousSQL("explain analyze select 1")).toBeNull();
@@ -234,15 +238,15 @@ describe("footer counter", () => {
     expect(footerText(100)).toContain("table champion");
     expect(footerText(250)).toContain("screen break");
   });
-  it("survives a throwing localStorage", () => {
-    const orig = globalThis.localStorage;
-    Object.defineProperty(globalThis, "localStorage", {
+  it("survives a throwing sessionStorage", () => {
+    const orig = globalThis.sessionStorage;
+    Object.defineProperty(globalThis, "sessionStorage", {
       configurable: true,
       get() { throw new Error("denied"); },
     });
     expect(readTableClicks()).toBe(0);
     expect(bumpTableClicks()).toBe(1);
-    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: orig });
+    Object.defineProperty(globalThis, "sessionStorage", { configurable: true, value: orig });
   });
 });
 

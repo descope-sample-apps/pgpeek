@@ -79,12 +79,12 @@ export function interceptMagicQuery(sql) {
 
 // ── Dangerous / no-op SQL detection ─────────────────────────
 const DROP_RE = /^\s*DROP\s+(TABLE|DATABASE|SCHEMA|INDEX|VIEW|MATERIALIZED\s+VIEW)\b/i;
-const VACUUM_RE = /^(?:\s|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)*VACUUM\b/i;
+const VACUUM_RE = /^VACUUM\b/i;
 const ANALYZE_RE = /^\s*ANALYZE\b/i;
 const EXPLAIN_RE = /^\s*EXPLAIN\b/i;
 
 export function detectDangerousSQL(sql) {
-  const s = sql.trim();
+  const s = sql.trim().replace(/^(?:(?:--[^\n]*(?:\n|$))|(?:\/\*[^*]*(?:\*(?!\/)[^*]*)*\*\/)|\s)+/, "");
   if (DROP_RE.test(s)) return "drop";
   if (VACUUM_RE.test(s)) return "vacuum";
   if (ANALYZE_RE.test(s) && !EXPLAIN_RE.test(s)) return "analyze";

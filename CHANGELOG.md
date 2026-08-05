@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.2](https://github.com/descope-sample-apps/pgpeek/compare/v0.11.1...v0.11.2) (2026-08-05)
+
+
+### Bug Fixes
+
+* polish empty and loading states ([#72](https://github.com/descope-sample-apps/pgpeek/issues/72)) ([e1619c6](https://github.com/descope-sample-apps/pgpeek/commit/e1619c6387634021bfd9458ff81d3f4e7c26570d))
+
 ## [0.11.1](https://github.com/descope-sample-apps/pgpeek/compare/v0.11.0...v0.11.1) (2026-08-02)
 
 

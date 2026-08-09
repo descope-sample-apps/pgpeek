@@ -42,7 +42,7 @@ func TestCatalogQueries_ReportEncodingError(t *testing.T) {
 }
 
 func TestTables_ByteCap(t *testing.T) {
-	large := strings.Repeat("x", MaxResultBytes/2)
+	large := strings.Repeat("x", MaxCatalogBytes/2)
 	rows := &fakeRows{data: [][]any{{"public", large, "table", int64(1), false, "", ""}, {"public", large, "table", int64(2), false, "", ""}, {"public", large, "table", int64(3), false, "", ""}}}
 	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
 	got, truncated, err := p.Tables(context.Background())
@@ -55,7 +55,7 @@ func TestTables_ByteCap(t *testing.T) {
 }
 
 func TestColumns_ByteCap(t *testing.T) {
-	large := strings.Repeat("x", MaxResultBytes/2)
+	large := strings.Repeat("x", MaxCatalogBytes/2)
 	rows := &fakeRows{data: [][]any{{large, "text", true, (*string)(nil)}, {large, "text", true, (*string)(nil)}, {large, "text", true, (*string)(nil)}}}
 	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
 	got, truncated, err := p.Columns(context.Background(), "public", "users")
@@ -68,7 +68,7 @@ func TestColumns_ByteCap(t *testing.T) {
 }
 
 func TestForeignKeys_ByteCap(t *testing.T) {
-	large := strings.Repeat("x", MaxResultBytes/2)
+	large := strings.Repeat("x", MaxCatalogBytes/2)
 	rows := &fakeRows{data: [][]any{{large, "public", "users", "id"}, {large, "public", "users", "id"}, {large, "public", "users", "id"}}}
 	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
 	got, truncated, err := p.ForeignKeys(context.Background(), "public", "users")
@@ -81,7 +81,7 @@ func TestForeignKeys_ByteCap(t *testing.T) {
 }
 
 func TestTableRows_RejectsTruncatedColumnCatalog(t *testing.T) {
-	large := strings.Repeat("x", MaxResultBytes/2)
+	large := strings.Repeat("x", MaxCatalogBytes/2)
 	cols := &fakeRows{data: [][]any{{large, "text", true, (*string)(nil)}, {large, "text", true, (*string)(nil)}, {large, "text", true, (*string)(nil)}}}
 	p := &Pool{pool: &fakePool{rows: dataRows(), colRows: cols}, rowCap: 10}
 	_, err := p.TableRows(context.Background(), TableQuery{Schema: "public", Table: "users", Search: "x"})

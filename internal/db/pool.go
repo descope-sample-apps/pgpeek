@@ -17,6 +17,12 @@ import (
 const (
 	MaxResultBytes    = 448 << 10
 	maxDBMessageBytes = 512 << 10
+
+	// MaxCatalogBytes bounds Tables/Columns/ForeignKeys listings. It is kept
+	// separate from MaxResultBytes (which also sizes the MCP structured-content
+	// budget) so raising it for large schemas doesn't loosen the MCP response
+	// envelope or the row-data safety cap.
+	MaxCatalogBytes = 4 << 20
 )
 
 // Config holds the tunables for the pool.
@@ -26,6 +32,9 @@ type Config struct {
 	StatementTimeout time.Duration
 	IdleTxTimeout    time.Duration
 	RowCap           int
+
+	// CatalogLimitBytes overrides MaxCatalogBytes when > 0.
+	CatalogLimitBytes int
 
 	// BeforeConnect, if set, runs before every new physical connection. It is
 	// used for RDS/Aurora IAM auth to inject a freshly-minted (short-lived)
@@ -49,9 +58,19 @@ var newPool = func(ctx context.Context, cfg *pgxpool.Config) (pgxPool, error) {
 
 // Pool is a thin wrapper around a pgx pool with a row cap.
 type Pool struct {
-	pool     pgxPool
-	rowCap   int
-	maxConns int32
+	pool              pgxPool
+	rowCap            int
+	maxConns          int32
+	catalogLimitBytes int
+}
+
+// catalogByteLimit is the byte budget for Tables/Columns/ForeignKeys listings:
+// the configured override, or MaxCatalogBytes if none was set.
+func (p *Pool) catalogByteLimit() int {
+	if p.catalogLimitBytes > 0 {
+		return p.catalogLimitBytes
+	}
+	return MaxCatalogBytes
 }
 
 // Result is a fully-materialized (but row-capped) query result, ready to be
@@ -104,7 +123,7 @@ func New(ctx context.Context, c Config) (*Pool, error) {
 		pool.Close()
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
-	return &Pool{pool: pool, rowCap: c.RowCap, maxConns: cfg.MaxConns}, nil
+	return &Pool{pool: pool, rowCap: c.RowCap, maxConns: cfg.MaxConns, catalogLimitBytes: c.CatalogLimitBytes}, nil
 }
 
 // RowCap is the maximum number of rows any query or page returns.

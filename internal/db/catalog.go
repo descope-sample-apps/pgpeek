@@ -74,7 +74,7 @@ func (p *Pool) Tables(ctx context.Context) ([]TableInfo, bool, error) {
 	}
 	defer rows.Close()
 
-	out := catalogCollector[TableInfo]{items: make([]TableInfo, 0, 64), bytes: 2}
+	out := catalogCollector[TableInfo]{items: make([]TableInfo, 0, 64), bytes: 2, limit: p.catalogByteLimit()}
 	for rows.Next() {
 		var t TableInfo
 		if err := rows.Scan(&t.Schema, &t.Name, &t.Type, &t.EstRows, &t.IsPartition, &t.ParentSchema, &t.ParentName); err != nil {
@@ -104,7 +104,7 @@ func (p *Pool) Columns(ctx context.Context, schema, table string) ([]ColumnInfo,
 	}
 	defer rows.Close()
 
-	out := catalogCollector[ColumnInfo]{items: make([]ColumnInfo, 0, 16), bytes: 2}
+	out := catalogCollector[ColumnInfo]{items: make([]ColumnInfo, 0, 16), bytes: 2, limit: p.catalogByteLimit()}
 	for rows.Next() {
 		var c ColumnInfo
 		if err := rows.Scan(&c.Name, &c.Type, &c.Nullable, &c.Default); err != nil {
@@ -143,7 +143,7 @@ func (p *Pool) ForeignKeys(ctx context.Context, schema, table string) ([]Foreign
 	}
 	defer rows.Close()
 
-	out := catalogCollector[ForeignKey]{items: make([]ForeignKey, 0, 8), bytes: 2}
+	out := catalogCollector[ForeignKey]{items: make([]ForeignKey, 0, 8), bytes: 2, limit: p.catalogByteLimit()}
 	for rows.Next() {
 		var fk ForeignKey
 		if err := rows.Scan(&fk.Column, &fk.RefSchema, &fk.RefTable, &fk.RefColumn); err != nil {

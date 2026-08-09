@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.3](https://github.com/descope-sample-apps/pgpeek/compare/v0.11.2...v0.11.3) (2026-08-09)
+
+
+### Bug Fixes
+
+* raise table catalog byte limit and make it configurable ([#76](https://github.com/descope-sample-apps/pgpeek/issues/76)) ([52846da](https://github.com/descope-sample-apps/pgpeek/commit/52846da874e91f24e29264805b1313e522251fd8))
+
 ## [0.11.2](https://github.com/descope-sample-apps/pgpeek/compare/v0.11.1...v0.11.2) (2026-08-05)
 
 

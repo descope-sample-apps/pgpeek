@@ -81,11 +81,12 @@ func run(ctx context.Context, log *slog.Logger) error {
 	}
 	for _, entry := range cfg.Databases {
 		dbCfg := db.Config{
-			DSN:              entry.DSN,
-			MaxConns:         cfg.DB.MaxConns,
-			StatementTimeout: cfg.DB.StatementTimeout,
-			IdleTxTimeout:    cfg.DB.IdleTxTimeout,
-			RowCap:           cfg.RowCap,
+			DSN:               entry.DSN,
+			MaxConns:          cfg.DB.MaxConns,
+			StatementTimeout:  cfg.DB.StatementTimeout,
+			IdleTxTimeout:     cfg.DB.IdleTxTimeout,
+			RowCap:            cfg.RowCap,
+			CatalogLimitBytes: cfg.CatalogLimitBytes,
 		}
 		if entry.IAMAuth {
 			provider, perr := awsauth.New(signalCtx, entry.Region)

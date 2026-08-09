@@ -242,6 +242,15 @@ func TestRowCap(t *testing.T) {
 	}
 }
 
+func TestCatalogByteLimit(t *testing.T) {
+	if got := (&Pool{}).catalogByteLimit(); got != MaxCatalogBytes {
+		t.Errorf("catalogByteLimit() with no override = %d, want default %d", got, MaxCatalogBytes)
+	}
+	if got := (&Pool{catalogLimitBytes: 1024}).catalogByteLimit(); got != 1024 {
+		t.Errorf("catalogByteLimit() with override = %d, want 1024", got)
+	}
+}
+
 func TestPingAndClose(t *testing.T) {
 	fp := &fakePool{}
 	p := &Pool{pool: fp, rowCap: 1}

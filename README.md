@@ -165,6 +165,7 @@ supplied from mounted files so they do not live in manifests.
 | `PGPEEK_DEFAULT_DATABASE`    | first configured DB  | Default database ID when the URL has no `db=` parameter.              |
 | `PGPEEK_LISTEN`              | `:8080`              | Listen address.                                                       |
 | `PGPEEK_ROW_CAP`             | `1000`               | Max rows returned/exported per query.                                 |
+| `PGPEEK_CATALOG_LIMIT_BYTES` | `4194304` (4 MiB)    | Max encoded size of a table/column/foreign-key catalog listing. Raise this if a schema has enough tables to overflow the default and the UI reports "table catalog exceeds response limit". |
 | `PGPEEK_STATEMENT_TIMEOUT`   | `30s`                | Per-query DB statement timeout.                                       |
 | `PGPEEK_IDLE_TX_TIMEOUT`     | `30s`                | `idle_in_transaction_session_timeout`.                                |
 | `PGPEEK_MAX_CONNS`           | `8`                  | Max pool size (caps DB connection usage).                             |

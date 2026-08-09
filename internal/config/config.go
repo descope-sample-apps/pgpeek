@@ -20,6 +20,7 @@ type Config struct {
 	DefaultDatabaseID       string
 	StorePath               string
 	RowCap                  int
+	CatalogLimitBytes       int
 	RequireCloudflareAccess bool
 	MCPAuth                 MCPAuth
 }
@@ -85,10 +86,13 @@ func Load() (*Config, error) {
 			IAMAuth:          iamAuth,
 			Region:           region,
 		},
-		Databases:               databases,
-		DefaultDatabaseID:       defaultDatabaseID,
-		StorePath:               env("PGPEEK_STORE_PATH", "/data/pgpeek.db"),
-		RowCap:                  envInt("PGPEEK_ROW_CAP", 1000),
+		Databases:         databases,
+		DefaultDatabaseID: defaultDatabaseID,
+		StorePath:         env("PGPEEK_STORE_PATH", "/data/pgpeek.db"),
+		RowCap:            envInt("PGPEEK_ROW_CAP", 1000),
+		// 0 means "use db.MaxCatalogBytes"; PGPEEK_CATALOG_LIMIT_BYTES only needs
+		// setting to override that default for unusually large schemas.
+		CatalogLimitBytes:       envInt("PGPEEK_CATALOG_LIMIT_BYTES", 0),
 		RequireCloudflareAccess: envBool("PGPEEK_REQUIRE_CLOUDFLARE_ACCESS", false),
 		MCPAuth:                 mcpAuth,
 	}

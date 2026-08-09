@@ -7,6 +7,7 @@ var marshalCatalogItem = json.Marshal
 type catalogCollector[T any] struct {
 	items     []T
 	bytes     int
+	limit     int
 	truncated bool
 }
 
@@ -15,7 +16,7 @@ func (c *catalogCollector[T]) add(item T) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if c.bytes+len(encoded)+1 > MaxResultBytes {
+	if c.bytes+len(encoded)+1 > c.limit {
 		c.truncated = true
 		return false, nil
 	}

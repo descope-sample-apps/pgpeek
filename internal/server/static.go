@@ -18,16 +18,14 @@ func staticETag(files fs.FS) string {
 		if walkErr != nil || d.IsDir() {
 			return walkErr
 		}
-		f, openErr := files.Open(p)
-		if openErr != nil {
-			return openErr
+		data, readErr := fs.ReadFile(files, p)
+		if readErr != nil {
+			return readErr
 		}
-		defer func() { _ = f.Close() }()
-		if _, writeErr := io.WriteString(sum, p+"\x00"); writeErr != nil {
-			return writeErr
-		}
-		_, copyErr := io.Copy(sum, f)
-		return copyErr
+		// hash.Hash writes never fail.
+		_, _ = io.WriteString(sum, p+"\x00")
+		_, _ = sum.Write(data)
+		return nil
 	})
 	if err != nil {
 		return ""

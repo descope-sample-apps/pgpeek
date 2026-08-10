@@ -174,10 +174,10 @@ function App() {
   useEffect(() => {
     let live = true;
     const check = () => getJSON("/healthz").then((b) => {
-      if (!live || !b || !b.version) return;
+      if (!live || !b.version) return;
       if (loadedVersion.current === null) loadedVersion.current = b.version;
       else if (b.version !== loadedVersion.current) setUpdateReady(true);
-    }, ignoreRefreshError);
+    }).catch(ignoreRefreshError);
     const onVisible = () => { if (document.visibilityState === "visible") check(); };
     check();
     const timer = setInterval(check, VERSION_POLL_MS);

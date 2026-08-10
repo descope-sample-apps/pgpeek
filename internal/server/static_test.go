@@ -1,6 +1,7 @@
 package server
 
 import (
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -51,15 +52,71 @@ func TestStatic_newBuildChangesETag(t *testing.T) {
 	}
 }
 
+// unreadableFS lists its files but refuses to open one of them.
+type unreadableFS struct {
+	files fs.FS
+	fail  string
+}
+
+func (u unreadableFS) Open(name string) (fs.File, error) {
+	if name == u.fail {
+		return nil, fs.ErrPermission
+	}
+	return u.files.Open(name)
+}
+
+func TestStatic_unhashableAssetsDropTheETagRatherThanPinAStaleOne(t *testing.T) {
+	// Given: an asset tree with one unreadable corner, so no honest tag covers
+	// the build (a partial hash would pin clients to a build it never saw).
+	unreadable := unreadableFS{
+		files: fstest.MapFS{
+			"app.js":           &fstest.MapFile{Data: []byte("export const v = 1;")},
+			"vendor/preact.js": &fstest.MapFile{Data: []byte("export const p = 1;")},
+		},
+		fail: "vendor",
+	}
+
+	// When: a readable asset is served.
+	rec := httptest.NewRecorder()
+	staticHandler(unreadable).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/app.js", nil))
+
+	// Then: it is still served and still revalidated, just without a tag —
+	// no ETag means no conditional hit, never a stale hit.
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if got := rec.Header().Get("ETag"); got != "" {
+		t.Fatalf("ETag = %q, want none", got)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
+		t.Fatalf("Cache-Control = %q", got)
+	}
+}
+
+func TestStatic_unhashableTreeHasNoETag(t *testing.T) {
+	// Given: asset trees that cannot be listed, and that list a file they
+	// cannot then read.
+	assets := fstest.MapFS{"app.js": &fstest.MapFile{Data: []byte("export const v = 1;")}}
+	for name, files := range map[string]fs.FS{
+		"unlistable": unreadableFS{files: assets, fail: "."},
+		"unreadable": unreadableFS{files: assets, fail: "app.js"},
+	} {
+		// When/Then: hashing gives up rather than tag a build it never read.
+		if got := staticETag(files); got != "" {
+			t.Errorf("%s: etag = %q, want none", name, got)
+		}
+	}
+}
+
 func TestStatic_etagCoversEveryAsset(t *testing.T) {
-	// Given: a release that only changes a module app.js imports.
+	// Given: a release that only changes a vendored module app.js imports.
 	base := fstest.MapFS{
-		"index.html": &fstest.MapFile{Data: []byte("<h1>pgpeek</h1>")},
-		"sidebar.js": &fstest.MapFile{Data: []byte("export const a = 1;")},
+		"index.html":       &fstest.MapFile{Data: []byte("<h1>pgpeek</h1>")},
+		"vendor/preact.js": &fstest.MapFile{Data: []byte("export const a = 1;")},
 	}
 	changed := fstest.MapFS{
-		"index.html": &fstest.MapFile{Data: []byte("<h1>pgpeek</h1>")},
-		"sidebar.js": &fstest.MapFile{Data: []byte("export const a = 2;")},
+		"index.html":       &fstest.MapFile{Data: []byte("<h1>pgpeek</h1>")},
+		"vendor/preact.js": &fstest.MapFile{Data: []byte("export const a = 2;")},
 	}
 
 	// When/Then: the whole asset set revalidates, not just the file that moved.

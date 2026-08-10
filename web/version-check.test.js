@@ -15,6 +15,7 @@ function healthz(version) {
 beforeEach(() => {
   document.body.innerHTML = '<div id="app"></div>';
   window.history.replaceState({}, "", "/");
+  setVisibility("visible");
   routes = {
     "GET /api/databases": makeResp({ json: NO_DBS }),
     "GET /api/user":      makeResp({ json: { provider: "anonymous", email: "" } }),
@@ -35,9 +36,20 @@ beforeEach(() => {
 
 afterEach(() => { vi.restoreAllMocks(); });
 
+function setVisibility(state) {
+  Object.defineProperty(document, "visibilityState", { configurable: true, value: state });
+}
+
 async function becomeVisible() {
+  setVisibility("visible");
   document.dispatchEvent(new Event("visibilitychange"));
   await flush();
+}
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((r) => { resolve = r; });
+  return { promise, resolve };
 }
 
 describe("release awareness", () => {
@@ -71,6 +83,42 @@ describe("release awareness", () => {
     await loadApp();
     routes["GET /healthz"] = makeResp({ ok: false, status: 503, json: {}, statusText: "unavailable" });
     await becomeVisible();
+    expect($("update-badge")).toBeNull();
+  });
+
+  it("survives a healthz payload with no version rather than throwing", async () => {
+    routes["GET /healthz"] = makeResp({ json: { status: "ok" } });
+    await loadApp();
+    await becomeVisible();
+
+    // Nothing was pinned, so the first real version is a baseline, not a release.
+    routes["GET /healthz"] = healthz("1.2.3");
+    await becomeVisible();
+    expect($("update-badge")).toBeNull();
+  });
+
+  it("does not poll while the tab is hidden", async () => {
+    await loadApp();
+    const before = fetch.mock.calls.filter(([u]) => String(u) === "/healthz").length;
+
+    setVisibility("hidden");
+    document.dispatchEvent(new Event("visibilitychange"));
+    await flush();
+
+    const after = fetch.mock.calls.filter(([u]) => String(u) === "/healthz").length;
+    expect(after).toBe(before);
+  });
+
+  it("drops a healthz response that lands after the tab tore down", async () => {
+    const pending = deferred();
+    routes["GET /healthz"] = () => pending.promise;
+    await loadApp();
+
+    const { render } = await import("./vendor/preact-htm.js");
+    render(null, $("app"));
+    pending.resolve(healthz("9.9.9"));
+    await flush();
+
     expect($("update-badge")).toBeNull();
   });
 });

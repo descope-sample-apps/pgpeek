@@ -91,11 +91,14 @@ func TestQueryCell_RowErrors(t *testing.T) {
 }
 
 func TestTruncateCell_PreservesUTF8(t *testing.T) {
-	value := strings.Repeat("x", cellPreviewBytes-1) + string([]byte{0xff}) + strings.Repeat("x", 10)
+	value := strings.Repeat("x", cellPreviewBytes-len("…")-1) + string([]byte{0xff}) + strings.Repeat("x", 10)
 	cell, truncated := truncateCell(value)
 	preview := cell.(string)
 	if !truncated || !utf8.ValidString(preview) {
 		t.Fatalf("truncated=%v valid=%v", truncated, utf8.ValidString(preview))
+	}
+	if len(preview) > cellPreviewBytes {
+		t.Fatalf("preview bytes = %d, want <= %d", len(preview), cellPreviewBytes)
 	}
 	if _, smallTruncated := truncateCell("small"); smallTruncated {
 		t.Fatal("small cell was truncated")
@@ -111,25 +114,46 @@ func TestTruncateCell_LeavesUnencodableValueForQueryError(t *testing.T) {
 
 func TestQuery_AggregateByteCapAfterCellTruncation(t *testing.T) {
 	cell := strings.Repeat("x", cellPreviewBytes+1)
-	row := make([]any, 1600)
+	row := make([]any, 1300)
 	for i := range row {
 		row[i] = cell
 	}
-	rows := &fakeRows{cols: make([]string, len(row)), data: [][]any{row, row}}
+	columns := make([]string, len(row))
+	for i := range columns {
+		columns[i] = strings.Repeat("c", 63)
+	}
+	rows := &fakeRows{cols: columns, data: [][]any{row, row}}
 	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
 	res, err := p.Query(context.Background(), "SELECT wide")
 	if err != nil {
 		t.Fatal(err)
 	}
-	encoded, err := json.Marshal(struct {
-		Rows           [][]any   `json:"rows"`
-		TruncatedCells []CellRef `json:"truncatedCells"`
-	}{Rows: res.Rows, TruncatedCells: res.TruncatedCells})
+	encoded, err := json.Marshal(res)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(encoded) > MaxResultBytes || !res.Truncated {
 		t.Fatalf("encoded=%d truncated=%v", len(encoded), res.Truncated)
+	}
+}
+
+func TestQuery_RejectsOversizedMetadata(t *testing.T) {
+	rows := &fakeRows{cols: []string{strings.Repeat("<", MaxResultBytes)}}
+	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
+	if _, err := p.Query(context.Background(), "SELECT wide_alias"); !errors.Is(err, ErrResultMetadataTooLarge) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestJSONStringBytes_MatchesJSONEncoding(t *testing.T) {
+	for _, value := range []string{"plain", "\"\\\n", "<>&\u2028\u2029", "\x01", string([]byte{0xff})} {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := jsonStringBytes(value); got != len(encoded) {
+			t.Fatalf("jsonStringBytes(%q) = %d, want %d", value, got, len(encoded))
+		}
 	}
 }
 

@@ -206,7 +206,10 @@ func (p *Pool) collect(rows pgx.Rows, start time.Time) (*Result, error) {
 
 	out := make([][]any, 0, 128)
 	truncatedCells := make([]CellRef, 0)
-	encodedBytes := len(`{"rows":[],"truncatedCells":[]}`)
+	encodedBytes := resultEnvelopeBytes(cols, p.rowCap)
+	if encodedBytes > MaxResultBytes {
+		return nil, ErrResultMetadataTooLarge
+	}
 	truncated := false
 	cellsTruncated := false
 	for rows.Next() {

@@ -21,7 +21,7 @@ func truncateCell(cell any) (any, bool) {
 		return cell, false
 	}
 	preview := []byte(CellString(cell))
-	preview = preview[:min(len(preview), cellPreviewBytes)]
+	preview = preview[:min(len(preview), cellPreviewBytes-len("…"))]
 	for !utf8.Valid(preview) {
 		preview = preview[:len(preview)-1]
 	}

@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -152,6 +153,35 @@ func TestWriteCSV_ResolverError(t *testing.T) {
 
 func TestWriteCSVResponse_CreateFailure(t *testing.T) {
 	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "missing"))
+	rec := httptest.NewRecorder()
+	if err := writeCSVResponse(rec, "export.csv", func(io.Writer) error { return nil }); err == nil || rec.Code != http.StatusInternalServerError {
+		t.Fatalf("error=%v status=%d", err, rec.Code)
+	}
+}
+
+func TestWriteCSVResponse_UnlinksSpoolBeforeRendering(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	rec := httptest.NewRecorder()
+	if err := writeCSVResponse(rec, "export.csv", func(dst io.Writer) error {
+		entries, err := os.ReadDir(tmp)
+		if err != nil {
+			return err
+		}
+		if len(entries) != 0 {
+			return errors.New("spool remains visible")
+		}
+		_, err = io.WriteString(dst, "a\n1\n")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWriteCSVResponse_UnlinkFailure(t *testing.T) {
+	original := removeCSVSpool
+	removeCSVSpool = func(string) error { return errors.New("unlink") }
+	t.Cleanup(func() { removeCSVSpool = original })
 	rec := httptest.NewRecorder()
 	if err := writeCSVResponse(rec, "export.csv", func(io.Writer) error { return nil }); err == nil || rec.Code != http.StatusInternalServerError {
 		t.Fatalf("error=%v status=%d", err, rec.Code)

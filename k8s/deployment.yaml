@@ -59,6 +59,8 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+            - name: export-tmp
+              mountPath: /tmp
           resources:
             requests:
               cpu: 50m
@@ -88,3 +90,6 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: pgpeek-data
+        - name: export-tmp
+          emptyDir:
+            sizeLimit: 1Gi

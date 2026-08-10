@@ -11,6 +11,7 @@ import (
 )
 
 var errCSVResultChanged = errors.New("query result changed during export")
+var removeCSVSpool = os.Remove
 
 func writeCSVResponse(w http.ResponseWriter, filename string, render func(io.Writer) error) error {
 	spool, err := os.CreateTemp("", "pgpeek-export-*.csv")
@@ -18,9 +19,14 @@ func writeCSVResponse(w http.ResponseWriter, filename string, render func(io.Wri
 		writeError(w, http.StatusInternalServerError, "Failed to prepare the CSV export")
 		return err
 	}
+	name := spool.Name()
+	if err := removeCSVSpool(name); err != nil {
+		_ = spool.Close()
+		writeError(w, http.StatusInternalServerError, "Failed to prepare the CSV export")
+		return err
+	}
 	defer func() {
 		_ = spool.Close()
-		_ = os.Remove(spool.Name())
 	}()
 
 	if err := render(spool); err != nil {

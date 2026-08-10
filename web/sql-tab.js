@@ -2,19 +2,14 @@
 import { html, useState, useEffect, useRef, useCallback } from "./vendor/preact-htm.js";
 import { dbUrl, getJSON, tablePath } from "./api.js";
 import { interceptRun, runEasterEgg, EXPLAIN_JOKE, LLAMA_DELAY_MS } from "./easter-eggs.js";
-
-const DEFAULT_SQL = "SELECT now();";
-
-async function responseError(r, fallback) {
-  const body = await r.json().catch(() => null);
-  return (body && body.error) || r.statusText || fallback;
-}
+import { DEFAULT_SQL, queryStatusText, responseError, SqlResults } from "./sql-results.js";
 
 export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, initialSQL, onStateChange }) {
   const wrapRef = useRef();
   const taRef = useRef();
   const editorRef = useRef();
   const [result, setResult] = useState(null);
+  const [resultKey, setResultKey] = useState(0);
   const [lastSQL, setLastSQL] = useState("");
   const [selected, setSelected] = useState("");
   const [running, setRunning] = useState(false);
@@ -69,11 +64,12 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
       }
       const d = await r.json();
       if (action !== actionRef.current) return;
-      setLastSQL(sql); setResult(d);
-      const base = "✓ " + d.rowCount + " row" + (d.rowCount === 1 ? "" : "s") + " in " + d.elapsedMs + " ms";
-      setStatus(d.truncated
-        ? { text: base, cls: "ok", warn: "· capped (more rows available — add LIMIT or refine)" }
-        : { text: base, cls: "ok" });
+      setLastSQL(sql); setResult(d); setResultKey(action);
+      const base = queryStatusText(d.rowCount, d.elapsedMs);
+      const warnings = [];
+      if (d.truncated) warnings.push("· capped (more rows available; add LIMIT or refine)");
+      if (d.cellsTruncated) warnings.push("· large cells shortened; expand to load full value");
+      setStatus(warnings.length ? { text: base, cls: "ok", warn: warnings.join(" ") } : { text: base, cls: "ok" });
     } catch (e) {
       if (action === actionRef.current) {
         setError(e.message);
@@ -275,16 +271,6 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
     </div>
     ${error ? html`<div class="query-error" role="alert" aria-live="assertive">${error}</div>` : ""}
     <div class="results" id="sql-results">
-      ${result
-        ? (result.columns.length === 0
-            ? html`<div class="empty">Query ran. No columns returned.</div>`
-            : (result.rows.length === 0
-                ? html`<div class="empty">0 rows.</div>`
-                : html`<table>
-                    <thead><tr>${result.columns.map((c) => html`<th key=${c}>${c}</th>`)}</tr></thead>
-                    <tbody>${result.rows.map((row, rowIndex) =>
-                      html`<tr key=${rowIndex}>${row.map((v, i) => html`<td class="cell" key=${i}>${v === null ? html`<span class="null">NULL</span>` : (typeof v === "object" ? JSON.stringify(v) : String(v))}</td>`)}</tr>`)}</tbody>
-                  </table>`))
-        : html`<div class="empty">Run a query to see results.</div>`}
+      <${SqlResults} result=${result} resultKey=${resultKey} sql=${lastSQL} dbId=${dbId} />
     </div>`;
 }

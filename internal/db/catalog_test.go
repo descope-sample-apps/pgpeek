@@ -211,6 +211,20 @@ func TestTableRows_HonorsLimitOffset(t *testing.T) {
 	}
 }
 
+func TestTableCell_UsesPageOffsetAndReturnsFullValue(t *testing.T) {
+	value := strings.Repeat("x", 32<<10)
+	fp := &fakePool{rows: &fakeRows{cols: []string{"payload"}, data: [][]any{{value}}}}
+	p := &Pool{pool: fp, rowCap: 100}
+
+	got, err := p.TableCell(context.Background(), TableQuery{Schema: "public", Table: "users", Limit: 25, Offset: 50}, 3, 0)
+	if err != nil {
+		t.Fatalf("TableCell: %v", err)
+	}
+	if got != value || !strings.Contains(fp.lastSQL, "LIMIT 1 OFFSET 53") {
+		t.Fatalf("value length=%d sql=%q", len(got.(string)), fp.lastSQL)
+	}
+}
+
 func TestTableRows_QueryError(t *testing.T) {
 	p := &Pool{pool: &fakePool{queryErr: errors.New("boom")}, rowCap: 10}
 	if _, err := p.TableRows(context.Background(), TableQuery{Schema: "s", Table: "t", Limit: 10}); err == nil {

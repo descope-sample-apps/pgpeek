@@ -202,6 +202,36 @@ var filterOps = map[string]string{
 // values are bound as query parameters; sort direction is ASC/DESC only. The
 // read-only role + statement timeout + row cap remain the real safeguards.
 func (p *Pool) TableRows(ctx context.Context, q TableQuery) (*Result, error) {
+	sql, args, err := p.tableSQL(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	start := time.Now()
+	rows, err := p.pool.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	return p.collect(rows, start)
+}
+
+func (p *Pool) TableCell(ctx context.Context, q TableQuery, row, column int) (any, error) {
+	if row < 0 || column < 0 {
+		return nil, ErrCellOutOfRange
+	}
+	q.Offset += row
+	q.Limit = 1
+	sql, args, err := p.tableSQL(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := p.pool.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	return queryCell(rows, 0, column)
+}
+
+func (p *Pool) tableSQL(ctx context.Context, q TableQuery) (string, []any, error) {
 	limit := q.Limit
 	if limit <= 0 || limit > p.rowCap {
 		limit = p.rowCap
@@ -218,10 +248,10 @@ func (p *Pool) TableRows(ctx context.Context, q TableQuery) (*Result, error) {
 	if q.Search != "" || len(q.Filters) > 0 || q.Sort != "" {
 		cols, truncated, err := p.Columns(ctx, q.Schema, q.Table)
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
 		if truncated {
-			return nil, fmt.Errorf("relation %s column catalog exceeds result limit", ident)
+			return "", nil, fmt.Errorf("relation %s column catalog exceeds result limit", ident)
 		}
 		valid = make(map[string]bool, len(cols))
 		for _, c := range cols {
@@ -229,7 +259,7 @@ func (p *Pool) TableRows(ctx context.Context, q TableQuery) (*Result, error) {
 			names = append(names, c.Name)
 		}
 		if len(names) == 0 {
-			return nil, fmt.Errorf("relation %s has no columns", ident)
+			return "", nil, fmt.Errorf("relation %s has no columns", ident)
 		}
 	}
 
@@ -245,7 +275,7 @@ func (p *Pool) TableRows(ctx context.Context, q TableQuery) (*Result, error) {
 
 	for _, f := range q.Filters {
 		if !valid[f.Column] {
-			return nil, fmt.Errorf("unknown column %q", f.Column)
+			return "", nil, fmt.Errorf("unknown column %q", f.Column)
 		}
 		id := pgx.Identifier{f.Column}.Sanitize()
 		switch f.Op {
@@ -256,7 +286,7 @@ func (p *Pool) TableRows(ctx context.Context, q TableQuery) (*Result, error) {
 		default:
 			op, ok := filterOps[f.Op]
 			if !ok {
-				return nil, fmt.Errorf("unknown operator %q", f.Op)
+				return "", nil, fmt.Errorf("unknown operator %q", f.Op)
 			}
 			args = append(args, f.Value)
 			if f.Op == "like" || f.Op == "ilike" {
@@ -272,7 +302,7 @@ func (p *Pool) TableRows(ctx context.Context, q TableQuery) (*Result, error) {
 	}
 	if q.Sort != "" {
 		if !valid[q.Sort] {
-			return nil, fmt.Errorf("unknown sort column %q", q.Sort)
+			return "", nil, fmt.Errorf("unknown sort column %q", q.Sort)
 		}
 		sql += " ORDER BY " + pgx.Identifier{q.Sort}.Sanitize()
 		if q.Desc {
@@ -282,11 +312,5 @@ func (p *Pool) TableRows(ctx context.Context, q TableQuery) (*Result, error) {
 		}
 	}
 	sql += fmt.Sprintf(" LIMIT %d OFFSET %d", limit, offset)
-
-	start := time.Now()
-	rows, err := p.pool.Query(ctx, sql, args...)
-	if err != nil {
-		return nil, err
-	}
-	return p.collect(rows, start)
+	return sql, args, nil
 }

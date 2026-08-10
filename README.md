@@ -454,6 +454,7 @@ Two ways:
 | `GET /api/databases`                          | List configured databases with safe runtime details (version, uptime, size, workload/cache/temp/deadlock/session counters, extensions, and connection limits). Core PostgreSQL does not expose portable host CPU, RAM, or free-disk metrics. |
 | `GET /api/user`                               | Current detected user (`anonymous` or Cloudflare Access email).    |
 | `POST /api/query?db=<id>`                     | Run a query → JSON `{columns, rows, …}`.       |
+| `POST /api/query/cell?db=<id>`                | Re-run a query and return one full cell by row/column index. |
 | `POST /api/export?db=<id>`                    | Run a query → CSV download.                    |
 | `GET /api/meta?db=<id>`                       | Server limits the UI needs (`{rowCap}`).       |
 | `GET /api/tables?db=<id>`                     | List browsable tables/views (+ row estimate).  |

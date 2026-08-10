@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"time"
 
@@ -100,10 +101,10 @@ func (s *Server) handleTableData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Query().Get("format") == "csv" {
-		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", `attachment; filename="`+safeFilename(r.PathValue("table"))+`.csv"`)
-		if err := writeCSV(w, res, func(row, column int) (any, error) {
-			return pool.TableCell(ctx, q, row, column)
+		if err := writeCSVResponse(w, safeFilename(r.PathValue("table"))+".csv", func(dst io.Writer) error {
+			return writeCSV(dst, res, func(row, column int) (any, error) {
+				return pool.TableCell(ctx, q, row, column)
+			})
 		}); err != nil {
 			s.log.Error("csv export", "err", err)
 		}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -201,36 +200,6 @@ var filterOps = map[string]string{
 // columns and emitted via pgx.Identifier; operators come from an allowlist;
 // values are bound as query parameters; sort direction is ASC/DESC only. The
 // read-only role + statement timeout + row cap remain the real safeguards.
-func (p *Pool) TableRows(ctx context.Context, q TableQuery) (*Result, error) {
-	sql, args, err := p.tableSQL(ctx, q)
-	if err != nil {
-		return nil, err
-	}
-	start := time.Now()
-	rows, err := p.pool.Query(ctx, sql, args...)
-	if err != nil {
-		return nil, err
-	}
-	return p.collect(rows, start)
-}
-
-func (p *Pool) TableCell(ctx context.Context, q TableQuery, row, column int) (any, error) {
-	if row < 0 || column < 0 {
-		return nil, ErrCellOutOfRange
-	}
-	q.Offset = max(q.Offset, 0) + row
-	q.Limit = 1
-	sql, args, err := p.tableSQL(ctx, q)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := p.pool.Query(ctx, sql, args...)
-	if err != nil {
-		return nil, err
-	}
-	return queryCell(rows, 0, column)
-}
-
 func (p *Pool) tableSQL(ctx context.Context, q TableQuery) (string, []any, error) {
 	limit := q.Limit
 	if limit <= 0 || limit > p.rowCap {

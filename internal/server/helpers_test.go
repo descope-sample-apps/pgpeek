@@ -80,8 +80,11 @@ func (f *fakeQuerier) TableRows(_ context.Context, q db.TableQuery) (*db.Result,
 
 func (f *fakeQuerier) TableCell(_ context.Context, q db.TableQuery, row, column int) (any, error) {
 	f.lastQuery = q
-	if f.err != nil || f.result == nil {
+	if f.err != nil {
 		return nil, f.err
+	}
+	if f.result == nil {
+		return nil, db.ErrCellOutOfRange
 	}
 	if f.cellValue != nil {
 		return f.cellValue, nil

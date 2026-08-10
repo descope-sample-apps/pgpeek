@@ -236,6 +236,15 @@ func TestTableCell_NormalizesNegativePageOffsetBeforeRowIndex(t *testing.T) {
 	}
 }
 
+func TestTableCell_RejectsRowOutsidePageLimit(t *testing.T) {
+	fp := &fakePool{rows: dataRows()}
+	p := &Pool{pool: fp, rowCap: 100}
+	_, err := p.TableCell(context.Background(), TableQuery{Schema: "public", Table: "users", Limit: 25}, 25, 0)
+	if !errors.Is(err, ErrCellOutOfRange) || fp.lastSQL != "" {
+		t.Fatalf("error=%v sql=%q", err, fp.lastSQL)
+	}
+}
+
 func TestTableCell_Errors(t *testing.T) {
 	for _, tc := range []struct {
 		name        string

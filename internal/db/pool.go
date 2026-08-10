@@ -5,13 +5,11 @@ package db
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 	"time"
-	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -208,7 +206,7 @@ func (p *Pool) collect(rows pgx.Rows, start time.Time) (*Result, error) {
 
 	out := make([][]any, 0, 128)
 	truncatedCells := make([]CellRef, 0)
-	encodedBytes := 2
+	encodedBytes := len(`{"rows":[],"truncatedCells":[]}`)
 	truncated := false
 	cellsTruncated := false
 	for rows.Next() {
@@ -235,12 +233,16 @@ func (p *Pool) collect(rows pgx.Rows, start time.Time) (*Result, error) {
 		if err != nil {
 			return nil, err
 		}
-		if encodedBytes+len(encoded)+1 > MaxResultBytes {
+		rowBytes := len(encoded) + 1
+		for _, ref := range truncatedCells[rowRefs:] {
+			rowBytes += len(`{"row":,"column":,"hash":""}`) + len(strconv.Itoa(ref.Row)) + len(strconv.Itoa(ref.Column)) + len(ref.Hash) + 1
+		}
+		if encodedBytes+rowBytes > MaxResultBytes {
 			truncatedCells = truncatedCells[:rowRefs]
 			truncated = true
 			break
 		}
-		encodedBytes += len(encoded) + 1
+		encodedBytes += rowBytes
 		out = append(out, row)
 	}
 	if !truncated {
@@ -257,27 +259,6 @@ func (p *Pool) collect(rows pgx.Rows, start time.Time) (*Result, error) {
 		TruncatedCells: truncatedCells,
 		ElapsedMS:      time.Since(start).Milliseconds(),
 	}, nil
-}
-
-func CellHash(value any) string {
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		return ""
-	}
-	return fmt.Sprintf("%x", sha256.Sum256(encoded))
-}
-
-func truncateCell(cell any) (any, bool) {
-	encoded, err := json.Marshal(cell)
-	if err != nil || len(encoded) <= cellPreviewBytes {
-		return cell, false
-	}
-	preview := []byte(CellString(cell))
-	preview = preview[:min(len(preview), cellPreviewBytes)]
-	for !utf8.Valid(preview) {
-		preview = preview[:len(preview)-1]
-	}
-	return string(preview) + "…", true
 }
 
 // normalize converts pgx-returned values into JSON-friendly forms.

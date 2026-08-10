@@ -111,7 +111,7 @@ func TestTruncateCell_LeavesUnencodableValueForQueryError(t *testing.T) {
 
 func TestQuery_AggregateByteCapAfterCellTruncation(t *testing.T) {
 	cell := strings.Repeat("x", cellPreviewBytes+1)
-	row := make([]any, 3000)
+	row := make([]any, 1600)
 	for i := range row {
 		row[i] = cell
 	}
@@ -121,7 +121,10 @@ func TestQuery_AggregateByteCapAfterCellTruncation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	encoded, err := json.Marshal(res.Rows)
+	encoded, err := json.Marshal(struct {
+		Rows           [][]any   `json:"rows"`
+		TruncatedCells []CellRef `json:"truncatedCells"`
+	}{Rows: res.Rows, TruncatedCells: res.TruncatedCells})
 	if err != nil {
 		t.Fatal(err)
 	}

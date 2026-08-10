@@ -145,6 +145,17 @@ func TestWriteCSV_ResolverError(t *testing.T) {
 	}
 }
 
+func TestWriteCSV_RejectsChangedCell(t *testing.T) {
+	res := &db.Result{
+		Columns:        []string{"a"},
+		Rows:           [][]any{{"preview"}},
+		TruncatedCells: []db.CellRef{{Row: 0, Column: 0, Hash: db.CellHash("original")}},
+	}
+	if err := writeCSV(io.Discard, res, func(int, int) (any, error) { return "changed", nil }); err == nil {
+		t.Fatal("expected changed-cell error")
+	}
+}
+
 type failWriter struct{}
 
 func (failWriter) Write([]byte) (int, error) { return 0, errors.New("boom") }

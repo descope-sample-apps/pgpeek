@@ -228,7 +228,7 @@ func TestExport_CSVResolvesTruncatedCells(t *testing.T) {
 			Rows:           [][]any{{"preview…"}},
 			RowCount:       1,
 			CellsTruncated: true,
-			TruncatedCells: []db.CellRef{{Row: 0, Column: 0}},
+			TruncatedCells: []db.CellRef{{Row: 0, Column: 0, Hash: db.CellHash("full value")}},
 		},
 		cellValue: "full value",
 	}

@@ -6,9 +6,11 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -17,6 +19,7 @@ import (
 const (
 	MaxResultBytes    = 448 << 10
 	maxDBMessageBytes = 512 << 10
+	cellPreviewBytes  = 220
 
 	// MaxCatalogBytes bounds Tables/Columns/ForeignKeys listings. It is kept
 	// separate from MaxResultBytes (which also sizes the MCP structured-content
@@ -24,6 +27,8 @@ const (
 	// envelope or the row-data safety cap.
 	MaxCatalogBytes = 4 << 20
 )
+
+var ErrCellOutOfRange = errors.New("cell is outside the query result")
 
 // Config holds the tunables for the pool.
 type Config struct {
@@ -76,11 +81,17 @@ func (p *Pool) catalogByteLimit() int {
 // Result is a fully-materialized (but row-capped) query result, ready to be
 // serialized to JSON or CSV.
 type Result struct {
-	Columns   []string `json:"columns"`
-	Rows      [][]any  `json:"rows"`
-	RowCount  int      `json:"rowCount"`
-	Truncated bool     `json:"truncated"`
-	ElapsedMS int64    `json:"elapsedMs"`
+	Columns        []string `json:"columns"`
+	Rows           [][]any  `json:"rows"`
+	RowCount       int      `json:"rowCount"`
+	Truncated      bool     `json:"truncated"`
+	CellsTruncated bool     `json:"cellsTruncated,omitempty"`
+	ElapsedMS      int64    `json:"elapsedMs"`
+}
+
+type TruncatedCell struct {
+	Preview   string `json:"preview"`
+	Truncated bool   `json:"truncated"`
 }
 
 // buildConfig parses the DSN and applies the belt-and-suspenders session
@@ -149,6 +160,38 @@ func (p *Pool) Query(ctx context.Context, sql string) (*Result, error) {
 	return p.collect(rows, start)
 }
 
+func (p *Pool) QueryCell(ctx context.Context, sql string, rowIndex, columnIndex int) (any, error) {
+	if rowIndex < 0 || rowIndex >= p.rowCap || columnIndex < 0 {
+		return nil, ErrCellOutOfRange
+	}
+	rows, err := p.pool.Query(ctx, sql)
+	if err != nil {
+		return nil, err
+	}
+	return queryCell(rows, rowIndex, columnIndex)
+}
+
+func queryCell(rows pgx.Rows, rowIndex, columnIndex int) (any, error) {
+	defer rows.Close()
+	if columnIndex >= len(rows.FieldDescriptions()) {
+		return nil, ErrCellOutOfRange
+	}
+	for currentRow := 0; rows.Next(); currentRow++ {
+		if currentRow != rowIndex {
+			continue
+		}
+		values, err := rows.Values()
+		if err != nil {
+			return nil, err
+		}
+		return normalize(values[columnIndex]), nil
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return nil, ErrCellOutOfRange
+}
+
 // collect reads up to rowCap rows from rows (which it closes), normalizing
 // values for JSON, and reports whether more rows were available.
 func (p *Pool) collect(rows pgx.Rows, start time.Time) (*Result, error) {
@@ -161,8 +204,8 @@ func (p *Pool) collect(rows pgx.Rows, start time.Time) (*Result, error) {
 	}
 
 	out := make([][]any, 0, 128)
-	encodedBytes := 2
 	truncated := false
+	cellsTruncated := false
 	for rows.Next() {
 		if len(out) >= p.rowCap {
 			truncated = true
@@ -174,17 +217,11 @@ func (p *Pool) collect(rows pgx.Rows, start time.Time) (*Result, error) {
 		}
 		row := make([]any, len(vals))
 		for i, v := range vals {
-			row[i] = normalize(v)
+			row[i], cellsTruncated = truncateCell(normalize(v), cellsTruncated)
 		}
-		encoded, err := json.Marshal(row)
-		if err != nil {
+		if _, err := json.Marshal(row); err != nil {
 			return nil, err
 		}
-		if encodedBytes+len(encoded)+1 > MaxResultBytes {
-			truncated = true
-			break
-		}
-		encodedBytes += len(encoded) + 1
 		out = append(out, row)
 	}
 	if !truncated {
@@ -193,12 +230,26 @@ func (p *Pool) collect(rows pgx.Rows, start time.Time) (*Result, error) {
 		}
 	}
 	return &Result{
-		Columns:   cols,
-		Rows:      out,
-		RowCount:  len(out),
-		Truncated: truncated,
-		ElapsedMS: time.Since(start).Milliseconds(),
+		Columns:        cols,
+		Rows:           out,
+		RowCount:       len(out),
+		Truncated:      truncated,
+		CellsTruncated: cellsTruncated,
+		ElapsedMS:      time.Since(start).Milliseconds(),
 	}, nil
+}
+
+func truncateCell(cell any, alreadyTruncated bool) (any, bool) {
+	encoded, err := json.Marshal(cell)
+	if err != nil || len(encoded) <= cellPreviewBytes {
+		return cell, alreadyTruncated
+	}
+	preview := []byte(CellString(cell))
+	preview = preview[:min(len(preview), cellPreviewBytes)]
+	for !utf8.Valid(preview) {
+		preview = preview[:len(preview)-1]
+	}
+	return TruncatedCell{Preview: string(preview) + "…", Truncated: true}, true
 }
 
 // normalize converts pgx-returned values into JSON-friendly forms.

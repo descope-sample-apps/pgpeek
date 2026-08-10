@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<!-- Stamped with the running build when served; empty means "unknown build". -->
+<meta name="pgpeek-build" content="" />
 <title>pgpeek — read-only SQL browser</title>
 <link rel="icon" href="data:," />
 <style>
@@ -178,6 +180,8 @@
   header .about-button { padding: 4px 8px; background: transparent; color: var(--muted); }
   header .about-button:hover { color: var(--text); background: var(--hover); }
   header .about-button:active { transform: translateY(1px); }
+  header .update-badge { padding: 4px 10px; border-radius: 999px; background: var(--accent); color: var(--on-accent); border: 0; font-size: 12px; }
+  header .update-badge:hover { background: var(--accent-hover); }
   .body { flex: 1; display: flex; min-height: 0; }
 
   /* sidebar */

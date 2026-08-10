@@ -16,6 +16,7 @@ import {
 } from "./easter-eggs.js";
 
 const PAGE_SIZE = 100;
+const VERSION_POLL_MS = 5 * 60 * 1000;
 
 // ---- Database selector (hidden when ≤1 database) ----
 function DatabaseSelect({ databases, currentDb, onSwitch }) {
@@ -59,6 +60,14 @@ function formatUptime(seconds) {
 }
 
 const ignoreRefreshError = () => {};
+
+// The build stamped into the document the server sent us, so a release that
+// lands between this page load and the first /healthz is still noticed. Null
+// when unstamped, in which case the first /healthz becomes the baseline.
+function loadedBuild() {
+  const meta = document.querySelector('meta[name="pgpeek-build"]');
+  return (meta && meta.content) || null;
+}
 
 function About({ open, onClose, databases, build }) {
   const dialog = useRef(null);
@@ -122,11 +131,14 @@ function App() {
   const [user, setUser]               = useState(null);
   const [aboutOpen, setAboutOpen]     = useState(false);
   const [build, setBuild]             = useState({});
+  const [updateReady, setUpdateReady] = useState(false);
   const [status, setStatus]           = useState({ text: "Ready.", cls: "ok" });
   const [eggBanner, setEggBanner]     = useState(false);
   const [showShuni, setShowShuni]     = useState(false);
   const [clicks, setClicks]           = useState(() => readTableClicks());
   const dismissEgg = useCallback(() => setEggBanner(false), []);
+  // The build this tab is running, from the document if it was stamped.
+  const loadedVersion = useRef(loadedBuild());
   // Refs so popstate handler always sees the latest values.
   const urlStateRef = useRef({});
   const dbRef       = useRef(null);
@@ -164,6 +176,27 @@ function App() {
     const timer = setTimeout(dismissEgg, 4500);
     return () => clearTimeout(timer);
   }, [eggBanner, dismissEgg]);
+
+  // A release swaps the assets on the server, but a tab that is already open
+  // keeps running the client it loaded. Poll the build version and offer a
+  // reload when it moves; the assets revalidate, so the reload lands on new code.
+  useEffect(() => {
+    let live = true;
+    const check = () => getJSON("/healthz").then((b) => {
+      if (!live || !b.version) return;
+      if (loadedVersion.current === null) loadedVersion.current = b.version;
+      else if (b.version !== loadedVersion.current) setUpdateReady(true);
+    }).catch(ignoreRefreshError);
+    const onVisible = () => { if (document.visibilityState === "visible") check(); };
+    check();
+    const timer = setInterval(check, VERSION_POLL_MS);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      live = false;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
 
   useEffect(() => {
     if (!aboutOpen) return;
@@ -334,6 +367,9 @@ function App() {
       <h1>pgpeek</h1><span class="badge">read-only</span>
       <${UserBadge} user=${user} />
       <${DatabaseSelect} databases=${databases} currentDb=${currentDb} onSwitch=${switchDb} />
+      ${updateReady ? html`<button class="update-badge" id="update-badge"
+        title="A newer pgpeek is deployed — reload to use it"
+        onClick=${() => location.reload()}>New version — reload</button>` : null}
       <button class="about-button" onClick=${() => setAboutOpen(true)}>About</button>
       <${ThemeSelect} />
     </header>

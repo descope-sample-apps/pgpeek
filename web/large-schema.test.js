@@ -169,11 +169,15 @@ describe("large schema rendering", () => {
     expect(detail.textContent).toContain("full large row");
   });
 
-  it("shows an error when a truncated table cell cannot be loaded", async () => {
+  it("shows reload guidance when a truncated table cell changed", async () => {
     routes["GET /api/tables/*/data"] = makeResp({
       json: { columns: ["payload"], rows: [["preview…"]], rowCount: 1, truncatedCells: [{ row: 0, column: 0 }], elapsedMs: 1 },
     });
-    routes["GET /api/tables/*/data/cell"] = makeResp({ ok: false, status: 500 });
+    routes["GET /api/tables/*/data/cell"] = makeResp({
+      ok: false,
+      status: 409,
+      json: { error: "table result changed; reload the page" },
+    });
     await loadApp();
     await click($("tables").querySelector(".tbl"));
 
@@ -182,7 +186,7 @@ describe("large schema rendering", () => {
     detail.dispatchEvent(new Event("toggle"));
     await flush();
 
-    expect(detail.querySelector('[role="alert"]').textContent).toBe("cell fetch failed");
+    expect(detail.querySelector('[role="alert"]').textContent).toBe("table result changed; reload the page");
   });
 
   it("resets expanded table cells when sorting reloads the result", async () => {

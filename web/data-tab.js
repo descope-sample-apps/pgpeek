@@ -4,7 +4,7 @@
 import { html, useState, useEffect, useCallback } from "./vendor/preact-htm.js";
 import { getJSON, tablePath, tableKey, appendDataParams, dbUrl } from "./api.js";
 import { emptyCreatureText, shuniData, isShuniRelation, SHUNI_STATUS } from "./easter-eggs.js";
-import { LazyCell } from "./sql-results.js";
+import { LazyCell, responseError } from "./sql-results.js";
 
 // Allowlisted filter operators.
 const OPS = [
@@ -230,7 +230,7 @@ export function DataTab({
             if (hash) p.set("hash", hash);
             appendDataParams(p, search, sort, filters);
             const response = await fetch(dbUrl(tablePath(table) + "/data/cell?" + p.toString(), dbId), { signal });
-            if (!response.ok) throw new Error("cell fetch failed");
+            if (!response.ok) throw new Error(await responseError(response, "cell fetch failed"));
             return response.json();
           }} /></tbody>
       </table>

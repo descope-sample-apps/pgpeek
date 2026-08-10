@@ -95,7 +95,7 @@ func (s *Server) handleTableData(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	res, err := pool.TableRows(ctx, q)
 	if err != nil {
-		s.log.Error("read rows", "err", err)
+		s.log.Error("read rows")
 		writeError(w, http.StatusBadRequest, "failed to read rows")
 		return
 	}

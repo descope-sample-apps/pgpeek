@@ -1,8 +1,10 @@
 package server
 
 import (
+	"bytes"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -276,6 +278,18 @@ func TestTableData_Error(t *testing.T) {
 	got := decode[map[string]string](t, resp)
 	if got["error"] != "failed to read rows" {
 		t.Fatalf("error = %q, want sanitized row error", got["error"])
+	}
+}
+
+func TestTableData_ErrorLogDoesNotIncludeDatabaseDetail(t *testing.T) {
+	var logs bytes.Buffer
+	srv := serverWithStore(t, &fakeQuerier{err: errors.New("user-controlled database detail")}, &fakeStore{})
+	srv.log = slog.New(slog.NewTextHandler(&logs, nil))
+	req := httptest.NewRequest(http.MethodGet, "/api/tables/public/nope/data", nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if strings.Contains(logs.String(), "user-controlled") {
+		t.Fatalf("log leaked database detail: %s", logs.String())
 	}
 }
 

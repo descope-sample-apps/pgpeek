@@ -23,6 +23,7 @@ type queryCellRequest struct {
 	SQL    string `json:"sql"`
 	Row    int    `json:"row"`
 	Column int    `json:"column"`
+	Hash   string `json:"hash"`
 }
 
 func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
@@ -63,17 +64,35 @@ func (s *Server) handleQueryCell(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, queryErrorMessage(err))
 		return
 	}
+	if req.Hash != "" && db.CellHash(value) != req.Hash {
+		writeError(w, http.StatusConflict, "query result changed; run the query again")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"value": value})
 }
 
 func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
-	res, ok := s.readOnlyResult(w, r)
+	pool, ok := s.poolForRequest(w, r)
 	if !ok {
+		return
+	}
+	sql, ok := decodeReadOnlyQuery(w, r)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
+	defer cancel()
+	res, err := pool.Query(ctx, sql)
+	if err != nil {
+		s.log.Error("query", "err", err)
+		writeError(w, http.StatusBadRequest, queryErrorMessage(err))
 		return
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="pgpeek-export.csv"`)
-	if err := writeCSV(w, res); err != nil {
+	if err := writeCSV(w, res, func(row, column int) (any, error) {
+		return pool.QueryCell(ctx, sql, row, column)
+	}); err != nil {
 		s.log.Error("csv export", "err", err)
 	}
 }
@@ -119,12 +138,23 @@ func decodeReadOnlyQuery(w http.ResponseWriter, r *http.Request) (string, bool) 
 	return sql, true
 }
 
-func writeCSV(w io.Writer, res *db.Result) error {
+func writeCSV(w io.Writer, res *db.Result, resolve func(row, column int) (any, error)) error {
 	cw := csv.NewWriter(w)
 	_ = cw.Write(res.Columns)
+	truncated := make(map[db.CellRef]bool, len(res.TruncatedCells))
+	for _, cell := range res.TruncatedCells {
+		truncated[cell] = true
+	}
 	row := make([]string, len(res.Columns))
-	for _, rec := range res.Rows {
+	for rowIndex, rec := range res.Rows {
 		for i, cell := range rec {
+			if truncated[db.CellRef{Row: rowIndex, Column: i}] && resolve != nil {
+				var err error
+				cell, err = resolve(rowIndex, i)
+				if err != nil {
+					return err
+				}
+			}
 			row[i] = db.CellString(cell)
 		}
 		_ = cw.Write(row)

@@ -461,6 +461,7 @@ Two ways:
 | `GET /api/tables/{schema}/{table}/columns?db=<id>` | Column structure (name, type, nullable, default). |
 | `GET /api/tables/{schema}/{table}/fks?db=<id>` | Single-column foreign keys (for click-through).   |
 | `GET /api/tables/{schema}/{table}/data?db=<id>` | Paged rows; `&limit=&offset=&search=&sort=&dir=&f=col:op:val` (`&format=csv`). |
+| `GET /api/tables/{schema}/{table}/data/cell?db=<id>` | Replay the current page and return one full cell by row/column index. |
 | `GET /api/queries`                            | List saved/preset queries.                     |
 | `POST /api/queries`         | Create a saved query.                     |
 | `PUT /api/queries/{id}`     | Update a saved query.                     |

@@ -175,7 +175,7 @@ one database is configured, only the first native disclosure is expanded.
 ### Data tables
 - Scrollable wrapper (`.table-wrap`): `overflow-x: auto`, `--r-xl` radius, `--c-border` border.
 - Column 1: monospaced (`.td-path`). All text: `--c-muted`. Row hover: `--c-panel-hi`.
-- Oversized SQL cells show the standard 220-character preview and a native disclosure; opening it loads only that full cell. The summary uses the global focus ring plus hover, pressed, loading, error, and expanded states.
+- Oversized SQL and Data cells show the standard 220-character preview and a native disclosure; opening it loads only that full cell. The summary uses the global focus ring plus hover, pressed, loading, error, and expanded states.
 
 ---
 

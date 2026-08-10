@@ -7,11 +7,7 @@ function cellText(value) {
   return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
-function isTruncatedCell(value) {
-  return value && typeof value === "object" && value.truncated === true && typeof value.preview === "string";
-}
-
-export function LazyCell({ value, columnName, loadValue }) {
+export function LazyCell({ value, truncated, columnName, loadValue, onFullValue }) {
   const [full, setFull] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -19,7 +15,7 @@ export function LazyCell({ value, columnName, loadValue }) {
   const requestRef = useRef(null);
   useEffect(() => () => requestRef.current?.abort(), []);
   if (value === null) return html`<td class="cell"><span class="null">NULL</span></td>`;
-  if (!isTruncatedCell(value)) return html`<td class="cell">${cellText(value)}</td>`;
+  if (!truncated) return html`<td class="cell">${cellText(value)}</td>`;
 
   const load = async (event) => {
     const expanded = event.currentTarget.open;
@@ -43,7 +39,7 @@ export function LazyCell({ value, columnName, loadValue }) {
   return html`<td class="cell cell-long">
     <details class="cell-detail" onToggle=${load}>
       <summary aria-label=${(open ? "Hide" : "Show") + " full value for " + columnName}>
-        <span class="cell-preview">${value.preview}</span>
+        <span class="cell-preview">${value}</span>
         <span class="cell-toggle" aria-hidden="true">${open ? "show less" : "show more..."}</span>
       </summary>
       <pre>${loading
@@ -51,6 +47,7 @@ export function LazyCell({ value, columnName, loadValue }) {
         : loadError
           ? html`<span class="cell-load-error" role="alert">${loadError}</span>`
           : (full === null ? "" : cellText(full))}</pre>
+      ${full !== null && onFullValue ? html`<button class="fk cell-full-action" onClick=${() => onFullValue(full)}>Open referenced row</button>` : null}
     </details>
   </td>`;
 }
@@ -59,16 +56,17 @@ export function SqlResults({ result, resultKey, sql, dbId }) {
   if (!result) return html`<div class="empty">Run a query to see results.</div>`;
   if (result.columns.length === 0) return html`<div class="empty">Query ran. No columns returned.</div>`;
   if (result.rows.length === 0) return html`<div class="empty">0 rows.</div>`;
+  const truncated = new Map((result.truncatedCells || []).map((cell) => [cell.row + ":" + cell.column, cell]));
   return html`<table>
     <thead><tr>${result.columns.map((column) => html`<th key=${column}>${column}</th>`)}</tr></thead>
     <tbody>${result.rows.map((row, rowIndex) =>
       html`<tr key=${resultKey + ":" + rowIndex}>${row.map((value, columnIndex) =>
-        html`<${LazyCell} key=${resultKey + ":" + columnIndex} value=${value} columnName=${result.columns[columnIndex]}
+        html`<${LazyCell} key=${resultKey + ":" + columnIndex} value=${value} truncated=${truncated.has(rowIndex + ":" + columnIndex)} columnName=${result.columns[columnIndex]}
           loadValue=${async (signal) => {
             const response = await fetch(dbUrl("/api/query/cell", dbId), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ sql, row: rowIndex, column: columnIndex }),
+              body: JSON.stringify({ sql, row: rowIndex, column: columnIndex, hash: truncated.get(rowIndex + ":" + columnIndex)?.hash || "" }),
               signal,
             });
             if (!response.ok) throw new Error(await responseError(response, "cell fetch failed"));

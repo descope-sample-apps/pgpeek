@@ -266,7 +266,9 @@
   .cell-detail > summary:hover { background: var(--hover); color: var(--text); }
   .cell-detail > summary:active { transform: translateY(1px); }
   .cell-detail > summary::-webkit-details-marker { display: none; }
-  .cell-toggle { position: sticky; left: calc(10rem + var(--space-2)); z-index: 1; display: block; width: max-content; margin-top: var(--space-1); padding: 2px var(--space-1); border-radius: var(--radius-1); background: var(--elev); color: var(--accent); font: 11px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .cell-toggle { display: block; width: max-content; margin-top: var(--space-1); padding: 2px var(--space-1); border-radius: var(--radius-1); background: var(--elev); color: var(--accent); font: 11px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .cell-detail > summary:not(:has(.cell-toggle))::after { content: "show more..."; display: block; width: max-content; margin-top: var(--space-1); padding: 2px var(--space-1); border-radius: var(--radius-1); background: var(--elev); color: var(--accent); font: 11px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .cell-detail[open] > summary:not(:has(.cell-toggle))::after { content: "show less"; }
   .cell-detail[open] > summary { color: var(--muted); }
   .cell-detail > pre { margin: var(--space-2) 0 0; max-height: 22rem; overflow: auto; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-1); background: var(--elev2); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
   .cell-load-error { color: var(--danger); }

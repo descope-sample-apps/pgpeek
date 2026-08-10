@@ -102,7 +102,9 @@ func (s *Server) handleTableData(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("format") == "csv" {
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="`+safeFilename(r.PathValue("table"))+`.csv"`)
-		if err := writeCSV(w, res); err != nil {
+		if err := writeCSV(w, res, func(row, column int) (any, error) {
+			return pool.TableCell(ctx, q, row, column)
+		}); err != nil {
 			s.log.Error("csv export", "err", err)
 		}
 		return
@@ -119,8 +121,12 @@ func (s *Server) handleTableCell(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	value, err := pool.TableCell(ctx, tableQuery(r), queryInt(r, "row", -1), queryInt(r, "column", -1))
 	if err != nil {
-		s.log.Error("read cell", "err", err)
+		s.log.Error("read cell")
 		writeError(w, http.StatusBadRequest, "failed to read cell")
+		return
+	}
+	if expected := r.URL.Query().Get("hash"); expected != "" && db.CellHash(value) != expected {
+		writeError(w, http.StatusConflict, "table result changed; reload the page")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"value": value})

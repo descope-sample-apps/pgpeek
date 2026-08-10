@@ -218,7 +218,7 @@ func (p *Pool) TableCell(ctx context.Context, q TableQuery, row, column int) (an
 	if row < 0 || column < 0 {
 		return nil, ErrCellOutOfRange
 	}
-	q.Offset += row
+	q.Offset = max(q.Offset, 0) + row
 	q.Limit = 1
 	sql, args, err := p.tableSQL(ctx, q)
 	if err != nil {

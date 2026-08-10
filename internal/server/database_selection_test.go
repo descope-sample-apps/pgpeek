@@ -65,12 +65,12 @@ func (q *selectedQuerier) Query(context.Context, string) (*db.Result, error) {
 
 func (q *selectedQuerier) QueryCell(context.Context, string, int, int) (any, error) {
 	q.used = true
-	return nil, db.ErrCellOutOfRange
+	return "cell", nil
 }
 
 func (q *selectedQuerier) TableCell(context.Context, db.TableQuery, int, int) (any, error) {
 	q.used = true
-	return nil, db.ErrCellOutOfRange
+	return "cell", nil
 }
 
 func (q *selectedQuerier) Tables(context.Context) ([]db.TableInfo, bool, error) {
@@ -174,11 +174,13 @@ func TestDatabaseSelection_uses_selected_pool_for_db_bound_endpoints(t *testing.
 		{name: "readyz", method: http.MethodGet, path: "/readyz?db=analytics"},
 		{name: "meta", method: http.MethodGet, path: "/api/meta?db=analytics"},
 		{name: "query", method: http.MethodPost, path: "/api/query?db=analytics", body: `{"sql":"SELECT 1"}`},
+		{name: "query cell", method: http.MethodPost, path: "/api/query/cell?db=analytics", body: `{"sql":"SELECT 1","row":0,"column":0}`},
 		{name: "export", method: http.MethodPost, path: "/api/export?db=analytics", body: `{"sql":"SELECT 1"}`},
 		{name: "tables", method: http.MethodGet, path: "/api/tables?db=analytics"},
 		{name: "columns", method: http.MethodGet, path: "/api/tables/public/users/columns?db=analytics"},
 		{name: "fks", method: http.MethodGet, path: "/api/tables/public/users/fks?db=analytics"},
 		{name: "data", method: http.MethodGet, path: "/api/tables/public/users/data?db=analytics"},
+		{name: "data cell", method: http.MethodGet, path: "/api/tables/public/users/data/cell?row=0&column=0&db=analytics"},
 		{name: "data csv", method: http.MethodGet, path: "/api/tables/public/users/data?format=csv&db=analytics"},
 	}
 	for _, tt := range tests {

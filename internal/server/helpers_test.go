@@ -19,6 +19,7 @@ import (
 
 type fakeQuerier struct {
 	result       *db.Result
+	cellValue    any
 	err          error
 	pingErr      error
 	called       bool
@@ -46,6 +47,9 @@ func (f *fakeQuerier) QueryCell(_ context.Context, sql string, row, column int) 
 	f.lastSQL = sql
 	if f.err != nil {
 		return nil, f.err
+	}
+	if f.cellValue != nil {
+		return f.cellValue, nil
 	}
 	if f.result == nil || row < 0 || row >= len(f.result.Rows) || column < 0 || column >= len(f.result.Rows[row]) {
 		return nil, db.ErrCellOutOfRange
@@ -78,6 +82,9 @@ func (f *fakeQuerier) TableCell(_ context.Context, q db.TableQuery, row, column 
 	f.lastQuery = q
 	if f.err != nil || f.result == nil {
 		return nil, f.err
+	}
+	if f.cellValue != nil {
+		return f.cellValue, nil
 	}
 	if row < 0 || row >= len(f.result.Rows) || column < 0 || column >= len(f.result.Rows[row]) {
 		return nil, db.ErrCellOutOfRange

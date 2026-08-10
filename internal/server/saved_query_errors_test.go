@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -121,15 +122,26 @@ func TestExport_WriteFailureLogged(t *testing.T) {
 func TestWriteCSV(t *testing.T) {
 	res := &db.Result{Columns: []string{"a"}, Rows: [][]any{{"1"}}}
 	var buf strings.Builder
-	if err := writeCSV(&buf, res); err != nil {
+	if err := writeCSV(&buf, res, nil); err != nil {
 		t.Fatalf("writeCSV: %v", err)
 	}
 	if !strings.Contains(buf.String(), "a\n1\n") {
 		t.Errorf("csv = %q", buf.String())
 	}
 	// Failing writer -> error surfaces via cw.Error() after Flush.
-	if err := writeCSV(failWriter{}, res); err == nil {
+	if err := writeCSV(failWriter{}, res, nil); err == nil {
 		t.Error("expected error from failing writer")
+	}
+}
+
+func TestWriteCSV_ResolverError(t *testing.T) {
+	res := &db.Result{
+		Columns:        []string{"a"},
+		Rows:           [][]any{{"preview"}},
+		TruncatedCells: []db.CellRef{{Row: 0, Column: 0}},
+	}
+	if err := writeCSV(io.Discard, res, func(int, int) (any, error) { return nil, errors.New("boom") }); err == nil {
+		t.Fatal("expected resolver error")
 	}
 }
 

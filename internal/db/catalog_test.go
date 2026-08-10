@@ -225,6 +225,38 @@ func TestTableCell_UsesPageOffsetAndReturnsFullValue(t *testing.T) {
 	}
 }
 
+func TestTableCell_NormalizesNegativePageOffsetBeforeRowIndex(t *testing.T) {
+	fp := &fakePool{rows: &fakeRows{cols: []string{"payload"}, data: [][]any{{"value"}}}}
+	p := &Pool{pool: fp, rowCap: 100}
+	if _, err := p.TableCell(context.Background(), TableQuery{Schema: "public", Table: "users", Offset: -50}, 3, 0); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fp.lastSQL, "LIMIT 1 OFFSET 3") {
+		t.Fatalf("sql = %q", fp.lastSQL)
+	}
+}
+
+func TestTableCell_Errors(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		pool        *fakePool
+		query       TableQuery
+		row, column int
+	}{
+		{name: "negative row", pool: &fakePool{}, query: TableQuery{}, row: -1},
+		{name: "negative column", pool: &fakePool{}, query: TableQuery{}, column: -1},
+		{name: "invalid table query", pool: &fakePool{rows: dataRows(), colRows: colsFor("id")}, query: TableQuery{Schema: "s", Table: "t", Filters: []Filter{{Column: "missing", Op: "eq"}}}},
+		{name: "database query", pool: &fakePool{queryErr: errors.New("boom")}, query: TableQuery{Schema: "s", Table: "t"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &Pool{pool: tc.pool, rowCap: 100}
+			if _, err := p.TableCell(context.Background(), tc.query, tc.row, tc.column); err == nil {
+				t.Fatal("expected TableCell error")
+			}
+		})
+	}
+}
+
 func TestTableRows_QueryError(t *testing.T) {
 	p := &Pool{pool: &fakePool{queryErr: errors.New("boom")}, rowCap: 10}
 	if _, err := p.TableRows(context.Background(), TableQuery{Schema: "s", Table: "t", Limit: 10}); err == nil {

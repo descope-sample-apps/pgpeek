@@ -13,7 +13,7 @@
     "themeCount": 20,
     "safetyLayerCount": 3,
     "documentedConfigCount": 23,
-    "httpRouteCount": 22,
+    "httpRouteCount": 24,
     "defaultRowCap": 1000,
     "defaultStatementTimeout": "30s"
   },
@@ -73,7 +73,7 @@
     ]
   },
   "httpRoutes": {
-    "count": 22,
+    "count": 24,
     "items": [
       {
         "method": "GET",
@@ -107,6 +107,11 @@
       },
       {
         "method": "POST",
+        "path": "/api/query/cell",
+        "description": "Re-run one read-only SQL statement and return a selected full cell."
+      },
+      {
+        "method": "POST",
         "path": "/api/export",
         "description": "Run one read-only SQL statement and download CSV."
       },
@@ -129,6 +134,11 @@
         "method": "GET",
         "path": "/api/tables/{schema}/{table}/data",
         "description": "Return paged, filtered, and sorted table data."
+      },
+      {
+        "method": "GET",
+        "path": "/api/tables/{schema}/{table}/data/cell",
+        "description": "Replay the current table page and return a selected full cell."
       },
       {
         "method": "GET",

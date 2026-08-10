@@ -33,9 +33,10 @@ func TestQuery_TruncatesLargeCellsWithoutDroppingRows(t *testing.T) {
 	value := strings.Repeat("x", 32<<10)
 	q := &fakeQuerier{result: &db.Result{
 		Columns:        []string{"payload"},
-		Rows:           [][]any{{db.TruncatedCell{Preview: value[:100] + "…", Truncated: true}}, {"small"}},
+		Rows:           [][]any{{value[:100] + "…"}, {"small"}},
 		RowCount:       2,
 		CellsTruncated: true,
+		TruncatedCells: []db.CellRef{{Row: 0, Column: 0}},
 	}}
 	ts, _ := newTestServer(t, q)
 
@@ -47,8 +48,7 @@ func TestQuery_TruncatesLargeCellsWithoutDroppingRows(t *testing.T) {
 	if len(res.Rows) != 2 || !res.CellsTruncated {
 		t.Fatalf("rows=%d cellsTruncated=%v", len(res.Rows), res.CellsTruncated)
 	}
-	cell, ok := res.Rows[0][0].(map[string]any)
-	if !ok || cell["truncated"] != true || len(cell["preview"].(string)) >= len(value) {
+	if res.Rows[0][0] == value || len(res.TruncatedCells) != 1 {
 		t.Fatalf("large cell was not replaced with a preview: %#v", res.Rows[0][0])
 	}
 }
@@ -69,6 +69,56 @@ func TestQueryCell_ReturnsFullSelectedValue(t *testing.T) {
 	got := decode[map[string]any](t, resp)
 	if got["value"] != value {
 		t.Fatal("cell endpoint did not return the full value")
+	}
+}
+
+func TestQueryCell_RejectsInvalidRequests(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "invalid json", body: `{`},
+		{name: "negative row", body: `{"sql":"SELECT 1","row":-1,"column":0}`},
+		{name: "negative column", body: `{"sql":"SELECT 1","row":0,"column":-1}`},
+		{name: "write query", body: `{"sql":"DELETE FROM users","row":0,"column":0}`},
+		{name: "missing cell", body: `{"sql":"SELECT 1","row":99,"column":0}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ts, _ := newTestServer(t, &fakeQuerier{result: okResult()})
+			resp := post(t, ts, "/api/query/cell", tc.body)
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status = %d", resp.StatusCode)
+			}
+		})
+	}
+}
+
+func TestQueryCell_DBError(t *testing.T) {
+	ts, _ := newTestServer(t, &fakeQuerier{err: errors.New("boom")})
+	resp := post(t, ts, "/api/query/cell", `{"sql":"SELECT 1","row":0,"column":0}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+}
+
+func TestQueryCell_RejectsChangedResult(t *testing.T) {
+	ts, _ := newTestServer(t, &fakeQuerier{result: &db.Result{Rows: [][]any{{"new value"}}}})
+	resp := post(t, ts, "/api/query/cell", `{"sql":"SELECT 1","row":0,"column":0,"hash":"stale"}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+}
+
+func TestQueryCell_UnknownDatabase(t *testing.T) {
+	ts, _ := newTestServer(t, &fakeQuerier{result: okResult()})
+	resp := post(t, ts, "/api/query/cell?db=missing", `{"sql":"SELECT 1","row":0,"column":0}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d", resp.StatusCode)
 	}
 }
 
@@ -168,6 +218,26 @@ func TestExport_CSV(t *testing.T) {
 	// Field with a comma must be quoted by encoding/csv.
 	if !strings.Contains(got, `"Globex,Inc"`) {
 		t.Errorf("comma field not quoted: %q", got)
+	}
+}
+
+func TestExport_CSVResolvesTruncatedCells(t *testing.T) {
+	q := &fakeQuerier{
+		result: &db.Result{
+			Columns:        []string{"payload"},
+			Rows:           [][]any{{"preview…"}},
+			RowCount:       1,
+			CellsTruncated: true,
+			TruncatedCells: []db.CellRef{{Row: 0, Column: 0}},
+		},
+		cellValue: "full value",
+	}
+	ts, _ := newTestServer(t, q)
+	resp := post(t, ts, "/api/export", `{"sql":"SELECT payload"}`)
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "full value") || strings.Contains(string(body), "preview") {
+		t.Fatalf("csv = %q", body)
 	}
 }
 

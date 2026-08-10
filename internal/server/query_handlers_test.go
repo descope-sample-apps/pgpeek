@@ -241,6 +241,28 @@ func TestExport_CSVResolvesTruncatedCells(t *testing.T) {
 	}
 }
 
+func TestExport_CSVRejectsChangedCellBeforeDownload(t *testing.T) {
+	q := &fakeQuerier{
+		result: &db.Result{
+			Columns:        []string{"payload"},
+			Rows:           [][]any{{"preview…"}},
+			RowCount:       1,
+			CellsTruncated: true,
+			TruncatedCells: []db.CellRef{{Row: 0, Column: 0, Hash: db.CellHash("original")}},
+		},
+		cellValue: "changed",
+	}
+	ts, _ := newTestServer(t, q)
+	resp := post(t, ts, "/api/export", `{"sql":"SELECT payload"}`)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", resp.StatusCode)
+	}
+	got := decode[map[string]string](t, resp)
+	if got["error"] != "The data changed. Reload and export again." {
+		t.Fatalf("error = %q", got["error"])
+	}
+}
+
 func TestExport_GuardRejects(t *testing.T) {
 	q := &fakeQuerier{result: okResult()}
 	ts, _ := newTestServer(t, q)

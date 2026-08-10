@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
@@ -88,10 +87,10 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, queryErrorMessage(err))
 		return
 	}
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="pgpeek-export.csv"`)
-	if err := writeCSV(w, res, func(row, column int) (any, error) {
-		return pool.QueryCell(ctx, sql, row, column)
+	if err := writeCSVResponse(w, "pgpeek-export.csv", func(dst io.Writer) error {
+		return writeCSV(dst, res, func(row, column int) (any, error) {
+			return pool.QueryCell(ctx, sql, row, column)
+		})
 	}); err != nil {
 		s.log.Error("csv export", "err", err)
 	}
@@ -136,32 +135,4 @@ func decodeReadOnlyQuery(w http.ResponseWriter, r *http.Request) (string, bool) 
 		return "", false
 	}
 	return sql, true
-}
-
-func writeCSV(w io.Writer, res *db.Result, resolve func(row, column int) (any, error)) error {
-	cw := csv.NewWriter(w)
-	_ = cw.Write(res.Columns)
-	truncated := make(map[[2]int]string, len(res.TruncatedCells))
-	for _, cell := range res.TruncatedCells {
-		truncated[[2]int{cell.Row, cell.Column}] = cell.Hash
-	}
-	row := make([]string, len(res.Columns))
-	for rowIndex, rec := range res.Rows {
-		for i, cell := range rec {
-			if hash, ok := truncated[[2]int{rowIndex, i}]; ok && resolve != nil {
-				var err error
-				cell, err = resolve(rowIndex, i)
-				if err != nil {
-					return err
-				}
-				if hash != "" && db.CellHash(cell) != hash {
-					return errors.New("query result changed during export")
-				}
-			}
-			row[i] = db.CellString(cell)
-		}
-		_ = cw.Write(row)
-	}
-	cw.Flush()
-	return cw.Error()
 }

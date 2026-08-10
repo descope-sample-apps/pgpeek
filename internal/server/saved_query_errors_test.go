@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -140,8 +141,20 @@ func TestWriteCSV_ResolverError(t *testing.T) {
 		Rows:           [][]any{{"preview"}},
 		TruncatedCells: []db.CellRef{{Row: 0, Column: 0}},
 	}
-	if err := writeCSV(io.Discard, res, func(int, int) (any, error) { return nil, errors.New("boom") }); err == nil {
+	rec := httptest.NewRecorder()
+	err := writeCSVResponse(rec, "export.csv", func(dst io.Writer) error {
+		return writeCSV(dst, res, func(int, int) (any, error) { return nil, errors.New("boom") })
+	})
+	if err == nil || rec.Code != http.StatusBadRequest {
 		t.Fatal("expected resolver error")
+	}
+}
+
+func TestWriteCSVResponse_CreateFailure(t *testing.T) {
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "missing"))
+	rec := httptest.NewRecorder()
+	if err := writeCSVResponse(rec, "export.csv", func(io.Writer) error { return nil }); err == nil || rec.Code != http.StatusInternalServerError {
+		t.Fatalf("error=%v status=%d", err, rec.Code)
 	}
 }
 

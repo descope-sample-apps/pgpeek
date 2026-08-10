@@ -170,6 +170,19 @@ func TestTableData_OK(t *testing.T) {
 	}
 }
 
+func TestTableCell_OK(t *testing.T) {
+	q := &fakeQuerier{result: &db.Result{Columns: []string{"payload"}, Rows: [][]any{{"full value"}}, RowCount: 1}}
+	ts, _ := newTestServer(t, q)
+	resp := mustGet(t, ts, "/api/tables/public/users/data/cell?row=0&column=0&limit=25&offset=50")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	got := decode[map[string]any](t, resp)
+	if got["value"] != "full value" || q.lastQuery.Offset != 50 {
+		t.Fatalf("value=%v query=%+v", got["value"], q.lastQuery)
+	}
+}
+
 func TestTableData_ParsesSearchSortFilters(t *testing.T) {
 	q := &fakeQuerier{result: okResult()}
 	ts, _ := newTestServer(t, q)

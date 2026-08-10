@@ -19,12 +19,51 @@ type queryRequest struct {
 	SQL string `json:"sql"`
 }
 
+type queryCellRequest struct {
+	SQL    string `json:"sql"`
+	Row    int    `json:"row"`
+	Column int    `json:"column"`
+}
+
 func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	res, ok := s.readOnlyResult(w, r)
 	if !ok {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) handleQueryCell(w http.ResponseWriter, r *http.Request) {
+	var req queryCellRequest
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	req.SQL = strings.TrimSpace(req.SQL)
+	if req.Row < 0 || req.Column < 0 {
+		writeError(w, http.StatusBadRequest, "row and column must be non-negative")
+		return
+	}
+	if err := guard.Validate(req.SQL); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	pool, ok := s.poolForRequest(w, r)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
+	defer cancel()
+	value, err := pool.QueryCell(ctx, req.SQL, req.Row, req.Column)
+	if errors.Is(err, db.ErrCellOutOfRange) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err != nil {
+		s.log.Error("query cell", "err", err)
+		writeError(w, http.StatusBadRequest, queryErrorMessage(err))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"value": value})
 }
 
 func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {

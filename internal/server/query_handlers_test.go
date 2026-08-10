@@ -29,6 +29,49 @@ func TestQuery_OK(t *testing.T) {
 	}
 }
 
+func TestQuery_TruncatesLargeCellsWithoutDroppingRows(t *testing.T) {
+	value := strings.Repeat("x", 32<<10)
+	q := &fakeQuerier{result: &db.Result{
+		Columns:        []string{"payload"},
+		Rows:           [][]any{{db.TruncatedCell{Preview: value[:100] + "…", Truncated: true}}, {"small"}},
+		RowCount:       2,
+		CellsTruncated: true,
+	}}
+	ts, _ := newTestServer(t, q)
+
+	resp := post(t, ts, "/api/query", `{"sql":"SELECT payload"}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	res := decode[db.Result](t, resp)
+	if len(res.Rows) != 2 || !res.CellsTruncated {
+		t.Fatalf("rows=%d cellsTruncated=%v", len(res.Rows), res.CellsTruncated)
+	}
+	cell, ok := res.Rows[0][0].(map[string]any)
+	if !ok || cell["truncated"] != true || len(cell["preview"].(string)) >= len(value) {
+		t.Fatalf("large cell was not replaced with a preview: %#v", res.Rows[0][0])
+	}
+}
+
+func TestQueryCell_ReturnsFullSelectedValue(t *testing.T) {
+	value := strings.Repeat("x", 32<<10)
+	q := &fakeQuerier{result: &db.Result{
+		Columns:  []string{"payload"},
+		Rows:     [][]any{{value}},
+		RowCount: 1,
+	}}
+	ts, _ := newTestServer(t, q)
+
+	resp := post(t, ts, "/api/query/cell", `{"sql":"SELECT payload","row":0,"column":0}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	got := decode[map[string]any](t, resp)
+	if got["value"] != value {
+		t.Fatal("cell endpoint did not return the full value")
+	}
+}
+
 func TestQuery_GuardRejectsDML(t *testing.T) {
 	q := &fakeQuerier{result: okResult()}
 	ts, _ := newTestServer(t, q)

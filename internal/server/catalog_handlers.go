@@ -90,16 +90,7 @@ func (s *Server) handleTableData(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	q := db.TableQuery{
-		Schema:  r.PathValue("schema"),
-		Table:   r.PathValue("table"),
-		Search:  r.URL.Query().Get("search"),
-		Sort:    r.URL.Query().Get("sort"),
-		Desc:    r.URL.Query().Get("dir") == "desc",
-		Limit:   queryInt(r, "limit", 0),
-		Offset:  queryInt(r, "offset", 0),
-		Filters: parseFilters(r.URL.Query()["f"]),
-	}
+	q := tableQuery(r)
 	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
 	defer cancel()
 	res, err := pool.TableRows(ctx, q)
@@ -117,6 +108,35 @@ func (s *Server) handleTableData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) handleTableCell(w http.ResponseWriter, r *http.Request) {
+	pool, ok := s.poolForRequest(w, r)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
+	defer cancel()
+	value, err := pool.TableCell(ctx, tableQuery(r), queryInt(r, "row", -1), queryInt(r, "column", -1))
+	if err != nil {
+		s.log.Error("read cell", "err", err)
+		writeError(w, http.StatusBadRequest, "failed to read cell")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"value": value})
+}
+
+func tableQuery(r *http.Request) db.TableQuery {
+	return db.TableQuery{
+		Schema:  r.PathValue("schema"),
+		Table:   r.PathValue("table"),
+		Search:  r.URL.Query().Get("search"),
+		Sort:    r.URL.Query().Get("sort"),
+		Desc:    r.URL.Query().Get("dir") == "desc",
+		Limit:   queryInt(r, "limit", 0),
+		Offset:  queryInt(r, "offset", 0),
+		Filters: parseFilters(r.URL.Query()["f"]),
+	}
 }
 
 func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {

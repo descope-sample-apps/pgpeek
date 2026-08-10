@@ -1,9 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 )
@@ -11,7 +15,7 @@ import (
 func TestStatic_revalidatesAndServes304ForUnchangedBuild(t *testing.T) {
 	// Given: a build of the embedded UI.
 	web := fstest.MapFS{"app.js": &fstest.MapFile{Data: []byte("export const v = 1;")}}
-	handler := staticHandler(web)
+	handler := staticHandler(web, "1.2.3")
 
 	// When: a browser loads the UI.
 	first := httptest.NewRecorder()
@@ -44,7 +48,7 @@ func TestStatic_newBuildChangesETag(t *testing.T) {
 	next := fstest.MapFS{"app.js": &fstest.MapFile{Data: []byte("export const v = 2;")}}
 
 	// When: each is hashed.
-	oldTag, nextTag := staticETag(old), staticETag(next)
+	oldTag, nextTag := staticETag(old, "1.2.3"), staticETag(next, "1.2.3")
 
 	// Then: the released build revalidates to a miss, so the client refetches.
 	if oldTag == "" || oldTag == nextTag {
@@ -78,7 +82,7 @@ func TestStatic_unhashableAssetsDropTheETagRatherThanPinAStaleOne(t *testing.T) 
 
 	// When: a readable asset is served.
 	rec := httptest.NewRecorder()
-	staticHandler(unreadable).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/app.js", nil))
+	staticHandler(unreadable, "1.2.3").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/app.js", nil))
 
 	// Then: it is still served and still revalidated, just without a tag —
 	// no ETag means no conditional hit, never a stale hit.
@@ -102,7 +106,7 @@ func TestStatic_unhashableTreeHasNoETag(t *testing.T) {
 		"unreadable": unreadableFS{files: assets, fail: "app.js"},
 	} {
 		// When/Then: hashing gives up rather than tag a build it never read.
-		if got := staticETag(files); got != "" {
+		if got := staticETag(files, "1.2.3"); got != "" {
 			t.Errorf("%s: etag = %q, want none", name, got)
 		}
 	}
@@ -120,7 +124,79 @@ func TestStatic_etagCoversEveryAsset(t *testing.T) {
 	}
 
 	// When/Then: the whole asset set revalidates, not just the file that moved.
-	if staticETag(base) == staticETag(changed) {
+	if staticETag(base, "1.2.3") == staticETag(changed, "1.2.3") {
 		t.Fatal("etag ignored a changed module")
+	}
+}
+
+func TestStatic_releaseWithIdenticalAssetsStillChangesETag(t *testing.T) {
+	// Given: a release that rebuilds the same assets under a new version. The
+	// served index.html carries the version, so a shared tag would 304 clients
+	// onto a document that names the build they are leaving.
+	assets := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte(buildMetaPlaceholder)}}
+
+	// When/Then: the version alone moves the tag.
+	if staticETag(assets, "1.2.3") == staticETag(assets, "1.3.0") {
+		t.Fatal("etag ignored the version")
+	}
+}
+
+func TestStatic_indexCarriesTheRunningBuild(t *testing.T) {
+	// Given: the UI, whose build meta is empty in the embedded bytes.
+	web := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<head>" + buildMetaPlaceholder + "</head>")}}
+
+	// When: the document is served.
+	rec := httptest.NewRecorder()
+	staticHandler(web, "1.2.3").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	// Then: the client can tell which build it is running without asking the
+	// server, so a release during page load cannot become its baseline.
+	if got := rec.Body.String(); !strings.Contains(got, `content="1.2.3"`) {
+		t.Fatalf("index = %q, want the build stamped in", got)
+	}
+	if rec.Header().Get("ETag") == "" || rec.Header().Get("Cache-Control") != "no-cache" {
+		t.Fatalf("headers = %v", rec.Header())
+	}
+}
+
+func TestStatic_indexEscapesTheBuildIntoTheAttribute(t *testing.T) {
+	// Given: a build string that would otherwise break out of the attribute.
+	web := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte(buildMetaPlaceholder)}}
+
+	// When: the document is served.
+	rec := httptest.NewRecorder()
+	staticHandler(web, `1.0"><script>x()</script>`).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	// Then: it stays inside the attribute.
+	if got := rec.Body.String(); strings.Contains(got, "<script>") {
+		t.Fatalf("index = %q, want the build escaped", got)
+	}
+}
+
+func TestStatic_shippedIndexHasSomethingToStamp(t *testing.T) {
+	// Given: the index.html that actually ships. Stamping is a silent no-op if
+	// the tag drifts from the constant, so pin them together.
+	shipped, err := os.ReadFile(filepath.Join("..", "..", "web", "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// When/Then: the placeholder is still there to replace.
+	if !bytes.Contains(shipped, []byte(buildMetaPlaceholder)) {
+		t.Fatalf("web/index.html no longer contains %s", buildMetaPlaceholder)
+	}
+}
+
+func TestStatic_servesAssetsWhenThereIsNoIndexToStamp(t *testing.T) {
+	// Given: an asset tree with no index.html.
+	web := fstest.MapFS{"app.js": &fstest.MapFile{Data: []byte("export const v = 1;")}}
+
+	// When: an asset is requested.
+	rec := httptest.NewRecorder()
+	staticHandler(web, "1.2.3").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/app.js", nil))
+
+	// Then: serving carries on regardless.
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 }

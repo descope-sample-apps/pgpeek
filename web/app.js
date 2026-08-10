@@ -61,6 +61,14 @@ function formatUptime(seconds) {
 
 const ignoreRefreshError = () => {};
 
+// The build stamped into the document the server sent us, so a release that
+// lands between this page load and the first /healthz is still noticed. Null
+// when unstamped, in which case the first /healthz becomes the baseline.
+function loadedBuild() {
+  const meta = document.querySelector('meta[name="pgpeek-build"]');
+  return (meta && meta.content) || null;
+}
+
 function About({ open, onClose, databases, build }) {
   const dialog = useRef(null);
   useEffect(() => {
@@ -124,12 +132,13 @@ function App() {
   const [aboutOpen, setAboutOpen]     = useState(false);
   const [build, setBuild]             = useState({});
   const [updateReady, setUpdateReady] = useState(false);
-  const loadedVersion = useRef(null);
   const [status, setStatus]           = useState({ text: "Ready.", cls: "ok" });
   const [eggBanner, setEggBanner]     = useState(false);
   const [showShuni, setShowShuni]     = useState(false);
   const [clicks, setClicks]           = useState(() => readTableClicks());
   const dismissEgg = useCallback(() => setEggBanner(false), []);
+  // The build this tab is running, from the document if it was stamped.
+  const loadedVersion = useRef(loadedBuild());
   // Refs so popstate handler always sees the latest values.
   const urlStateRef = useRef({});
   const dbRef       = useRef(null);

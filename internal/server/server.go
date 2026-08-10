@@ -101,7 +101,7 @@ func (s *Server) Routes() http.Handler {
 	}
 
 	// Static UI
-	mux.Handle("GET /", staticHandler(s.web))
+	mux.Handle("GET /", staticHandler(s.web, s.version))
 
 	return securityHeaders(logging(s.log, requireCloudflareAccess(s.requireCloudflareAccess, mux)))
 }

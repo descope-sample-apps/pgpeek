@@ -12,7 +12,13 @@ function healthz(version) {
   return makeResp({ json: { status: "ok", version, commit: "abc1234", buildDate: "2026-08-01T00:00:00Z" } });
 }
 
+// stampBuild mimics the server writing the running build into the document.
+function stampBuild(version) {
+  document.head.innerHTML = `<meta name="pgpeek-build" content="${version}" />`;
+}
+
 beforeEach(() => {
+  document.head.innerHTML = "";
   document.body.innerHTML = '<div id="app"></div>';
   window.history.replaceState({}, "", "/");
   setVisibility("visible");
@@ -107,6 +113,33 @@ describe("release awareness", () => {
 
     const after = fetch.mock.calls.filter(([u]) => String(u) === "/healthz").length;
     expect(after).toBe(before);
+  });
+
+  it("compares against the build stamped into the document", async () => {
+    // The tab loaded 1.2.3's assets; a release landed before the first check,
+    // so healthz already answers 1.3.0. Without the stamp this would silently
+    // become the baseline and the tab would keep running old code.
+    stampBuild("1.2.3");
+    routes["GET /healthz"] = healthz("1.3.0");
+    await loadApp();
+
+    expect($("update-badge")).not.toBeNull();
+  });
+
+  it("stays quiet when the stamped build matches what is served", async () => {
+    stampBuild("1.2.3");
+    await loadApp();
+    await becomeVisible();
+
+    expect($("update-badge")).toBeNull();
+  });
+
+  it("falls back to the first healthz when the document is unstamped", async () => {
+    stampBuild("");
+    routes["GET /healthz"] = healthz("1.3.0");
+    await loadApp();
+
+    expect($("update-badge")).toBeNull();
   });
 
   it("drops a healthz response that lands after the tab tore down", async () => {

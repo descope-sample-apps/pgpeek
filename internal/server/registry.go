@@ -13,10 +13,12 @@ import (
 
 type Querier interface {
 	Query(ctx context.Context, sql string) (*db.Result, error)
+	QueryCell(ctx context.Context, sql string, row, column int) (any, error)
 	Tables(ctx context.Context) ([]db.TableInfo, bool, error)
 	Columns(ctx context.Context, schema, table string) ([]db.ColumnInfo, bool, error)
 	ForeignKeys(ctx context.Context, schema, table string) ([]db.ForeignKey, bool, error)
 	TableRows(ctx context.Context, q db.TableQuery) (*db.Result, error)
+	TableCell(ctx context.Context, q db.TableQuery, row, column int) (any, error)
 	RowCap() int
 	MaxConns() int32
 	Ping(ctx context.Context) error

@@ -63,6 +63,16 @@ func (q *selectedQuerier) Query(context.Context, string) (*db.Result, error) {
 	return okResult(), nil
 }
 
+func (q *selectedQuerier) QueryCell(context.Context, string, int, int) (any, error) {
+	q.used = true
+	return nil, db.ErrCellOutOfRange
+}
+
+func (q *selectedQuerier) TableCell(context.Context, db.TableQuery, int, int) (any, error) {
+	q.used = true
+	return nil, db.ErrCellOutOfRange
+}
+
 func (q *selectedQuerier) Tables(context.Context) ([]db.TableInfo, bool, error) {
 	q.used = true
 	return []db.TableInfo{}, false, nil

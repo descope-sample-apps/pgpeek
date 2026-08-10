@@ -16,6 +16,7 @@ import {
 } from "./easter-eggs.js";
 
 const PAGE_SIZE = 100;
+const VERSION_POLL_MS = 5 * 60 * 1000;
 
 // ---- Database selector (hidden when ≤1 database) ----
 function DatabaseSelect({ databases, currentDb, onSwitch }) {
@@ -122,6 +123,8 @@ function App() {
   const [user, setUser]               = useState(null);
   const [aboutOpen, setAboutOpen]     = useState(false);
   const [build, setBuild]             = useState({});
+  const [updateReady, setUpdateReady] = useState(false);
+  const loadedVersion = useRef(null);
   const [status, setStatus]           = useState({ text: "Ready.", cls: "ok" });
   const [eggBanner, setEggBanner]     = useState(false);
   const [showShuni, setShowShuni]     = useState(false);
@@ -164,6 +167,27 @@ function App() {
     const timer = setTimeout(dismissEgg, 4500);
     return () => clearTimeout(timer);
   }, [eggBanner, dismissEgg]);
+
+  // A release swaps the assets on the server, but a tab that is already open
+  // keeps running the client it loaded. Poll the build version and offer a
+  // reload when it moves; the assets revalidate, so the reload lands on new code.
+  useEffect(() => {
+    let live = true;
+    const check = () => getJSON("/healthz").then((b) => {
+      if (!live || !b || !b.version) return;
+      if (loadedVersion.current === null) loadedVersion.current = b.version;
+      else if (b.version !== loadedVersion.current) setUpdateReady(true);
+    }, ignoreRefreshError);
+    const onVisible = () => { if (document.visibilityState === "visible") check(); };
+    check();
+    const timer = setInterval(check, VERSION_POLL_MS);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      live = false;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
 
   useEffect(() => {
     if (!aboutOpen) return;
@@ -334,6 +358,9 @@ function App() {
       <h1>pgpeek</h1><span class="badge">read-only</span>
       <${UserBadge} user=${user} />
       <${DatabaseSelect} databases=${databases} currentDb=${currentDb} onSwitch=${switchDb} />
+      ${updateReady ? html`<button class="update-badge" id="update-badge"
+        title="A newer pgpeek is deployed — reload to use it"
+        onClick=${() => location.reload()}>New version — reload</button>` : null}
       <button class="about-button" onClick=${() => setAboutOpen(true)}>About</button>
       <${ThemeSelect} />
     </header>

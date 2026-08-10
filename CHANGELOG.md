@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.4](https://github.com/descope-sample-apps/pgpeek/compare/v0.11.3...v0.11.4) (2026-08-10)
+
+
+### Bug Fixes
+
+* bust the client cache on release ([#78](https://github.com/descope-sample-apps/pgpeek/issues/78)) ([3e9473d](https://github.com/descope-sample-apps/pgpeek/commit/3e9473dc5d72f2fc0e2940afdf82045ecc07f2ea))
+* preserve rows with oversized cells ([#79](https://github.com/descope-sample-apps/pgpeek/issues/79)) ([f650258](https://github.com/descope-sample-apps/pgpeek/commit/f65025819ccb7418230260ad7d2969696f42a4b3))
+
 ## [0.11.3](https://github.com/descope-sample-apps/pgpeek/compare/v0.11.2...v0.11.3) (2026-08-09)
 
 

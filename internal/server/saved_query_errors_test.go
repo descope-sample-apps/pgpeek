@@ -188,6 +188,24 @@ func TestWriteCSVResponse_UnlinkFailure(t *testing.T) {
 	}
 }
 
+func TestWriteCSVResponse_RejectsOversizedExport(t *testing.T) {
+	rec := httptest.NewRecorder()
+	if err := writeCSVResponse(rec, "export.csv", func(io.Writer) error { return errCSVTooLarge }); !errors.Is(err, errCSVTooLarge) || rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("error=%v status=%d", err, rec.Code)
+	}
+}
+
+func TestLimitedCSVWriter_StopsBeforeLimit(t *testing.T) {
+	var dst strings.Builder
+	w := &limitedCSVWriter{dst: &dst, remaining: 3}
+	if n, err := w.Write([]byte("four")); n != 0 || !errors.Is(err, errCSVTooLarge) || dst.Len() != 0 {
+		t.Fatalf("n=%d error=%v bytes=%d", n, err, dst.Len())
+	}
+	if n, err := w.Write([]byte("ok")); n != 2 || err != nil || dst.String() != "ok" {
+		t.Fatalf("n=%d error=%v value=%q", n, err, dst.String())
+	}
+}
+
 func TestWriteCSV_RejectsChangedCell(t *testing.T) {
 	res := &db.Result{
 		Columns:        []string{"a"},

@@ -10,8 +10,27 @@ import (
 	"github.com/descope-sample-apps/pgpeek/internal/db"
 )
 
-var errCSVResultChanged = errors.New("query result changed during export")
-var removeCSVSpool = os.Remove
+const maxCSVExportBytes = 512 << 20
+
+var (
+	errCSVResultChanged = errors.New("query result changed during export")
+	errCSVTooLarge      = errors.New("CSV export exceeds size limit")
+	removeCSVSpool      = os.Remove
+)
+
+type limitedCSVWriter struct {
+	dst       io.Writer
+	remaining int64
+}
+
+func (w *limitedCSVWriter) Write(p []byte) (int, error) {
+	if int64(len(p)) > w.remaining {
+		return 0, errCSVTooLarge
+	}
+	n, err := w.dst.Write(p)
+	w.remaining -= int64(n)
+	return n, err
+}
 
 func writeCSVResponse(w http.ResponseWriter, filename string, render func(io.Writer) error) error {
 	spool, err := os.CreateTemp("", "pgpeek-export-*.csv")
@@ -29,9 +48,11 @@ func writeCSVResponse(w http.ResponseWriter, filename string, render func(io.Wri
 		_ = spool.Close()
 	}()
 
-	if err := render(spool); err != nil {
+	if err := render(&limitedCSVWriter{dst: spool, remaining: maxCSVExportBytes}); err != nil {
 		if errors.Is(err, errCSVResultChanged) {
 			writeError(w, http.StatusConflict, "The data changed. Reload and export again.")
+		} else if errors.Is(err, errCSVTooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "CSV export exceeds the size limit.")
 		} else {
 			writeError(w, http.StatusBadRequest, "Failed to export the data")
 		}

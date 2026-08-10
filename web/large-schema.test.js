@@ -144,6 +144,30 @@ describe("large schema rendering", () => {
     expect($("data-results").querySelectorAll("mark")).toHaveLength(2);
   });
 
+  it("loads server-truncated table cells instead of rendering the marker JSON", async () => {
+    routes["GET /api/tables/*/data"] = makeResp({
+      json: {
+        columns: ["id", "payload"],
+        rows: [[1, { preview: "large row preview…", truncated: true }], [2, "normal row"]],
+        rowCount: 2,
+        cellsTruncated: true,
+        elapsedMs: 1,
+      },
+    });
+    routes["GET /api/tables/*/data/cell"] = makeResp({ json: { value: "full large row" } });
+    await loadApp();
+    await click($("tables").querySelector(".tbl"));
+
+    const detail = $("data-results").querySelector("details");
+    expect(detail.textContent).toContain("large row preview");
+    expect(detail.textContent).not.toContain('"truncated"');
+    detail.open = true;
+    detail.dispatchEvent(new Event("toggle"));
+    await flush();
+
+    expect(detail.textContent).toContain("full large row");
+  });
+
   it("sorts wide columns from the keyboard", async () => {
     await loadApp();
     await click($("tables").querySelector(".tbl"));

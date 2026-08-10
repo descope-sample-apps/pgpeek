@@ -4,6 +4,7 @@
 import { html, useState, useEffect, useCallback } from "./vendor/preact-htm.js";
 import { getJSON, tablePath, tableKey, appendDataParams, dbUrl } from "./api.js";
 import { emptyCreatureText, shuniData, isShuniRelation, SHUNI_STATUS } from "./easter-eggs.js";
+import { LazyCell } from "./sql-results.js";
 
 // Allowlisted filter operators.
 const OPS = [
@@ -67,7 +68,10 @@ function highlightText(text, term) {
   ];
 }
 
-function Cell({ value, column, term, fkRef, onNavigate }) {
+function Cell({ value, column, term, fkRef, onNavigate, loadValue }) {
+  if (value && typeof value === "object" && value.truncated === true) {
+    return html`<${LazyCell} value=${value} columnName=${column} loadValue=${loadValue} />`;
+  }
   const text = cellText(value);
   if (text === null) return html`<td class="null cell">NULL</td>`;
   const fullText = cellFullText(value);
@@ -90,10 +94,11 @@ function Cell({ value, column, term, fkRef, onNavigate }) {
   </td>`;
 }
 
-function BodyRows({ rows, columns, fkByCol, termsByCol, onNavigate }) {
-  return rows.map((row) =>
+function BodyRows({ rows, columns, fkByCol, termsByCol, onNavigate, onLoadCell }) {
+  return rows.map((row, rowIndex) =>
     html`<tr>${row.map((v, i) =>
-      html`<${Cell} value=${v} column=${columns[i]} term=${termsByCol && termsByCol[i]} fkRef=${fkByCol && fkByCol[i]} onNavigate=${onNavigate} />`)}</tr>`);
+      html`<${Cell} value=${v} column=${columns[i]} term=${termsByCol && termsByCol[i]} fkRef=${fkByCol && fkByCol[i]}
+        onNavigate=${onNavigate} loadValue=${(signal) => onLoadCell(rowIndex, i, signal)} />`)}</tr>`);
 }
 
 export function DataTab({
@@ -214,7 +219,15 @@ export function DataTab({
             </td>`;
           })}</tr>
         </thead>
-        <tbody><${BodyRows} rows=${data.rows} columns=${data.columns} fkByCol=${fkByCol} termsByCol=${termsByCol} onNavigate=${onNavigate} /></tbody>
+        <tbody><${BodyRows} rows=${data.rows} columns=${data.columns} fkByCol=${fkByCol} termsByCol=${termsByCol} onNavigate=${onNavigate}
+          onLoadCell=${async (row, column, signal) => {
+            const p = new URLSearchParams();
+            p.set("limit", pageSize); p.set("offset", offset); p.set("row", row); p.set("column", column);
+            appendDataParams(p, search, sort, filters);
+            const response = await fetch(dbUrl(tablePath(table) + "/data/cell?" + p.toString(), dbId), { signal });
+            if (!response.ok) throw new Error("cell fetch failed");
+            return response.json();
+          }} /></tbody>
       </table>
       ${data.rows.length ? "" : html`<div class="empty egg-creature">${emptyCreatureText(table.name)}</div>`}`;
   }

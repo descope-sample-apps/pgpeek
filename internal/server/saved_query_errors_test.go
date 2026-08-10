@@ -2,8 +2,11 @@ package server
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -121,15 +124,96 @@ func TestExport_WriteFailureLogged(t *testing.T) {
 func TestWriteCSV(t *testing.T) {
 	res := &db.Result{Columns: []string{"a"}, Rows: [][]any{{"1"}}}
 	var buf strings.Builder
-	if err := writeCSV(&buf, res); err != nil {
+	if err := writeCSV(&buf, res, nil); err != nil {
 		t.Fatalf("writeCSV: %v", err)
 	}
 	if !strings.Contains(buf.String(), "a\n1\n") {
 		t.Errorf("csv = %q", buf.String())
 	}
 	// Failing writer -> error surfaces via cw.Error() after Flush.
-	if err := writeCSV(failWriter{}, res); err == nil {
+	if err := writeCSV(failWriter{}, res, nil); err == nil {
 		t.Error("expected error from failing writer")
+	}
+}
+
+func TestWriteCSV_ResolverError(t *testing.T) {
+	res := &db.Result{
+		Columns:        []string{"a"},
+		Rows:           [][]any{{"preview"}},
+		TruncatedCells: []db.CellRef{{Row: 0, Column: 0}},
+	}
+	rec := httptest.NewRecorder()
+	err := writeCSVResponse(rec, "export.csv", func(dst io.Writer) error {
+		return writeCSV(dst, res, func(int, int) (any, error) { return nil, errors.New("boom") })
+	})
+	if err == nil || rec.Code != http.StatusBadRequest {
+		t.Fatal("expected resolver error")
+	}
+}
+
+func TestWriteCSVResponse_CreateFailure(t *testing.T) {
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "missing"))
+	rec := httptest.NewRecorder()
+	if err := writeCSVResponse(rec, "export.csv", func(io.Writer) error { return nil }); err == nil || rec.Code != http.StatusInternalServerError {
+		t.Fatalf("error=%v status=%d", err, rec.Code)
+	}
+}
+
+func TestWriteCSVResponse_UnlinksSpoolBeforeRendering(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	rec := httptest.NewRecorder()
+	if err := writeCSVResponse(rec, "export.csv", func(dst io.Writer) error {
+		entries, err := os.ReadDir(tmp)
+		if err != nil {
+			return err
+		}
+		if len(entries) != 0 {
+			return errors.New("spool remains visible")
+		}
+		_, err = io.WriteString(dst, "a\n1\n")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWriteCSVResponse_UnlinkFailure(t *testing.T) {
+	original := removeCSVSpool
+	removeCSVSpool = func(string) error { return errors.New("unlink") }
+	t.Cleanup(func() { removeCSVSpool = original })
+	rec := httptest.NewRecorder()
+	if err := writeCSVResponse(rec, "export.csv", func(io.Writer) error { return nil }); err == nil || rec.Code != http.StatusInternalServerError {
+		t.Fatalf("error=%v status=%d", err, rec.Code)
+	}
+}
+
+func TestWriteCSVResponse_RejectsOversizedExport(t *testing.T) {
+	rec := httptest.NewRecorder()
+	if err := writeCSVResponse(rec, "export.csv", func(io.Writer) error { return errCSVTooLarge }); !errors.Is(err, errCSVTooLarge) || rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("error=%v status=%d", err, rec.Code)
+	}
+}
+
+func TestLimitedCSVWriter_StopsBeforeLimit(t *testing.T) {
+	var dst strings.Builder
+	w := &limitedCSVWriter{dst: &dst, remaining: 3}
+	if n, err := w.Write([]byte("four")); n != 0 || !errors.Is(err, errCSVTooLarge) || dst.Len() != 0 {
+		t.Fatalf("n=%d error=%v bytes=%d", n, err, dst.Len())
+	}
+	if n, err := w.Write([]byte("ok")); n != 2 || err != nil || dst.String() != "ok" {
+		t.Fatalf("n=%d error=%v value=%q", n, err, dst.String())
+	}
+}
+
+func TestWriteCSV_RejectsChangedCell(t *testing.T) {
+	res := &db.Result{
+		Columns:        []string{"a"},
+		Rows:           [][]any{{"preview"}},
+		TruncatedCells: []db.CellRef{{Row: 0, Column: 0, Hash: db.CellHash("original")}},
+	}
+	if err := writeCSV(io.Discard, res, func(int, int) (any, error) { return "changed", nil }); err == nil {
+		t.Fatal("expected changed-cell error")
 	}
 }
 

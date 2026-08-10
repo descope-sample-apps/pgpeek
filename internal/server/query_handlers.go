@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +18,13 @@ type queryRequest struct {
 	SQL string `json:"sql"`
 }
 
+type queryCellRequest struct {
+	SQL    string `json:"sql"`
+	Row    int    `json:"row"`
+	Column int    `json:"column"`
+	Hash   string `json:"hash"`
+}
+
 func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	res, ok := s.readOnlyResult(w, r)
 	if !ok {
@@ -27,14 +33,65 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
-func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
-	res, ok := s.readOnlyResult(w, r)
+func (s *Server) handleQueryCell(w http.ResponseWriter, r *http.Request) {
+	var req queryCellRequest
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	req.SQL = strings.TrimSpace(req.SQL)
+	if req.Row < 0 || req.Column < 0 {
+		writeError(w, http.StatusBadRequest, "row and column must be non-negative")
+		return
+	}
+	if err := guard.Validate(req.SQL); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	pool, ok := s.poolForRequest(w, r)
 	if !ok {
 		return
 	}
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="pgpeek-export.csv"`)
-	if err := writeCSV(w, res); err != nil {
+	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
+	defer cancel()
+	value, err := pool.QueryCell(ctx, req.SQL, req.Row, req.Column)
+	if errors.Is(err, db.ErrCellOutOfRange) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err != nil {
+		s.log.Error("query cell", "err", err)
+		writeError(w, http.StatusBadRequest, queryErrorMessage(err))
+		return
+	}
+	if req.Hash != "" && db.CellHash(value) != req.Hash {
+		writeError(w, http.StatusConflict, "query result changed; run the query again")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"value": value})
+}
+
+func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
+	pool, ok := s.poolForRequest(w, r)
+	if !ok {
+		return
+	}
+	sql, ok := decodeReadOnlyQuery(w, r)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
+	defer cancel()
+	res, err := pool.Query(ctx, sql)
+	if err != nil {
+		s.log.Error("query", "err", err)
+		writeError(w, http.StatusBadRequest, queryErrorMessage(err))
+		return
+	}
+	if err := writeCSVResponse(w, "pgpeek-export.csv", func(dst io.Writer) error {
+		return writeCSV(dst, res, func(row, column int) (any, error) {
+			return pool.QueryCell(ctx, sql, row, column)
+		})
+	}); err != nil {
 		s.log.Error("csv export", "err", err)
 	}
 }
@@ -78,18 +135,4 @@ func decodeReadOnlyQuery(w http.ResponseWriter, r *http.Request) (string, bool) 
 		return "", false
 	}
 	return sql, true
-}
-
-func writeCSV(w io.Writer, res *db.Result) error {
-	cw := csv.NewWriter(w)
-	_ = cw.Write(res.Columns)
-	row := make([]string, len(res.Columns))
-	for _, rec := range res.Rows {
-		for i, cell := range rec {
-			row[i] = db.CellString(cell)
-		}
-		_ = cw.Write(row)
-	}
-	cw.Flush()
-	return cw.Error()
 }

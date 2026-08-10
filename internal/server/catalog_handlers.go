@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"time"
 
@@ -90,7 +91,50 @@ func (s *Server) handleTableData(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	q := db.TableQuery{
+	q := tableQuery(r)
+	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
+	defer cancel()
+	res, err := pool.TableRows(ctx, q)
+	if err != nil {
+		s.log.Error("read rows")
+		writeError(w, http.StatusBadRequest, "failed to read rows")
+		return
+	}
+	if r.URL.Query().Get("format") == "csv" {
+		if err := writeCSVResponse(w, safeFilename(r.PathValue("table"))+".csv", func(dst io.Writer) error {
+			return writeCSV(dst, res, func(row, column int) (any, error) {
+				return pool.TableCell(ctx, q, row, column)
+			})
+		}); err != nil {
+			s.log.Error("csv export", "err", err)
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) handleTableCell(w http.ResponseWriter, r *http.Request) {
+	pool, ok := s.poolForRequest(w, r)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
+	defer cancel()
+	value, err := pool.TableCell(ctx, tableQuery(r), queryInt(r, "row", -1), queryInt(r, "column", -1))
+	if err != nil {
+		s.log.Error("read cell")
+		writeError(w, http.StatusBadRequest, "failed to read cell")
+		return
+	}
+	if expected := r.URL.Query().Get("hash"); expected != "" && db.CellHash(value) != expected {
+		writeError(w, http.StatusConflict, "table result changed; reload the page")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"value": value})
+}
+
+func tableQuery(r *http.Request) db.TableQuery {
+	return db.TableQuery{
 		Schema:  r.PathValue("schema"),
 		Table:   r.PathValue("table"),
 		Search:  r.URL.Query().Get("search"),
@@ -100,23 +144,6 @@ func (s *Server) handleTableData(w http.ResponseWriter, r *http.Request) {
 		Offset:  queryInt(r, "offset", 0),
 		Filters: parseFilters(r.URL.Query()["f"]),
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
-	defer cancel()
-	res, err := pool.TableRows(ctx, q)
-	if err != nil {
-		s.log.Error("read rows", "err", err)
-		writeError(w, http.StatusBadRequest, "failed to read rows")
-		return
-	}
-	if r.URL.Query().Get("format") == "csv" {
-		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", `attachment; filename="`+safeFilename(r.PathValue("table"))+`.csv"`)
-		if err := writeCSV(w, res); err != nil {
-			s.log.Error("csv export", "err", err)
-		}
-		return
-	}
-	writeJSON(w, http.StatusOK, res)
 }
 
 func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {

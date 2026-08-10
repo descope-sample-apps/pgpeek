@@ -454,12 +454,14 @@ Two ways:
 | `GET /api/databases`                          | List configured databases with safe runtime details (version, uptime, size, workload/cache/temp/deadlock/session counters, extensions, and connection limits). Core PostgreSQL does not expose portable host CPU, RAM, or free-disk metrics. |
 | `GET /api/user`                               | Current detected user (`anonymous` or Cloudflare Access email).    |
 | `POST /api/query?db=<id>`                     | Run a query → JSON `{columns, rows, …}`.       |
+| `POST /api/query/cell?db=<id>`                | Re-run a query and return one full cell by row/column index. |
 | `POST /api/export?db=<id>`                    | Run a query → CSV download.                    |
 | `GET /api/meta?db=<id>`                       | Server limits the UI needs (`{rowCap}`).       |
 | `GET /api/tables?db=<id>`                     | List browsable tables/views (+ row estimate).  |
 | `GET /api/tables/{schema}/{table}/columns?db=<id>` | Column structure (name, type, nullable, default). |
 | `GET /api/tables/{schema}/{table}/fks?db=<id>` | Single-column foreign keys (for click-through).   |
 | `GET /api/tables/{schema}/{table}/data?db=<id>` | Paged rows; `&limit=&offset=&search=&sort=&dir=&f=col:op:val` (`&format=csv`). |
+| `GET /api/tables/{schema}/{table}/data/cell?db=<id>` | Replay the current page and return one full cell by row/column index. |
 | `GET /api/queries`                            | List saved/preset queries.                     |
 | `POST /api/queries`         | Create a saved query.                     |
 | `PUT /api/queries/{id}`     | Update a saved query.                     |

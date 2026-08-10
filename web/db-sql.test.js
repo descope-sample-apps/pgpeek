@@ -377,6 +377,94 @@ describe("SQL tab null and object cell rendering", () => {
     expect($("sql-results").textContent).toContain("NULL");
     expect($("sql-results").textContent).toContain('{"x":1}');
   });
+
+  it("renders marker-shaped JSON as ordinary JSON", async () => {
+    setRoute("POST /api/query", makeResp({
+      json: { columns: ["payload"], rows: [[{ preview: "actual", truncated: true }]], rowCount: 1, elapsedMs: 1 },
+    }));
+    await loadApp();
+    await click("tab-sql");
+    $("sql").value = "select jsonb";
+    await click("run-btn");
+
+    expect($("sql-results").textContent).toContain('{"preview":"actual","truncated":true}');
+    expect($("sql-results").querySelector("details")).toBeNull();
+  });
+
+  it("loads a server-truncated cell on demand", async () => {
+    const full = "full oversized value";
+    setRoute("POST /api/query", makeResp({
+      json: {
+        columns: ["payload"],
+        rows: [["full over…"], ["second row"]],
+        rowCount: 2,
+        cellsTruncated: true,
+        truncatedCells: [{ row: 0, column: 0 }],
+        elapsedMs: 1,
+      },
+    }));
+    setRoute("POST /api/query/cell", makeResp({ json: { value: full } }));
+    await loadApp();
+    await click("tab-sql");
+    $("sql").value = "select payload";
+    await click("run-btn");
+
+    expect($("sql-results").querySelectorAll("tbody tr")).toHaveLength(2);
+    const detail = $("sql-results").querySelector("details");
+    expect(detail.querySelector("summary").getAttribute("aria-label")).toBe("Show full value for payload");
+    expect(detail.querySelector(".cell-toggle").textContent).toBe("show more...");
+    detail.open = true;
+    detail.dispatchEvent(new Event("toggle"));
+    await flush();
+
+    expect(detail.textContent).toContain(full);
+    expect(detail.querySelector("summary").getAttribute("aria-label")).toBe("Hide full value for payload");
+    expect(detail.querySelector(".cell-toggle").textContent).toBe("show less");
+    const request = fetch.mock.calls.find(([url]) => String(url).includes("/api/query/cell"));
+    expect(JSON.parse(request[1].body)).toEqual({ sql: "select payload", row: 0, column: 0, hash: "" });
+  });
+
+  it("reloads an expanded cell after rerunning unchanged SQL", async () => {
+    let queryRun = 0;
+    let cellRun = 0;
+    setRoute("POST /api/query", () => {
+      queryRun += 1;
+      return Promise.resolve(makeResp({
+        json: {
+          columns: ["payload"],
+          rows: [[`preview ${queryRun}…`]],
+          rowCount: 1,
+          cellsTruncated: true,
+          truncatedCells: [{ row: 0, column: 0 }],
+          elapsedMs: 1,
+        },
+      }));
+    });
+    setRoute("POST /api/query/cell", () => {
+      cellRun += 1;
+      return Promise.resolve(makeResp({ json: { value: `full ${cellRun}` } }));
+    });
+    await loadApp();
+    await click("tab-sql");
+    $("sql").value = "select payload";
+    await click("run-btn");
+
+    let detail = $("sql-results").querySelector("details");
+    detail.open = true;
+    detail.dispatchEvent(new Event("toggle"));
+    await flush();
+    expect(detail.textContent).toContain("full 1");
+
+    await click("run-btn");
+    detail = $("sql-results").querySelector("details");
+    expect(detail.open).toBe(false);
+    detail.open = true;
+    detail.dispatchEvent(new Event("toggle"));
+    await flush();
+
+    expect(detail.textContent).toContain("full 2");
+    expect(fetch.mock.calls.filter(([url]) => String(url).includes("/api/query/cell"))).toHaveLength(2);
+  });
 });
 
 describe("SQL tab easter eggs", () => {

@@ -144,6 +144,114 @@ describe("large schema rendering", () => {
     expect($("data-results").querySelectorAll("mark")).toHaveLength(2);
   });
 
+  it("loads server-truncated table cells instead of rendering the marker JSON", async () => {
+    routes["GET /api/tables/*/data"] = makeResp({
+      json: {
+        columns: ["id", "payload"],
+        rows: [[1, "large row preview…"], [2, "normal row"]],
+        rowCount: 2,
+        cellsTruncated: true,
+        truncatedCells: [{ row: 0, column: 1, hash: "cell-hash" }],
+        elapsedMs: 1,
+      },
+    });
+    routes["GET /api/tables/*/data/cell"] = makeResp({ json: { value: "full large row" } });
+    await loadApp();
+    await click($("tables").querySelector(".tbl"));
+
+    const detail = $("data-results").querySelector("details");
+    expect(detail.textContent).toContain("large row preview");
+    expect(detail.textContent).not.toContain('"truncated"');
+    detail.open = true;
+    detail.dispatchEvent(new Event("toggle"));
+    await flush();
+
+    expect(detail.textContent).toContain("full large row");
+  });
+
+  it("shows reload guidance when a truncated table cell changed", async () => {
+    routes["GET /api/tables/*/data"] = makeResp({
+      json: { columns: ["payload"], rows: [["preview…"]], rowCount: 1, truncatedCells: [{ row: 0, column: 0 }], elapsedMs: 1 },
+    });
+    routes["GET /api/tables/*/data/cell"] = makeResp({
+      ok: false,
+      status: 409,
+      json: { error: "table result changed; reload the page" },
+    });
+    await loadApp();
+    await click($("tables").querySelector(".tbl"));
+
+    const detail = $("data-results").querySelector("details");
+    detail.open = true;
+    detail.dispatchEvent(new Event("toggle"));
+    await flush();
+
+    expect(detail.querySelector('[role="alert"]').textContent).toBe("table result changed; reload the page");
+  });
+
+  it("resets expanded table cells when sorting reloads the result", async () => {
+    let load = 0;
+    routes["GET /api/tables/*/data"] = () => {
+      load += 1;
+      return Promise.resolve(makeResp({
+        json: {
+          columns: ["payload"],
+          rows: [[`preview ${load}…`]],
+          rowCount: 1,
+          truncatedCells: [{ row: 0, column: 0 }],
+          elapsedMs: 1,
+        },
+      }));
+    };
+    routes["GET /api/tables/*/data/cell"] = (url) => makeResp({ json: { value: String(url).includes("sort=") ? "full 2" : "full 1" } });
+    await loadApp();
+    await click($("tables").querySelector(".tbl"));
+
+    let detail = $("data-results").querySelector("details");
+    detail.open = true;
+    detail.dispatchEvent(new Event("toggle"));
+    await flush();
+    expect(detail.textContent).toContain("full 1");
+
+    await click($("data-results").querySelector("th.sortable"));
+    detail = $("data-results").querySelector("details");
+    expect(detail.open).toBe(false);
+    detail.open = true;
+    detail.dispatchEvent(new Event("toggle"));
+    await flush();
+    expect(detail.textContent).toContain("full 2");
+  });
+
+  it("navigates truncated foreign keys after loading the full value", async () => {
+    routes["GET /api/tables"] = makeResp({ json: [
+      { schema: "public", name: "source", type: "table" },
+      { schema: "public", name: "target", type: "table" },
+    ] });
+    routes["GET /api/tables/*/data"] = makeResp({
+      json: {
+        columns: ["target_id"],
+        rows: [["target-preview…"]],
+        rowCount: 1,
+        truncatedCells: [{ row: 0, column: 0 }],
+        elapsedMs: 1,
+      },
+    });
+    routes["GET /api/tables/*/data/cell"] = makeResp({ json: { value: "target-full-id" } });
+    routes["GET /api/tables/*/fks"] = makeResp({
+      json: [{ column: "target_id", refSchema: "public", refTable: "target", refColumn: "id" }],
+    });
+    await loadApp();
+    await click($("tables").querySelector(".tbl"));
+
+    const detail = $("data-results").querySelector("details");
+    detail.open = true;
+    detail.dispatchEvent(new Event("toggle"));
+    await flush();
+    await click(detail.querySelector(".cell-full-action"));
+
+    expect(document.body.textContent).toContain("public.target");
+  });
+
   it("sorts wide columns from the keyboard", async () => {
     await loadApp();
     await click($("tables").querySelector(".tbl"));

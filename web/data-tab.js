@@ -4,6 +4,7 @@
 import { html, useState, useEffect, useCallback } from "./vendor/preact-htm.js";
 import { getJSON, tablePath, tableKey, appendDataParams, dbUrl } from "./api.js";
 import { emptyCreatureText, shuniData, isShuniRelation, SHUNI_STATUS } from "./easter-eggs.js";
+import { LazyCell, responseError } from "./sql-results.js";
 
 // Allowlisted filter operators.
 const OPS = [
@@ -67,7 +68,11 @@ function highlightText(text, term) {
   ];
 }
 
-function Cell({ value, column, term, fkRef, onNavigate }) {
+function Cell({ value, truncated, column, term, fkRef, onNavigate, loadValue }) {
+  if (truncated) {
+    return html`<${LazyCell} value=${value} truncated=${true} columnName=${column} loadValue=${loadValue}
+      onFullValue=${fkRef ? (full) => onNavigate(fkRef, full) : null} />`;
+  }
   const text = cellText(value);
   if (text === null) return html`<td class="null cell">NULL</td>`;
   const fullText = cellFullText(value);
@@ -90,10 +95,12 @@ function Cell({ value, column, term, fkRef, onNavigate }) {
   </td>`;
 }
 
-function BodyRows({ rows, columns, fkByCol, termsByCol, onNavigate }) {
-  return rows.map((row) =>
-    html`<tr>${row.map((v, i) =>
-      html`<${Cell} value=${v} column=${columns[i]} term=${termsByCol && termsByCol[i]} fkRef=${fkByCol && fkByCol[i]} onNavigate=${onNavigate} />`)}</tr>`);
+function BodyRows({ rows, columns, truncatedCells, resultKey, fkByCol, termsByCol, onNavigate, onLoadCell }) {
+  const truncated = new Map((truncatedCells || []).map((cell) => [cell.row + ":" + cell.column, cell]));
+  return rows.map((row, rowIndex) =>
+    html`<tr key=${resultKey + ":" + rowIndex}>${row.map((v, i) =>
+      html`<${Cell} key=${resultKey + ":" + i} value=${v} truncated=${truncated.has(rowIndex + ":" + i)} column=${columns[i]} term=${termsByCol && termsByCol[i]} fkRef=${fkByCol && fkByCol[i]}
+        onNavigate=${onNavigate} loadValue=${(signal) => onLoadCell(rowIndex, i, truncated.get(rowIndex + ":" + i)?.hash || "", signal)} />`)}</tr>`);
 }
 
 export function DataTab({
@@ -108,6 +115,7 @@ export function DataTab({
   const [draft, setDraft] = useState(initialFilters || []);
   const [sort, setSort] = useState(initialSort || null);
   const [data, setData] = useState(null);
+  const [resultKey, setResultKey] = useState(0);
   const [fks, setFks] = useState({});
   const shuni = isShuniRelation(table);
 
@@ -150,6 +158,7 @@ export function DataTab({
         const d = await getJSON(tablePath(table) + "/data?" + p.toString(), dbId);
         if (!live) return;
         setData(d);
+        setResultKey((key) => key + 1);
         setStatus({ text: "✓ " + d.rowCount + " row" + (d.rowCount === 1 ? "" : "s") + " in " + d.elapsedMs + " ms", cls: "ok" });
       } catch (e) {
         if (live) setStatus({ text: "✗ " + e.message, cls: "error" });
@@ -214,7 +223,16 @@ export function DataTab({
             </td>`;
           })}</tr>
         </thead>
-        <tbody><${BodyRows} rows=${data.rows} columns=${data.columns} fkByCol=${fkByCol} termsByCol=${termsByCol} onNavigate=${onNavigate} /></tbody>
+        <tbody><${BodyRows} rows=${data.rows} columns=${data.columns} truncatedCells=${data.truncatedCells} resultKey=${resultKey} fkByCol=${fkByCol} termsByCol=${termsByCol} onNavigate=${onNavigate}
+          onLoadCell=${async (row, column, hash, signal) => {
+            const p = new URLSearchParams();
+            p.set("limit", pageSize); p.set("offset", offset); p.set("row", row); p.set("column", column);
+            if (hash) p.set("hash", hash);
+            appendDataParams(p, search, sort, filters);
+            const response = await fetch(dbUrl(tablePath(table) + "/data/cell?" + p.toString(), dbId), { signal });
+            if (!response.ok) throw new Error(await responseError(response, "cell fetch failed"));
+            return response.json();
+          }} /></tbody>
       </table>
       ${data.rows.length ? "" : html`<div class="empty egg-creature">${emptyCreatureText(table.name)}</div>`}`;
   }

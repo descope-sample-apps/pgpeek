@@ -30,6 +30,7 @@ export const SAMPLE_TABLES = [
 ];
 
 export function routeKey(method, path) {
+  if (path.endsWith("/data/cell")) return `${method} /api/tables/*/data/cell`;
   if (path.endsWith("/data")) return `${method} /api/tables/*/data`;
   if (path.endsWith("/columns")) return `${method} /api/tables/*/columns`;
   if (path.endsWith("/fks")) return `${method} /api/tables/*/fks`;

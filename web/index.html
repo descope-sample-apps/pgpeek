@@ -217,7 +217,7 @@
   .context-kicker, .context-meta { color: var(--muted); font-size: 12px; }
   .context-kicker { text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
   .empty-context strong { color: var(--muted); font-weight: 500; }
-  .panel { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .panel { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: auto; }
   .panel[hidden] { display: none; }
 
   select, button, input { font: inherit; color: var(--text); background: var(--elev); border: 1px solid var(--border); border-radius: var(--radius-1); padding: 6px 10px; }
@@ -231,7 +231,7 @@
   .action.secondary { color: var(--accent); background: transparent; border-color: var(--accent); }
   .action.secondary:hover { color: var(--accent-hover); background: var(--selection); border-color: var(--accent-hover); }
   .action.secondary:active { transform: translateY(1px); }
-  :is(a, button, input, select, th[tabindex]):focus-visible { outline: 2px solid var(--accent-hover); outline-offset: 2px; }
+  :is(a, button, input, select, summary, th[tabindex]):focus-visible { outline: 2px solid var(--accent-hover); outline-offset: 2px; }
 
   .toolbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--panel); flex-wrap: wrap; }
   .toolbar .hint, .toolbar .page-info { color: var(--muted); font-size: 12px; }
@@ -253,7 +253,7 @@
   .cm-tooltip-autocomplete .cm-completionDetail { color: var(--muted); }
   .cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionDetail { color: var(--on-accent); opacity: .85; }
   textarea#sql { width: 100%; height: 180px; background: var(--panel); color: var(--text); border: 0; padding: 10px; font: 13px/1.5 monospace; resize: vertical; }
-  .results { flex: 1; overflow: auto; scrollbar-gutter: stable both-edges; }
+  .results { flex: 1; min-height: 12rem; overflow: auto; scrollbar-gutter: stable both-edges; }
   table { border-collapse: collapse; width: 100%; min-width: max-content; font-size: 13px; }
   th, td { border: 1px solid var(--border); padding: 5px 9px; text-align: left; vertical-align: top; max-width: min(34rem, 72vw); min-width: 10rem; }
   th { position: sticky; top: 0; background: var(--elev); z-index: 2; white-space: nowrap; }
@@ -266,12 +266,16 @@
   @supports (background: color-mix(in srgb, black 50%, transparent)) {
     .cell-preview mark { background: color-mix(in srgb, var(--warn) 38%, transparent); color: var(--text); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
   }
-  .cell-detail > summary { cursor: zoom-in; list-style: none; }
+  .cell-detail > summary { cursor: zoom-in; list-style: none; border-radius: var(--radius-1); transition: background-color 180ms ease, color 180ms ease, transform 180ms ease; }
+  .cell-detail > summary:hover { background: var(--hover); color: var(--text); }
+  .cell-detail > summary:active { transform: translateY(1px); }
   .cell-detail > summary::-webkit-details-marker { display: none; }
-  .cell-detail > summary::after { content: "more"; display: inline-block; margin-left: var(--space-2); color: var(--accent); font: 11px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .cell-toggle { display: block; width: max-content; margin-top: var(--space-1); padding: 2px var(--space-1); border-radius: var(--radius-1); background: var(--elev); color: var(--accent); font: 11px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .cell-detail > summary:not(:has(.cell-toggle))::after { content: "show more..."; display: block; width: max-content; margin-top: var(--space-1); padding: 2px var(--space-1); border-radius: var(--radius-1); background: var(--elev); color: var(--accent); font: 11px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .cell-detail[open] > summary:not(:has(.cell-toggle))::after { content: "show less"; }
   .cell-detail[open] > summary { color: var(--muted); }
-  .cell-detail[open] > summary::after { content: "less"; }
   .cell-detail > pre { margin: var(--space-2) 0 0; max-height: 22rem; overflow: auto; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-1); background: var(--elev2); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .cell-load-error { color: var(--danger); }
   td.null { color: var(--muted); font-style: italic; }
   button.fk { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
   button.fk:hover { color: var(--accent-hover); }

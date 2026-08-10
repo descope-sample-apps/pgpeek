@@ -6,6 +6,7 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -16,7 +17,8 @@ import (
 
 const (
 	MaxResultBytes    = 448 << 10
-	maxDBMessageBytes = 512 << 10
+	maxDBMessageBytes = 16 << 20
+	cellPreviewBytes  = 220
 
 	// MaxCatalogBytes bounds Tables/Columns/ForeignKeys listings. It is kept
 	// separate from MaxResultBytes (which also sizes the MCP structured-content
@@ -24,6 +26,8 @@ const (
 	// envelope or the row-data safety cap.
 	MaxCatalogBytes = 4 << 20
 )
+
+var ErrCellOutOfRange = errors.New("cell is outside the query result")
 
 // Config holds the tunables for the pool.
 type Config struct {
@@ -76,11 +80,19 @@ func (p *Pool) catalogByteLimit() int {
 // Result is a fully-materialized (but row-capped) query result, ready to be
 // serialized to JSON or CSV.
 type Result struct {
-	Columns   []string `json:"columns"`
-	Rows      [][]any  `json:"rows"`
-	RowCount  int      `json:"rowCount"`
-	Truncated bool     `json:"truncated"`
-	ElapsedMS int64    `json:"elapsedMs"`
+	Columns        []string  `json:"columns"`
+	Rows           [][]any   `json:"rows"`
+	RowCount       int       `json:"rowCount"`
+	Truncated      bool      `json:"truncated"`
+	CellsTruncated bool      `json:"cellsTruncated,omitempty"`
+	TruncatedCells []CellRef `json:"truncatedCells,omitempty"`
+	ElapsedMS      int64     `json:"elapsedMs"`
+}
+
+type CellRef struct {
+	Row    int    `json:"row"`
+	Column int    `json:"column"`
+	Hash   string `json:"hash"`
 }
 
 // buildConfig parses the DSN and applies the belt-and-suspenders session
@@ -149,6 +161,38 @@ func (p *Pool) Query(ctx context.Context, sql string) (*Result, error) {
 	return p.collect(rows, start)
 }
 
+func (p *Pool) QueryCell(ctx context.Context, sql string, rowIndex, columnIndex int) (any, error) {
+	if rowIndex < 0 || rowIndex >= p.rowCap || columnIndex < 0 {
+		return nil, ErrCellOutOfRange
+	}
+	rows, err := p.pool.Query(ctx, sql)
+	if err != nil {
+		return nil, err
+	}
+	return queryCell(rows, rowIndex, columnIndex)
+}
+
+func queryCell(rows pgx.Rows, rowIndex, columnIndex int) (any, error) {
+	defer rows.Close()
+	if columnIndex >= len(rows.FieldDescriptions()) {
+		return nil, ErrCellOutOfRange
+	}
+	for currentRow := 0; rows.Next(); currentRow++ {
+		if currentRow != rowIndex {
+			continue
+		}
+		values, err := rows.Values()
+		if err != nil {
+			return nil, err
+		}
+		return normalize(values[columnIndex]), nil
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return nil, ErrCellOutOfRange
+}
+
 // collect reads up to rowCap rows from rows (which it closes), normalizing
 // values for JSON, and reports whether more rows were available.
 func (p *Pool) collect(rows pgx.Rows, start time.Time) (*Result, error) {
@@ -161,8 +205,13 @@ func (p *Pool) collect(rows pgx.Rows, start time.Time) (*Result, error) {
 	}
 
 	out := make([][]any, 0, 128)
-	encodedBytes := 2
+	truncatedCells := make([]CellRef, 0)
+	encodedBytes := resultEnvelopeBytes(cols, p.rowCap)
+	if encodedBytes > MaxResultBytes {
+		return nil, ErrResultMetadataTooLarge
+	}
 	truncated := false
+	cellsTruncated := false
 	for rows.Next() {
 		if len(out) >= p.rowCap {
 			truncated = true
@@ -173,18 +222,30 @@ func (p *Pool) collect(rows pgx.Rows, start time.Time) (*Result, error) {
 			return nil, err
 		}
 		row := make([]any, len(vals))
+		rowRefs := len(truncatedCells)
 		for i, v := range vals {
-			row[i] = normalize(v)
+			normalized := normalize(v)
+			var cellTruncated bool
+			row[i], cellTruncated = truncateCell(normalized)
+			if cellTruncated {
+				cellsTruncated = true
+				truncatedCells = append(truncatedCells, CellRef{Row: len(out), Column: i, Hash: CellHash(normalized)})
+			}
 		}
 		encoded, err := json.Marshal(row)
 		if err != nil {
 			return nil, err
 		}
-		if encodedBytes+len(encoded)+1 > MaxResultBytes {
+		rowBytes := len(encoded) + 1
+		for _, ref := range truncatedCells[rowRefs:] {
+			rowBytes += len(`{"row":,"column":,"hash":""}`) + len(strconv.Itoa(ref.Row)) + len(strconv.Itoa(ref.Column)) + len(ref.Hash) + 1
+		}
+		if encodedBytes+rowBytes > MaxResultBytes {
+			truncatedCells = truncatedCells[:rowRefs]
 			truncated = true
 			break
 		}
-		encodedBytes += len(encoded) + 1
+		encodedBytes += rowBytes
 		out = append(out, row)
 	}
 	if !truncated {
@@ -193,11 +254,13 @@ func (p *Pool) collect(rows pgx.Rows, start time.Time) (*Result, error) {
 		}
 	}
 	return &Result{
-		Columns:   cols,
-		Rows:      out,
-		RowCount:  len(out),
-		Truncated: truncated,
-		ElapsedMS: time.Since(start).Milliseconds(),
+		Columns:        cols,
+		Rows:           out,
+		RowCount:       len(out),
+		Truncated:      truncated,
+		CellsTruncated: cellsTruncated && len(truncatedCells) > 0,
+		TruncatedCells: truncatedCells,
+		ElapsedMS:      time.Since(start).Milliseconds(),
 	}, nil
 }
 

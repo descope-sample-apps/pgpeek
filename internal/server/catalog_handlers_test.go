@@ -1,8 +1,10 @@
 package server
 
 import (
+	"bytes"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -170,6 +172,46 @@ func TestTableData_OK(t *testing.T) {
 	}
 }
 
+func TestTableCell_OK(t *testing.T) {
+	q := &fakeQuerier{result: &db.Result{Columns: []string{"payload"}, Rows: [][]any{{"full value"}}, RowCount: 1}}
+	ts, _ := newTestServer(t, q)
+	resp := mustGet(t, ts, "/api/tables/public/users/data/cell?row=0&column=0&limit=25&offset=50")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	got := decode[map[string]any](t, resp)
+	if got["value"] != "full value" || q.lastQuery.Offset != 50 {
+		t.Fatalf("value=%v query=%+v", got["value"], q.lastQuery)
+	}
+}
+
+func TestTableCell_Error(t *testing.T) {
+	ts, _ := newTestServer(t, &fakeQuerier{err: errors.New("boom")})
+	resp := mustGet(t, ts, "/api/tables/public/users/data/cell?row=0&column=0")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+}
+
+func TestTableCell_RejectsChangedResult(t *testing.T) {
+	ts, _ := newTestServer(t, &fakeQuerier{result: &db.Result{Rows: [][]any{{"new value"}}}})
+	resp := mustGet(t, ts, "/api/tables/public/users/data/cell?row=0&column=0&hash=stale")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+}
+
+func TestTableCell_UnknownDatabase(t *testing.T) {
+	ts, _ := newTestServer(t, &fakeQuerier{result: okResult()})
+	resp := mustGet(t, ts, "/api/tables/public/users/data/cell?row=0&column=0&db=missing")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+}
+
 func TestTableData_ParsesSearchSortFilters(t *testing.T) {
 	q := &fakeQuerier{result: okResult()}
 	ts, _ := newTestServer(t, q)
@@ -239,6 +281,18 @@ func TestTableData_Error(t *testing.T) {
 	}
 }
 
+func TestTableData_ErrorLogDoesNotIncludeDatabaseDetail(t *testing.T) {
+	var logs bytes.Buffer
+	srv := serverWithStore(t, &fakeQuerier{err: errors.New("user-controlled database detail")}, &fakeStore{})
+	srv.log = slog.New(slog.NewTextHandler(&logs, nil))
+	req := httptest.NewRequest(http.MethodGet, "/api/tables/public/nope/data", nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if strings.Contains(logs.String(), "user-controlled") {
+		t.Fatalf("log leaked database detail: %s", logs.String())
+	}
+}
+
 func TestTableData_CSV(t *testing.T) {
 	q := &fakeQuerier{result: &db.Result{Columns: []string{"a"}, Rows: [][]any{{"1"}}, RowCount: 1}}
 	ts, _ := newTestServer(t, q)
@@ -253,6 +307,26 @@ func TestTableData_CSV(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(body), "a\n1\n") {
 		t.Errorf("csv body = %q", body)
+	}
+}
+
+func TestTableData_CSVResolvesTruncatedCells(t *testing.T) {
+	q := &fakeQuerier{
+		result: &db.Result{
+			Columns:        []string{"payload"},
+			Rows:           [][]any{{"preview…"}},
+			RowCount:       1,
+			CellsTruncated: true,
+			TruncatedCells: []db.CellRef{{Row: 0, Column: 0}},
+		},
+		cellValue: "full value",
+	}
+	ts, _ := newTestServer(t, q)
+	resp := mustGet(t, ts, "/api/tables/public/users/data?format=csv")
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "full value") || strings.Contains(string(body), "preview") {
+		t.Fatalf("csv = %q", body)
 	}
 }
 

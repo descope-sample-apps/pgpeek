@@ -19,6 +19,7 @@ import (
 
 type fakeQuerier struct {
 	result       *db.Result
+	cellValue    any
 	err          error
 	pingErr      error
 	called       bool
@@ -41,6 +42,21 @@ func (f *fakeQuerier) Query(_ context.Context, sql string) (*db.Result, error) {
 	return f.result, f.err
 }
 
+func (f *fakeQuerier) QueryCell(_ context.Context, sql string, row, column int) (any, error) {
+	f.called = true
+	f.lastSQL = sql
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.cellValue != nil {
+		return f.cellValue, nil
+	}
+	if f.result == nil || row < 0 || row >= len(f.result.Rows) || column < 0 || column >= len(f.result.Rows[row]) {
+		return nil, db.ErrCellOutOfRange
+	}
+	return f.result.Rows[row][column], nil
+}
+
 func (f *fakeQuerier) Tables(context.Context) ([]db.TableInfo, bool, error) {
 	return f.tables, f.catTruncated, f.catErr
 }
@@ -60,6 +76,23 @@ func (f *fakeQuerier) TableRows(_ context.Context, q db.TableQuery) (*db.Result,
 	f.lastArgs.schema, f.lastArgs.table = q.Schema, q.Table
 	f.lastArgs.limit, f.lastArgs.offset = q.Limit, q.Offset
 	return f.result, f.err
+}
+
+func (f *fakeQuerier) TableCell(_ context.Context, q db.TableQuery, row, column int) (any, error) {
+	f.lastQuery = q
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.result == nil {
+		return nil, db.ErrCellOutOfRange
+	}
+	if f.cellValue != nil {
+		return f.cellValue, nil
+	}
+	if row < 0 || row >= len(f.result.Rows) || column < 0 || column >= len(f.result.Rows[row]) {
+		return nil, db.ErrCellOutOfRange
+	}
+	return f.result.Rows[row][column], nil
 }
 
 func (f *fakeQuerier) RowCap() int { return 1000 }

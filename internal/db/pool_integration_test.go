@@ -189,13 +189,17 @@ func TestIntegrationForeignKeys(t *testing.T) {
 	}
 }
 
-func TestIntegrationQueryRejectsOversizedBackendMessage(t *testing.T) {
+func TestIntegrationQuerySupportsLargeCellsAndRejectsOversizedBackendMessage(t *testing.T) {
 	p := testPool(t, 10)
 
-	if _, err := p.Query(context.Background(), `SELECT repeat('x', 524288)`); err == nil {
+	result, err := p.Query(context.Background(), `SELECT repeat('x', 524288)`)
+	if err != nil || !result.CellsTruncated || result.RowCount != 1 {
+		t.Fatalf("large cell result=%+v err=%v", result, err)
+	}
+	if _, err := p.Query(context.Background(), `SELECT repeat('x', 16777217)`); err == nil {
 		t.Fatal("expected oversized backend message error")
 	}
-	result, err := p.Query(context.Background(), `SELECT 1`)
+	result, err = p.Query(context.Background(), `SELECT 1`)
 	if err != nil {
 		t.Fatalf("query after oversized response: %v", err)
 	}

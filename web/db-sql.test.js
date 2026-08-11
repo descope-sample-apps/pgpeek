@@ -257,8 +257,10 @@ describe("API db params — POST requests", () => {
     await loadApp();
     await click("tab-sql");
     $("sql").value = "select 1";
-    await click("sql-export-btn");
+    $("sql-export-btn").click();
     const form = HTMLFormElement.prototype.submit.mock.instances.at(-1);
+    expect(form.isConnected).toBe(true);
+    await flush();
     expect(form.isConnected).toBe(false);
   });
 

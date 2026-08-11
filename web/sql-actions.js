@@ -36,6 +36,6 @@ export function exportQuery(sql, dbId, onError) {
   form.method = "POST"; form.action = dbUrl("/api/export", dbId); form.target = frame.name;
   const input = document.createElement("input"); input.type = "hidden"; input.name = "sql"; input.value = sql;
   const token = document.createElement("input"); token.type = "hidden"; token.name = "csrf"; token.value = csrf;
-  form.append(input, token); document.body.append(form); form.submit(); queueMicrotask(() => form.remove());
+  form.append(input, token); document.body.append(form); form.submit(); setTimeout(() => form.remove(), 0);
   setTimeout(() => frame.remove(), 60_000);
 }

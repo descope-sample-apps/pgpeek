@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.11.4...v0.12.0) (2026-08-11)
+
+
+### Features
+
+* **guard:** allow EXPLAIN ANALYZE on read-only statements ([#81](https://github.com/descope-sample-apps/pgpeek/issues/81)) ([d197c2b](https://github.com/descope-sample-apps/pgpeek/commit/d197c2ba0e2c0fa6275a7b04ae2f25c89e74a353))
+
 ## [0.11.4](https://github.com/descope-sample-apps/pgpeek/compare/v0.11.3...v0.11.4) (2026-08-10)
 
 

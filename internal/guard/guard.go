@@ -75,7 +75,7 @@ func Validate(sql string) error {
 	}
 
 	// First significant keyword, skipping leading '(' for wrapped unions.
-	first := firstKeyword(masked)
+	first, after := firstKeyword(masked)
 	if !allowedStart[first] {
 		if first == "" {
 			return ErrEmpty
@@ -83,7 +83,20 @@ func Validate(sql string) error {
 		return fmt.Errorf("only read-only queries are allowed; statement starts with %q, not SELECT/WITH/VALUES/TABLE", first)
 	}
 
-	upper := strings.ToUpper(masked)
+	// EXPLAIN's options (ANALYZE, VERBOSE, BUFFERS, ...) are not part of the
+	// explained statement, so they are left out of the keyword scan: EXPLAIN
+	// ANALYZE does run the statement, which makes it exactly as read-only as
+	// its target, and the target is scanned like any other query.
+	body := masked
+	if first == "EXPLAIN" {
+		target, err := explainTarget(masked[after:])
+		if err != nil {
+			return err
+		}
+		body = target
+	}
+
+	upper := strings.ToUpper(body)
 	for _, kw := range forbidden {
 		if containsWord(upper, kw) {
 			return fmt.Errorf("query contains disallowed keyword %q — this tool is read-only", kw)
@@ -99,8 +112,8 @@ func Validate(sql string) error {
 }
 
 // firstKeyword returns the first SQL keyword (uppercased), skipping any leading
-// open parentheses and whitespace.
-func firstKeyword(s string) string {
+// open parentheses and whitespace, plus the offset just past that keyword.
+func firstKeyword(s string) (string, int) {
 	i := 0
 	for i < len(s) && (s[i] == '(' || unicode.IsSpace(rune(s[i]))) {
 		i++
@@ -109,7 +122,57 @@ func firstKeyword(s string) string {
 	for i < len(s) && (isWordChar(s[i])) {
 		i++
 	}
-	return strings.ToUpper(s[start:i])
+	return strings.ToUpper(s[start:i]), i
+}
+
+// explainTarget strips EXPLAIN's option list from rest (everything after the
+// EXPLAIN keyword) and returns the statement being explained, which must itself
+// start with a read-only keyword. Both spellings are handled: the parenthesised
+// list, EXPLAIN (ANALYZE, BUFFERS) SELECT ..., and the legacy words,
+// EXPLAIN ANALYZE VERBOSE SELECT ...
+func explainTarget(rest string) (string, error) {
+	rest = strings.TrimSpace(rest)
+	if strings.HasPrefix(rest, "(") {
+		end := optionListEnd(rest)
+		if end < 0 {
+			return "", errors.New("EXPLAIN option list is missing a closing ')'")
+		}
+		rest = strings.TrimSpace(rest[end:])
+	} else {
+		for {
+			kw, after := firstKeyword(rest)
+			if kw != "ANALYZE" && kw != "VERBOSE" {
+				break
+			}
+			rest = strings.TrimSpace(rest[after:])
+		}
+	}
+	target, _ := firstKeyword(rest)
+	if target == "" {
+		return "", errors.New("EXPLAIN requires a statement to explain")
+	}
+	if !allowedStart[target] {
+		return "", fmt.Errorf("only read-only queries are allowed; EXPLAIN targets %q, not SELECT/WITH/VALUES/TABLE", target)
+	}
+	return rest, nil
+}
+
+// optionListEnd returns the offset just past the parenthesised option list that
+// s starts with, or -1 if it is never closed.
+func optionListEnd(s string) int {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return -1
 }
 
 // containsWord reports whether word (already uppercase) appears in s (already

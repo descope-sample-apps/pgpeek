@@ -78,6 +78,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/databases", s.handleDatabases)
 	mux.HandleFunc("GET /api/meta", s.handleMeta)
 	mux.HandleFunc("POST /api/query", s.handleQuery)
+	mux.HandleFunc("POST /api/query/count", s.handleQueryCount)
 	mux.HandleFunc("POST /api/query/cell", s.handleQueryCell)
 	mux.HandleFunc("POST /api/export", s.handleExport)
 	mux.HandleFunc("GET /api/tables", s.handleTables)

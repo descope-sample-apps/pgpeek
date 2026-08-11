@@ -63,6 +63,20 @@ func (q *selectedQuerier) Query(context.Context, string) (*db.Result, error) {
 	return okResult(), nil
 }
 
+func (q *selectedQuerier) Count(context.Context, string) (int64, error) {
+	q.used = true
+	return 1, q.err
+}
+
+func (q *selectedQuerier) ExportCSV(_ context.Context, _ string, dst io.Writer) error {
+	q.used = true
+	if q.err != nil {
+		return q.err
+	}
+	_, err := io.WriteString(dst, "n\n1\n")
+	return err
+}
+
 func (q *selectedQuerier) QueryCell(context.Context, string, int, int) (any, error) {
 	q.used = true
 	return "cell", nil

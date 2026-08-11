@@ -19,10 +19,14 @@ import (
 
 type fakeQuerier struct {
 	result       *db.Result
+	count        int64
 	cellValue    any
 	err          error
+	countErr     error
 	pingErr      error
 	called       bool
+	countCalled  bool
+	exportCalled bool
 	lastSQL      string
 	tables       []db.TableInfo
 	cols         []db.ColumnInfo
@@ -40,6 +44,25 @@ func (f *fakeQuerier) Query(_ context.Context, sql string) (*db.Result, error) {
 	f.called = true
 	f.lastSQL = sql
 	return f.result, f.err
+}
+
+func (f *fakeQuerier) Count(_ context.Context, sql string) (int64, error) {
+	f.called = true
+	f.countCalled = true
+	f.lastSQL = sql
+	return f.count, f.countErr
+}
+
+func (f *fakeQuerier) ExportCSV(ctx context.Context, sql string, dst io.Writer) error {
+	f.called = true
+	f.exportCalled = true
+	f.lastSQL = sql
+	if f.err != nil {
+		return f.err
+	}
+	return writeCSV(dst, f.result, func(row, column int) (any, error) {
+		return f.QueryCell(ctx, sql, row, column)
+	})
 }
 
 func (f *fakeQuerier) QueryCell(_ context.Context, sql string, row, column int) (any, error) {

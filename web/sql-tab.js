@@ -89,13 +89,18 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
   useEffect(() => {
     if (!running) return;
     const startedAt = Date.now();
-    const timer = setInterval(() => {
+    let timer;
+    const update = () => {
       const seconds = Math.floor((Date.now() - startedAt) / 1000);
-      if (runningRef.current && seconds >= RUNNING_TIME_DELAY_SECONDS) {
+      if (runningRef.current) {
         setStatus({ text: `Running… (${seconds}s)`, cls: "ok" });
       }
-    }, 1000);
-    return () => clearInterval(timer);
+    };
+    const delay = setTimeout(() => {
+      update();
+      timer = setInterval(update, 1000);
+    }, RUNNING_TIME_DELAY_SECONDS * 1000);
+    return () => { clearTimeout(delay); clearInterval(timer); };
   }, [running, setStatus]);
 
   // Easter egg: only show the loading llama once a query has been running for

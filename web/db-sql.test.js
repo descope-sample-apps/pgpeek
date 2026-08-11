@@ -77,7 +77,11 @@ describe("API db params — POST requests", () => {
 
   it("discards an in-flight query result when the database changes", async () => {
     let resolveQuery;
-    setRoute("POST /api/query", () => new Promise((resolve) => { resolveQuery = resolve; }));
+    let signal;
+    setRoute("POST /api/query", (_url, options) => {
+      signal = options.signal;
+      return new Promise((resolve) => { resolveQuery = resolve; });
+    });
     await loadApp();
     await click("tab-sql");
     $("sql").value = "select shared";
@@ -85,6 +89,8 @@ describe("API db params — POST requests", () => {
 
     $("database-select").value = "pg2";
     $("database-select").dispatchEvent(new Event("change", { bubbles: true }));
+    await flush();
+    expect(signal.aborted).toBe(true);
     resolveQuery(makeResp({ json: { columns: ["value"], rows: [["stale"]], rowCount: 1, elapsedMs: 1 } }));
     await flush();
 
@@ -108,7 +114,11 @@ describe("API db params — POST requests", () => {
 
   it("discards an in-flight query result when SQL is edited", async () => {
     let resolveQuery;
-    setRoute("POST /api/query", () => new Promise((resolve) => { resolveQuery = resolve; }));
+    let signal;
+    setRoute("POST /api/query", (_url, options) => {
+      signal = options.signal;
+      return new Promise((resolve) => { resolveQuery = resolve; });
+    });
     await loadApp();
     await click("tab-sql");
     $("sql").value = "select old";
@@ -116,6 +126,7 @@ describe("API db params — POST requests", () => {
 
     $("sql").value = "select new";
     $("sql").dispatchEvent(new Event("input", { bubbles: true }));
+    expect(signal.aborted).toBe(true);
     resolveQuery(makeResp({ json: { columns: ["value"], rows: [["stale"]], rowCount: 1, elapsedMs: 1 } }));
     await flush();
 

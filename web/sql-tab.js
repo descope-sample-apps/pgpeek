@@ -19,12 +19,14 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
   const [error, setError] = useState("");
   const runningRef = useRef(false);
   const exportingRef = useRef(false);
+  const requestRef = useRef(null);
   const runningLabelRef = useRef("Previewing");
   const actionRef = useRef(0);
   const initialSQLRef = useRef(initialSQL);
   const dbRef = useRef(dbId);
 
   const invalidate = () => {
+    requestRef.current?.abort(); requestRef.current = null;
     actionRef.current += 1;
     if (!exportingRef.current) { runningRef.current = false; setRunning(false); }
     setResult(null); setLastSQL(""); setError("");
@@ -53,6 +55,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
     }
     const action = actionRef.current + 1;
     actionRef.current = action;
+    const controller = new AbortController(); requestRef.current = controller;
     runningLabelRef.current = "Previewing"; runningRef.current = true; setRunning(true);
     setError("");
     setStatus({ text: "Previewing…", cls: "ok" });
@@ -61,6 +64,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sql }),
+        signal: controller.signal,
       });
       if (!r.ok) {
         const message = await responseError(r, "query failed");
@@ -79,18 +83,20 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
       if (d.cellsTruncated) warnings.push("· large cells shortened; expand to load full value");
       setStatus(warnings.length ? { text: base, cls: "ok", warn: warnings.join(" ") } : { text: base, cls: "ok" });
     } catch (e) {
+      if (e.name === "AbortError") return;
       if (action === actionRef.current) {
         setError(e.message);
         setStatus({ text: "✗ " + e.message, cls: "error" });
       }
     } finally {
+      if (requestRef.current === controller) requestRef.current = null;
       if (action === actionRef.current) { runningRef.current = false; setRunning(false); }
     }
   }, [dbId]);
 
   const runRef = useRef(run);
   useEffect(() => { runRef.current = run; }, [run]);
-  useEffect(invalidate, [dbId]);
+  useEffect(() => { invalidate(); return () => requestRef.current?.abort(); }, [dbId]);
 
   useEffect(() => {
     if (!running) return;
@@ -187,20 +193,23 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
     if (!sql || runningRef.current) return;
     const action = actionRef.current + 1;
     actionRef.current = action;
+    const controller = new AbortController(); requestRef.current = controller;
     runningLabelRef.current = "Counting"; runningRef.current = true; setRunning(true); setError("");
     setStatus({ text: "Counting…", cls: "ok" });
     try {
-      const data = await countQuery(sql, dbId);
+      const data = await countQuery(sql, dbId, controller.signal);
       if (action !== actionRef.current) return;
       const rowCount = BigInt(data.rowCount);
       const rows = rowCount.toLocaleString();
       setStatus({ text: `✓ ${rows} row${rowCount === 1n ? "" : "s"} in ${data.elapsedMs} ms`, cls: "ok" });
     } catch (e) {
+      if (e.name === "AbortError") return;
       if (action === actionRef.current) {
         setError(e.message);
         setStatus({ text: "✗ " + e.message, cls: "error" });
       }
     } finally {
+      if (requestRef.current === controller) requestRef.current = null;
       if (action === actionRef.current) { runningRef.current = false; setRunning(false); }
     }
   };

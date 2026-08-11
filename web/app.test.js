@@ -751,9 +751,19 @@ describe("SQL tab textarea mode", () => {
     }
   });
 
+  it("ignores aborted count requests", async () => {
+    const aborted = new Error("aborted"); aborted.name = "AbortError";
+    setRoute("POST /api/query/count", aborted);
+    await openSql();
+    $("sql").value = "select aborted";
+    await click("count-btn");
+    expect(document.querySelector(".query-error")).toBeFalsy();
+  });
+
   it("prevents overlapping counts and ignores stale count results", async () => {
     const pending = deferred();
-    setRoute("POST /api/query/count", () => pending.promise);
+    let signal;
+    setRoute("POST /api/query/count", (_url, options) => { signal = options.signal; return pending.promise; });
     await openSql();
     $("sql").value = "select 1";
     $("count-btn").dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -761,6 +771,7 @@ describe("SQL tab textarea mode", () => {
     expect(callsTo("/api/query/count")).toHaveLength(1);
     $("sql").value = "select 2";
     $("sql").dispatchEvent(new Event("input", { bubbles: true }));
+    expect(signal.aborted).toBe(true);
     pending.resolve(makeResp({ json: { rowCount: "1", elapsedMs: 2 } }));
     await flush();
     expect($("status").textContent).not.toContain("1 row");
@@ -937,6 +948,15 @@ describe("SQL tab textarea mode", () => {
       await click("run-btn");
       expect($("status").className).toContain("error");
     }
+  });
+
+  it("ignores aborted preview requests", async () => {
+    const aborted = new Error("aborted"); aborted.name = "AbortError";
+    setRoute("POST /api/query", aborted);
+    await openSql();
+    $("sql").value = "select aborted";
+    await click("run-btn");
+    expect(document.querySelector(".query-error")).toBeFalsy();
   });
 
   it("runs from Ctrl/Cmd Enter and ignores other keys", async () => {

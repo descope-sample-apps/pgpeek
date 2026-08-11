@@ -4,11 +4,12 @@ import { responseError } from "./sql-helpers.js";
 const EXPORT_CSRF_COOKIE = "pgpeek_export_csrf";
 const EXPORT_DONE_COOKIE_PREFIX = "pgpeek_export_done_";
 
-export async function countQuery(sql, dbId) {
+export async function countQuery(sql, dbId, signal) {
   const response = await fetch(dbUrl("/api/query/count", dbId), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sql }),
+    signal,
   });
   if (!response.ok) throw new Error(await responseError(response, "count failed"));
   return response.json();

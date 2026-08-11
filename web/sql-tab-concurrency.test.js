@@ -66,6 +66,37 @@ describe("SQL autocomplete", () => {
     expect(peak).toBeLessThanOrEqual(6);
   });
 
+  it("refills available slots without waiting for the slowest request", async () => {
+    let completed = 0;
+    const releases = new Map();
+    const started = [];
+    routes["GET /api/tables/*/columns"] = (url) => new Promise((resolve) => {
+      const key = String(url);
+      started.push(key);
+      releases.set(key, () => {
+        releases.delete(key);
+        completed += 1;
+        resolve(makeResp({ json: [{ name: "id" }] }));
+      });
+    });
+
+    await loadApp();
+    await vi.waitFor(() => expect(document.querySelectorAll(".tbl")).toHaveLength(TABLES.length));
+    await click("tab-sql");
+    await vi.waitFor(() => expect(started).toHaveLength(6));
+
+    const blocked = started[0];
+    releases.get(started[1])();
+    await vi.waitFor(() => expect(started).toHaveLength(7));
+    expect(releases.has(blocked)).toBe(true);
+
+    while (completed < TABLES.length) {
+      [...releases.values()].forEach((release) => release());
+      await flush();
+    }
+    expect(completed).toBe(TABLES.length);
+  });
+
   it("aborts retired column loads before reactivation", async () => {
     let active = 0;
     let aborted = 0;

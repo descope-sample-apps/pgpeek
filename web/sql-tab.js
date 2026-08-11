@@ -130,30 +130,30 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
       editorRef.current.setSQLConfig({ schema: {} });
       return;
     }
-    let live = true; const controller = new AbortController();
+    let live = true; const controller = new AbortController(), queue = tables.values();
     // Build schema → table-names entries up front (sync).
-    const schema = {};
-    const tableNameCounts = {};
+    const schema = {}, tableNameCounts = {};
     for (const tbl of tables) {
       if (!schema[tbl.schema]) schema[tbl.schema] = [];
       schema[tbl.schema].push(tbl.name);
       tableNameCounts[tbl.name] = (tableNameCounts[tbl.name] || 0) + 1;
     }
-    const columnsByRelation = {};
-    const baseConfig = { schema, columnsByRelation, defaultSchema: schema.public ? "public" : tables[0].schema };
+    const columnsByRelation = {}, baseConfig = { schema, columnsByRelation, defaultSchema: schema.public ? "public" : tables[0].schema };
     editorRef.current.setSQLConfig(baseConfig);
     // Fetch columns async; populate qualified-table → column-names entries.
     (async () => {
-      for (let i = 0; live && i < tables.length; i += 6) await Promise.all(tables.slice(i, i + 6).map(async (tbl) => {
-        try {
-          const cols = await getJSON(tablePath(tbl) + "/columns", dbId, { signal: controller.signal });
+      await Promise.all(Array.from({ length: Math.min(6, tables.length) }, async () => {
+        for (const tbl of queue) {
           if (!live) return;
-          const names = cols.map((c) => c.name);
-          const qualified = tbl.schema + "." + tbl.name;
-          schema[qualified] = names;
-          columnsByRelation[qualified] = names;
-          if (tableNameCounts[tbl.name] === 1) columnsByRelation[tbl.name] = names;
-        } catch { /* partial autocomplete ok */ }
+          try {
+            const cols = await getJSON(tablePath(tbl) + "/columns", dbId, { signal: controller.signal });
+            if (!live) return;
+            const names = cols.map((c) => c.name), qualified = tbl.schema + "." + tbl.name;
+            schema[qualified] = names;
+            columnsByRelation[qualified] = names;
+            if (tableNameCounts[tbl.name] === 1) columnsByRelation[tbl.name] = names;
+          } catch { /* partial autocomplete ok */ }
+        }
       }));
       if (!live) return;
       editorRef.current?.setSQLConfig(baseConfig);

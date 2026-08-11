@@ -130,7 +130,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
       editorRef.current.setSQLConfig({ schema: {} });
       return;
     }
-    let live = true;
+    let live = true; const controller = new AbortController();
     // Build schema → table-names entries up front (sync).
     const schema = {};
     const tableNameCounts = {};
@@ -144,9 +144,9 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
     editorRef.current.setSQLConfig(baseConfig);
     // Fetch columns async; populate qualified-table → column-names entries.
     (async () => {
-      await Promise.all(tables.map(async (tbl) => {
+      for (let i = 0; live && i < tables.length; i += 6) await Promise.all(tables.slice(i, i + 6).map(async (tbl) => {
         try {
-          const cols = await getJSON(tablePath(tbl) + "/columns", dbId);
+          const cols = await getJSON(tablePath(tbl) + "/columns", dbId, { signal: controller.signal });
           if (!live) return;
           const names = cols.map((c) => c.name);
           const qualified = tbl.schema + "." + tbl.name;
@@ -158,7 +158,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
       if (!live) return;
       editorRef.current?.setSQLConfig(baseConfig);
     })();
-    return () => { live = false; };
+    return () => { live = false; controller.abort(); };
   }, [active, tables, dbId]);
 
   // CodeMirror was created while hidden (zero size); refresh when shown.

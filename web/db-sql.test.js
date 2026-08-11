@@ -4,7 +4,6 @@ import {
   flush, makeResp, TWO_DBS, NO_DBS,
   makeInstallFetch, $, click, changeSelect, loadApp, urlOf,
 } from "./test-helpers.js";
-import { LLAMA_DELAY_MS } from "./easter-eggs.js";
 
 let routes;
 function setRoute(key, resp) { routes[key] = resp; }
@@ -31,6 +30,7 @@ beforeEach(() => {
   globalThis.URL.createObjectURL = vi.fn(() => "blob:fake");
   globalThis.URL.revokeObjectURL = vi.fn();
   HTMLAnchorElement.prototype.click = vi.fn();
+  HTMLFormElement.prototype.submit = vi.fn();
   Element.prototype.scrollIntoView = vi.fn();
   globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
   globalThis.cancelAnimationFrame  = (id) => clearTimeout(id);
@@ -60,6 +60,17 @@ describe("API db params — POST requests", () => {
     $("sql").value = "select 1";
     await click("run-btn");
     const call = postCall("/api/query");
+    expect(urlOf(call[0]).searchParams.get("db")).toBe("pg1");
+    expect(JSON.parse(call[1].body)).toEqual({ sql: "select 1" });
+  });
+
+  it("sends db as URL param on POST /api/query/count", async () => {
+    setRoute("POST /api/query/count", makeResp({ json: { rowCount: 4, elapsedMs: 1 } }));
+    await loadApp();
+    await click("tab-sql");
+    $("sql").value = "select 1";
+    await click("count-btn");
+    const call = postCall("/api/query/count");
     expect(urlOf(call[0]).searchParams.get("db")).toBe("pg1");
     expect(JSON.parse(call[1].body)).toEqual({ sql: "select 1" });
   });
@@ -98,17 +109,14 @@ describe("API db params — POST requests", () => {
     expect($("run-btn").disabled).toBe(false);
   });
 
-  it("sends db as URL param on POST /api/export and keeps body {sql} only", async () => {
-    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
-    setRoute("POST /api/export", makeResp({ blob: new Blob(["n\n1"]) }));
+  it("sends db as URL param on direct POST /api/export", async () => {
     await loadApp();
     await click("tab-sql");
     $("sql").value = "select 1";
-    await click("run-btn");
     await click("sql-export-btn");
-    const call = postCall("/api/export");
-    expect(urlOf(call[0]).searchParams.get("db")).toBe("pg1");
-    expect(JSON.parse(call[1].body)).toEqual({ sql: "select 1" });
+    const form = HTMLFormElement.prototype.submit.mock.instances.at(-1);
+    expect(urlOf(form.action).searchParams.get("db")).toBe("pg1");
+    expect(new FormData(form).get("sql")).toBe("select 1");
   });
 
   it("omits db URL param on POST requests when no databases configured", async () => {
@@ -156,7 +164,7 @@ describe("API db params — POST requests", () => {
     const alert = document.querySelector(".query-error");
     expect(alert.textContent).toContain(`syntax error at or near "IS"`);
     expect($("status").textContent).toContain("SQLSTATE 42601");
-    expect($("sql-results").textContent).toContain("Run a query to see results.");
+    expect($("sql-results").textContent).toContain("Preview a query to see results.");
   });
 
   it("falls back to response status text when query error body is not JSON", async () => {
@@ -211,85 +219,56 @@ describe("API db params — POST requests", () => {
     await changeSelect($("presets"), "7");
 
     expect(document.querySelector(".query-error")).toBeFalsy();
-    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Run.");
+    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Preview.");
   });
 
-  it("shows export network errors beside SQL results", async () => {
-    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
+  it("does not route direct exports through fetch", async () => {
     setRoute("POST /api/export", new Error("network down"));
     await loadApp();
     await click("tab-sql");
     $("sql").value = "select 1";
-    await click("run-btn");
     await click("sql-export-btn");
-
-    expect(document.querySelector(".query-error").textContent).toBe("network down");
+    expect(postCall("/api/export")).toBeUndefined();
+    expect(HTMLFormElement.prototype.submit).toHaveBeenCalledOnce();
   });
 
-  it("shows export fallback errors beside SQL results", async () => {
-    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
+  it("leaves server export errors to the download tab", async () => {
     setRoute("POST /api/export", makeResp({ ok: false, status: 400, json: {} }));
     await loadApp();
     await click("tab-sql");
     $("sql").value = "select 1";
-    await click("run-btn");
     await click("sql-export-btn");
-
-    expect(document.querySelector(".query-error").textContent).toBe("export failed");
+    expect(document.querySelector(".query-error")).toBeFalsy();
+    expect(HTMLFormElement.prototype.submit).toHaveBeenCalledOnce();
   });
 
-  it("ignores stale export errors after a newer successful query", async () => {
-    let rejectExport;
+  it("keeps a newer successful query status after export submission", async () => {
     setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
-    setRoute("POST /api/export", () => new Promise((_, reject) => { rejectExport = reject; }));
     await loadApp();
     await click("tab-sql");
     $("sql").value = "select 1";
-    await click("run-btn");
     await click("sql-export-btn");
-
     await click("run-btn");
-    rejectExport(new Error("late export failure"));
-    await flush();
-
     expect(document.querySelector(".query-error")).toBeFalsy();
     expect($("status").textContent).toContain("✓ 1 row in 1 ms");
   });
 
-  it("ignores stale export response errors after a newer successful query", async () => {
-    let resolveExport;
-    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
-    setRoute("POST /api/export", () => new Promise((resolve) => { resolveExport = resolve; }));
+  it("removes the temporary export form after submission", async () => {
     await loadApp();
     await click("tab-sql");
     $("sql").value = "select 1";
-    await click("run-btn");
     await click("sql-export-btn");
-
-    await click("run-btn");
-    resolveExport(makeResp({ ok: false, status: 400, json: { error: "late export failed" } }));
-    await flush();
-
-    expect(document.querySelector(".query-error")).toBeFalsy();
-    expect($("status").textContent).toContain("✓ 1 row in 1 ms");
+    const form = HTMLFormElement.prototype.submit.mock.instances.at(-1);
+    expect(form.isConnected).toBe(false);
   });
 
-  it("ignores stale successful exports after a newer successful query", async () => {
-    let resolveExport;
-    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
-    setRoute("POST /api/export", () => new Promise((resolve) => { resolveExport = resolve; }));
+  it("does not create a browser Blob for exports", async () => {
     await loadApp();
     await click("tab-sql");
     $("sql").value = "select 1";
-    await click("run-btn");
     await click("sql-export-btn");
-
-    await click("run-btn");
-    resolveExport(makeResp({ blob: new Blob(["n\n1"]) }));
-    await flush();
-
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
     expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
-    expect($("status").textContent).toContain("✓ 1 row in 1 ms");
   });
 
   it("ignores stale query response errors after picking a saved query", async () => {
@@ -306,7 +285,7 @@ describe("API db params — POST requests", () => {
     await flush();
 
     expect(document.querySelector(".query-error")).toBeFalsy();
-    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Run.");
+    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Preview.");
   });
 
   it("ignores stale query network errors after picking a saved query", async () => {
@@ -323,7 +302,7 @@ describe("API db params — POST requests", () => {
     await flush();
 
     expect(document.querySelector(".query-error")).toBeFalsy();
-    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Run.");
+    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Preview.");
   });
 
   it("ignores stale successful queries after picking a saved query", async () => {
@@ -339,27 +318,19 @@ describe("API db params — POST requests", () => {
     resolveQuery(makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
     await flush();
 
-    expect($("sql-results").textContent).toContain("Run a query to see results.");
-    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Run.");
+    expect($("sql-results").textContent).toContain("Preview a query to see results.");
+    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Preview.");
   });
 
-  it("ignores stale export errors after picking a saved query", async () => {
-    let rejectExport;
+  it("keeps a saved-query selection after export submission", async () => {
     setRoute("GET /api/queries", makeResp({ json: [{ id: 7, name: "Recent keys", sql: "select 1", isPreset: false }] }));
-    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
-    setRoute("POST /api/export", () => new Promise((_, reject) => { rejectExport = reject; }));
     await loadApp();
     await click("tab-sql");
     $("sql").value = "select 1";
-    await click("run-btn");
     await click("sql-export-btn");
-
     await changeSelect($("presets"), "7");
-    rejectExport(new Error("late export failure"));
-    await flush();
-
     expect(document.querySelector(".query-error")).toBeFalsy();
-    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Run.");
+    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Preview.");
   });
 });
 
@@ -492,32 +463,14 @@ describe("SQL tab easter eggs", () => {
     expect(queryCalls()).toHaveLength(0);
   });
 
-  it("never shows the loading llama for a fast query", async () => {
+  it("does not decorate query loading with an animated emoji", async () => {
     setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
     await loadApp();
     await click("tab-sql");
     $("sql").value = "select 1";
     await click("run-btn");
-    // Resolved well inside the 200ms hold — the llama must never have mounted.
     expect(document.querySelector(".egg-llama")).toBeFalsy();
     expect($("sql-results").textContent).toContain("1");
-  });
-
-  it("slides the loading llama in once a query outlasts the delay", async () => {
-    let resolveQuery;
-    setRoute("POST /api/query", () => new Promise((resolve) => { resolveQuery = resolve; }));
-    await loadApp();
-    await click("tab-sql");
-    $("sql").value = "select pg_sleep(1)";
-    await click("run-btn");
-
-    await new Promise((r) => setTimeout(r, LLAMA_DELAY_MS + 120));
-    await flush();
-    expect(document.querySelector(".egg-llama")).toBeTruthy();
-
-    resolveQuery(makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
-    await flush();
-    expect(document.querySelector(".egg-llama")).toBeFalsy();
   });
 
   it("whispers for VACUUM without sending it", async () => {

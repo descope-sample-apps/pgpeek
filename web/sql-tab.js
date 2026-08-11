@@ -1,10 +1,10 @@
-// SqlTab — CodeMirror SQL editor with run, export, and saved-query CRUD.
 import { html, useState, useEffect, useRef, useCallback } from "./vendor/preact-htm.js";
 import { dbUrl, getJSON, tablePath } from "./api.js";
-import { interceptRun, runEasterEgg, EXPLAIN_JOKE, LLAMA_DELAY_MS } from "./easter-eggs.js";
+import { interceptRun, runEasterEgg, EXPLAIN_JOKE } from "./easter-eggs.js";
 import { DEFAULT_SQL, queryStatusText, responseError, SqlResults } from "./sql-results.js";
 
 const RUNNING_TIME_DELAY_SECONDS = 10;
+const EXPORT_CSRF_COOKIE = "pgpeek_export_csrf";
 
 export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, initialSQL, onStateChange }) {
   const wrapRef = useRef();
@@ -16,8 +16,8 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
   const [selected, setSelected] = useState("");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
-  const [showLlama, setShowLlama] = useState(false);
   const runningRef = useRef(false);
+  const runningLabelRef = useRef("Previewing");
   const actionRef = useRef(0);
   const initialSQLRef = useRef(initialSQL);
   const dbRef = useRef(dbId);
@@ -47,9 +47,9 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
     }
     const action = actionRef.current + 1;
     actionRef.current = action;
-    runningRef.current = true; setRunning(true);
+    runningLabelRef.current = "Previewing"; runningRef.current = true; setRunning(true);
     setError("");
-    setStatus({ text: "Running…", cls: "ok" });
+    setStatus({ text: "Previewing…", cls: "ok" });
     try {
       const r = await fetch(dbUrl("/api/query", dbId), {
         method: "POST",
@@ -93,7 +93,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
     const update = () => {
       const seconds = Math.floor((Date.now() - startedAt) / 1000);
       if (runningRef.current) {
-        setStatus({ text: `Running… (${seconds}s)`, cls: "ok" });
+        setStatus({ text: `${runningLabelRef.current}… (${seconds}s)`, cls: "ok" });
       }
     };
     const delay = setTimeout(() => {
@@ -103,14 +103,6 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
     return () => { clearTimeout(delay); clearInterval(timer); };
   }, [running, setStatus]);
 
-  // Easter egg: only show the loading llama once a query has been running for
-  // LLAMA_DELAY_MS, so quick queries never make it flicker in and out.
-  useEffect(() => {
-    if (!running) { setShowLlama(false); return; }
-    const timer = setTimeout(() => setShowLlama(true), LLAMA_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [running]);
-
   // Init CodeMirror once into a Preact-stable wrapper it fully owns.
   useEffect(() => {
     if (window.cm6) {
@@ -119,6 +111,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
     }
     const ta = document.createElement("textarea");
     ta.id = "sql";
+    ta.setAttribute("aria-label", "SQL query");
     ta.value = initialSQL ?? DEFAULT_SQL;
     wrapRef.current.appendChild(ta);
     taRef.current = ta;
@@ -183,43 +176,51 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
   // CodeMirror was created while hidden (zero size); refresh when shown.
   useEffect(() => { if (active && editorRef.current) editorRef.current.refresh(); }, [active]);
 
-  const exportCSV = async () => {
-    const sql = lastSQL || getSQL();
-    if (!sql) return;
+  const countRows = async () => {
+    const sql = getSQL();
+    if (!sql || runningRef.current) return;
     const action = actionRef.current + 1;
     actionRef.current = action;
-    setError("");
+    runningLabelRef.current = "Counting"; runningRef.current = true; setRunning(true); setError("");
+    setStatus({ text: "Counting…", cls: "ok" });
     try {
-      const r = await fetch(dbUrl("/api/export", dbId), {
+      const response = await fetch(dbUrl("/api/query/count", dbId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sql }),
       });
-      if (!r.ok) {
-        const message = await responseError(r, "export failed");
-        if (action !== actionRef.current) return;
-        setError(message);
-        setStatus({ text: "✗ " + message, cls: "error" });
-        return;
-      }
-      const blob = await r.blob();
+      if (!response.ok) throw new Error(await responseError(response, "count failed"));
+      const data = await response.json();
       if (action !== actionRef.current) return;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = url; a.download = "pgpeek-export.csv"; a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 0);
+      const rows = data.rowCount.toLocaleString();
+      setStatus({ text: `✓ ${rows} row${data.rowCount === 1 ? "" : "s"} in ${data.elapsedMs} ms`, cls: "ok" });
     } catch (e) {
       if (action === actionRef.current) {
         setError(e.message);
         setStatus({ text: "✗ " + e.message, cls: "error" });
       }
+    } finally {
+      if (action === actionRef.current) { runningRef.current = false; setRunning(false); }
     }
+  };
+
+  const exportCSV = () => {
+    const sql = getSQL();
+    if (!sql) return;
+    const csrf = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    document.cookie = `${EXPORT_CSRF_COOKIE}=${csrf}; Path=/; SameSite=Strict${location.protocol === "https:" ? "; Secure" : ""}`;
+    const form = document.createElement("form");
+    form.method = "POST"; form.action = dbUrl("/api/export", dbId); form.target = "_blank";
+    const input = document.createElement("input"); input.type = "hidden"; input.name = "sql"; input.value = sql;
+    const token = document.createElement("input"); token.type = "hidden"; token.name = "csrf"; token.value = csrf;
+    form.append(input, token); document.body.append(form); form.submit(); form.remove();
   };
 
   const onPick = (e) => {
     const id = e.target.value; setSelected(id);
     const q = saved.find((x) => String(x.id) === id);
     if (q) {
-      setSQL(q.sql); setError(""); setStatus({ text: "Loaded \u201c" + q.name + "\u201d. Press Run.", cls: "ok" });
+      setSQL(q.sql); setError(""); setStatus({ text: "Loaded \u201c" + q.name + "\u201d. Press Preview.", cls: "ok" });
     }
   };
   const selectedQ = saved.find((x) => String(x.id) === selected);
@@ -272,10 +273,11 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
   return html`
     <div class="editor-wrap" ref=${wrapRef}></div>
     <div class="toolbar">
-      <button class="primary" id="run-btn" disabled=${running} onClick=${run}>Run ▶${showLlama ? html`<span class="egg-llama" aria-hidden="true">🦙</span>` : null}</button>
-      <button class="ghost" id="sql-export-btn"
-        disabled=${running || !result || result.rowCount === 0}
-        onClick=${exportCSV}>Export CSV</button>
+      <button class="primary" id="run-btn" disabled=${running} onClick=${run}>Preview</button>
+      <button class="ghost" id="count-btn" disabled=${running} onClick=${countRows}>Count</button>
+      <button class="action secondary" id="sql-export-btn"
+        disabled=${running}
+        onClick=${exportCSV}>Export .csv.gz</button>
       <select id="presets" title="Saved & preset queries" value=${selected} onChange=${onPick}>
         <option value="">Saved queries…</option>
         ${presets.length ? html`<optgroup label="Presets">${presets.map((q) =>
@@ -286,7 +288,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
       <button class="ghost" id="save-btn" onClick=${onSave}>Save</button>
       <button class="ghost" id="delete-btn"
         disabled=${!(selectedQ && !selectedQ.isPreset)} onClick=${onDelete}>Delete</button>
-      <span class="hint">Ctrl/Cmd\u00a0+\u00a0Enter to run · single SELECT/WITH only · ${EXPLAIN_JOKE}</span>
+      <span class="hint">Ctrl/Cmd\u00a0+\u00a0Enter to preview · single SELECT/WITH only · ${EXPLAIN_JOKE}</span>
     </div>
     ${error ? html`<div class="query-error" role="alert" aria-live="assertive">${error}</div>` : ""}
     <div class="results" id="sql-results">

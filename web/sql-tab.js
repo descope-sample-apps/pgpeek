@@ -4,6 +4,8 @@ import { dbUrl, getJSON, tablePath } from "./api.js";
 import { interceptRun, runEasterEgg, EXPLAIN_JOKE, LLAMA_DELAY_MS } from "./easter-eggs.js";
 import { DEFAULT_SQL, queryStatusText, responseError, SqlResults } from "./sql-results.js";
 
+const RUNNING_TIME_DELAY_SECONDS = 10;
+
 export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, initialSQL, onStateChange }) {
   const wrapRef = useRef();
   const taRef = useRef();
@@ -83,6 +85,18 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
   const runRef = useRef(run);
   useEffect(() => { runRef.current = run; }, [run]);
   useEffect(invalidate, [dbId]);
+
+  useEffect(() => {
+    if (!running) return;
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      const seconds = Math.floor((Date.now() - startedAt) / 1000);
+      if (runningRef.current && seconds >= RUNNING_TIME_DELAY_SECONDS) {
+        setStatus({ text: `Running… (${seconds}s)`, cls: "ok" });
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [running, setStatus]);
 
   // Easter egg: only show the loading llama once a query has been running for
   // LLAMA_DELAY_MS, so quick queries never make it flicker in and out.

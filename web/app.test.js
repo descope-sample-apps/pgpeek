@@ -748,6 +748,41 @@ describe("SQL tab textarea mode", () => {
     expect($("sql-export-btn").disabled).toBe(false);
   });
 
+  it("shows elapsed seconds after a query runs for ten seconds", async () => {
+    const pending = deferred();
+    setRoute("POST /api/query", () => pending.promise);
+    await openSql();
+    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    let tick;
+    vi.spyOn(globalThis, "setInterval").mockImplementation((callback) => { tick = callback; return 123; });
+    const clearTimer = vi.spyOn(globalThis, "clearInterval");
+
+    $("sql").value = "select pg_sleep(12)";
+    $("run-btn").click();
+    await flush();
+    expect($("status").textContent).toBe("Running…");
+
+    now.mockReturnValue(9_999);
+    tick();
+    await flush();
+    expect($("status").textContent).toBe("Running…");
+
+    now.mockReturnValue(10_000);
+    tick();
+    await flush();
+    expect($("status").textContent).toBe("Running… (10s)");
+
+    now.mockReturnValue(12_000);
+    tick();
+    await flush();
+    expect($("status").textContent).toBe("Running… (12s)");
+
+    pending.resolve(makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 12_000 } }));
+    await flush();
+    expect($("status").textContent).toContain("✓ 1 row");
+    expect(clearTimer).toHaveBeenCalledWith(123);
+  });
+
   it("clears running after failed in-flight runs", async () => {
     for (const failure of [makeResp({ ok: false, status: 500, json: { error: "nope" } }), new Error("query offline")]) {
       document.body.innerHTML = '<div id="app"></div>';

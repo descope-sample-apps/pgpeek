@@ -59,6 +59,38 @@ func TestValidate_Rejects(t *testing.T) {
 	}
 }
 
+// EXPLAIN ANALYZE runs the statement it explains, so it is read-only exactly
+// when its target is — and a SELECT target is.
+func TestValidate_ExplainAnalyze(t *testing.T) {
+	ok := []string{
+		"EXPLAIN ANALYZE SELECT * FROM public.audit_events",
+		"explain analyze verbose select count(*) from public.users",
+		"EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT 1",
+		"EXPLAIN (ANALYZE true) WITH t AS (SELECT 1) SELECT * FROM t",
+		"EXPLAIN ANALYZE (SELECT 1) UNION (SELECT 2)",
+		"EXPLAIN ANALYZE TABLE public.users",
+	}
+	for _, q := range ok {
+		if err := Validate(q); err != nil {
+			t.Errorf("expected OK, got error for %q: %v", q, err)
+		}
+	}
+
+	bad := []string{
+		"EXPLAIN ANALYZE DELETE FROM users",
+		"EXPLAIN (ANALYZE) INSERT INTO users VALUES (1)",
+		"EXPLAIN ANALYZE",                         // nothing to explain
+		"EXPLAIN (ANALYZE SELECT * FROM users",    // unclosed option list
+		"EXPLAIN ANALYZE SELECT * FROM pg_authid", // restricted catalog
+		"ANALYZE users",                           // standalone ANALYZE still writes stats
+	}
+	for _, q := range bad {
+		if err := Validate(q); err == nil {
+			t.Errorf("expected error, got OK for %q", q)
+		}
+	}
+}
+
 func TestValidate_TrailingSemicolon(t *testing.T) {
 	for _, q := range []string{"SELECT 1;", "SELECT 1; ", "SELECT 1;\n\n"} {
 		if err := Validate(q); err != nil {
@@ -125,10 +157,22 @@ func FuzzValidate(f *testing.F) {
 		if statements > 1 {
 			t.Errorf("accepted multi-statement input: %q", sql)
 		}
-		if fk := firstKeyword(strings.TrimSpace(masked)); !allowedStart[fk] {
+		fk, after := firstKeyword(strings.TrimSpace(masked))
+		if !allowedStart[fk] {
 			t.Errorf("accepted input with disallowed leading keyword %q: %q", fk, sql)
 		}
-		up := strings.ToUpper(masked)
+		body := strings.TrimSpace(masked)
+		if fk == "EXPLAIN" {
+			// EXPLAIN options are excluded from the keyword scan by design; the
+			// explained statement still has to be clean.
+			target, err := explainTarget(body[after:])
+			if err != nil {
+				t.Errorf("accepted EXPLAIN with unusable target: %q (%v)", sql, err)
+				return
+			}
+			body = target
+		}
+		up := strings.ToUpper(body)
 		for _, kw := range forbidden {
 			if containsWord(up, kw) {
 				t.Errorf("accepted input containing forbidden keyword %q: %q", kw, sql)
@@ -204,7 +248,7 @@ func TestDollarTag(t *testing.T) {
 }
 
 func TestFirstKeywordEmpty(t *testing.T) {
-	if got := firstKeyword("((("); got != "" {
+	if got, _ := firstKeyword("((("); got != "" {
 		t.Errorf("firstKeyword of only-parens = %q, want empty", got)
 	}
 }

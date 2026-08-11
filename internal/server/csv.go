@@ -34,7 +34,9 @@ func (w *limitedCSVWriter) Write(p []byte) (int, error) {
 }
 
 func writeCSVResponse(w http.ResponseWriter, filename string, render func(io.Writer) error) error {
-	return writeSpoolResponse(w, filename, "text/csv; charset=utf-8", render)
+	return writeSpoolResponse(w, filename, "text/csv; charset=utf-8", func(dst io.Writer) error {
+		return render(&limitedCSVWriter{dst: dst, remaining: maxCSVExportBytes})
+	})
 }
 
 func writeGZIPResponse(w http.ResponseWriter, filename string, render func(io.Writer) error) error {
@@ -64,7 +66,7 @@ func writeSpoolResponse(w http.ResponseWriter, filename, contentType string, ren
 		_ = spool.Close()
 	}()
 
-	if err := render(&limitedCSVWriter{dst: spool, remaining: maxCSVExportBytes}); err != nil {
+	if err := render(spool); err != nil {
 		if errors.Is(err, errCSVResultChanged) {
 			writeError(w, http.StatusConflict, "The data changed. Reload and export again.")
 		} else if errors.Is(err, errCSVTooLarge) {

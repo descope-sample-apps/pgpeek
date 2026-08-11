@@ -98,12 +98,23 @@ func (s *Server) handleQueryCell(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
+	if mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mediaType == "application/x-www-form-urlencoded" {
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'self'")
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+	}
 	pool, ok := s.poolForRequest(w, r)
 	if !ok {
 		return
 	}
 	sql, ok := decodeReadOnlyQuery(w, r)
 	if !ok {
+		return
+	}
+	select {
+	case s.exportSlots <- struct{}{}:
+		defer func() { <-s.exportSlots }()
+	default:
+		writeError(w, http.StatusTooManyRequests, "another export is already running")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
@@ -144,8 +155,16 @@ func queryErrorMessage(err error) string {
 }
 
 func decodeReadOnlyQuery(w http.ResponseWriter, r *http.Request) (string, bool) {
-	mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil {
+		writeError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+		return "", false
+	}
 	if mediaType == "application/x-www-form-urlencoded" {
+		if r.URL.Path != "/api/export" {
+			writeError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+			return "", false
+		}
 		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 		if err := r.ParseForm(); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid request body")
@@ -161,6 +180,10 @@ func decodeReadOnlyQuery(w http.ResponseWriter, r *http.Request) (string, bool) 
 			return "", false
 		}
 		return sql, true
+	}
+	if mediaType != "application/json" {
+		writeError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+		return "", false
 	}
 	var req queryRequest
 	if !decodeBody(w, r, &req) {

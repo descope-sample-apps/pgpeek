@@ -806,12 +806,34 @@ describe("SQL tab textarea mode", () => {
     await flush();
     expect(callsTo("/api/query")).toHaveLength(2);
     expect($("run-btn").disabled).toBe(true);
+	expect($("count-btn").disabled).toBe(true);
     expect($("sql-export-btn").disabled).toBe(true);
+	expect($("save-btn").disabled).toBe(true);
 
     pending.resolve(makeResp({ json: { columns: ["n"], rows: [[2]], rowCount: 1, elapsedMs: 2 } }));
     await flush();
     expect($("run-btn").disabled).toBe(false);
+	expect($("count-btn").disabled).toBe(false);
     expect($("sql-export-btn").disabled).toBe(false);
+	expect($("save-btn").disabled).toBe(false);
+  });
+
+  it("guards saved-query actions while a query is running", async () => {
+    setRoute("GET /api/queries", makeResp({ json: [{ id: 2, name: "Mine", sql: "select 1", isPreset: false }] }));
+    const pending = deferred();
+    setRoute("POST /api/query", () => pending.promise);
+    await openSql();
+    await changeSelect($("presets"), "2");
+    $("run-btn").click();
+    await flush();
+    $("save-btn").disabled = false;
+    $("delete-btn").disabled = false;
+    await dispatchClick("save-btn");
+    await dispatchClick("delete-btn");
+    expect(prompt).not.toHaveBeenCalled();
+    expect(confirm).not.toHaveBeenCalled();
+    pending.resolve(makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
+    await flush();
   });
 
   it("shows elapsed seconds after a query runs for ten seconds", async () => {
@@ -935,7 +957,8 @@ describe("SQL CSV export", () => {
     const form = HTMLFormElement.prototype.submit.mock.instances.at(-1);
     expect(form.method).toBe("post");
     expect(form.action).toContain("/api/export");
-    expect(form.target).toBe("_blank");
+	expect(form.target).toMatch(/^pgpeek-export-/);
+	expect(document.querySelector(`iframe[name="${form.target}"]`)).toBeTruthy();
     expect(new FormData(form).get("sql")).toBe("select fresh");
     expect(new FormData(form).get("csrf")).toMatch(/^[0-9a-f]{32}$/);
     expect(document.cookie).toContain("pgpeek_export_csrf=");
@@ -956,6 +979,46 @@ describe("SQL CSV export", () => {
     HTMLFormElement.prototype.submit.mockClear();
     await dispatchClick("sql-export-btn");
     expect(HTMLFormElement.prototype.submit).not.toHaveBeenCalled();
+  });
+
+  it("shows export failures inline", async () => {
+	await openSqlWithText("select denied");
+	await dispatchClick("sql-export-btn");
+	const frame = document.querySelector("iframe[name^='pgpeek-export-']");
+	frame.contentDocument.body.textContent = JSON.stringify({ error: "export denied" });
+	frame.dispatchEvent(new Event("load"));
+	await flush();
+	expect(document.querySelector(".query-error").textContent).toBe("export denied");
+	expect($("status").textContent).toContain("export denied");
+	expect(frame.isConnected).toBe(false);
+  });
+
+  it("ignores stale export failures after editing", async () => {
+    await openSqlWithText("select stale");
+    await dispatchClick("sql-export-btn");
+    const frame = document.querySelector("iframe[name^='pgpeek-export-']");
+    $("sql").dispatchEvent(new Event("input", { bubbles: true }));
+    frame.contentDocument.body.textContent = JSON.stringify({ error: "stale export error" });
+    frame.dispatchEvent(new Event("load"));
+    await flush();
+    expect(document.querySelector(".query-error")).toBeFalsy();
+  });
+
+  it("ignores non-JSON export frames and cleans them up", async () => {
+	const realSetTimeout = globalThis.setTimeout;
+	let cleanup;
+	vi.spyOn(globalThis, "setTimeout").mockImplementation((callback, delay, ...args) => {
+		if (delay === 60_000) { cleanup = callback; return 321; }
+		return realSetTimeout(callback, delay, ...args);
+	});
+	await openSqlWithText("select download");
+	await dispatchClick("sql-export-btn");
+	const frame = document.querySelector("iframe[name^='pgpeek-export-']");
+	frame.contentDocument.body.textContent = "download response";
+	frame.dispatchEvent(new Event("load"));
+	expect(document.querySelector(".query-error")).toBeFalsy();
+	expect(frame.isConnected).toBe(false);
+	cleanup();
   });
 });
 

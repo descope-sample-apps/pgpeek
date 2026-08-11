@@ -113,6 +113,7 @@ func TestExport_WriteFailureLogged(t *testing.T) {
 	// Exercise the handler's csv-error branch directly with a writer that fails.
 	srv := serverWithStore(t, &fakeQuerier{result: okResult()}, &fakeStore{})
 	req := httptest.NewRequest(http.MethodPost, "/api/export", strings.NewReader(`{"sql":"SELECT 1"}`))
+	req.Header.Set("Content-Type", "application/json")
 	fw := &failingWriter{}
 	srv.handleExport(fw, req)
 	// Header is set before the failing body write.

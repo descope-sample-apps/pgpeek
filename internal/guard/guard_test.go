@@ -1,6 +1,7 @@
 package guard
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -96,6 +97,30 @@ func TestValidate_TrailingSemicolon(t *testing.T) {
 		if err := Validate(q); err != nil {
 			t.Errorf("trailing semicolon should be allowed for %q: %v", q, err)
 		}
+	}
+}
+
+func TestPrepareCount(t *testing.T) {
+	tests := map[string]string{
+		"SELECT 1":                         "SELECT 1",
+		"SELECT 1;":                        "SELECT 1",
+		"SELECT ';' AS value; -- trailing": "SELECT ';' AS value",
+		"VALUES (1); /* trailing */":       "VALUES (1)",
+	}
+	for query, want := range tests {
+		got, err := PrepareCount(query)
+		if err != nil {
+			t.Fatalf("PrepareCount(%q): %v", query, err)
+		}
+		if got != want {
+			t.Fatalf("PrepareCount(%q) = %q, want %q", query, got, want)
+		}
+	}
+	if _, err := PrepareCount("EXPLAIN SELECT 1"); !errors.Is(err, ErrCountExplain) {
+		t.Fatalf("EXPLAIN error = %v, want ErrCountExplain", err)
+	}
+	if _, err := PrepareCount("DELETE FROM users"); err == nil {
+		t.Fatal("expected guard error")
 	}
 }
 

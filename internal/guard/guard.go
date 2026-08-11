@@ -15,6 +15,8 @@ import (
 // ErrEmpty is returned for blank input.
 var ErrEmpty = errors.New("query is empty")
 
+var ErrCountExplain = errors.New("count is not supported for EXPLAIN queries")
+
 // forbidden keywords that must never appear in a read-only query (matched as
 // whole words, against a version of the SQL with comments and string-literal
 // contents removed so they can't trigger false positives).
@@ -54,13 +56,6 @@ func IsRestrictedRelation(name string) bool {
 	}
 	return false
 }
-
-type maskMode int
-
-const (
-	maskKeywords maskMode = iota
-	maskRelations
-)
 
 // Validate returns nil if sql is a single read-only statement, or a
 // human-readable error explaining why it was rejected.
@@ -109,6 +104,23 @@ func Validate(sql string) error {
 		}
 	}
 	return nil
+}
+
+// PrepareCount validates sql, rejects EXPLAIN, and removes trailing statement terminators.
+func PrepareCount(sql string) (string, error) {
+	if err := Validate(sql); err != nil {
+		return "", err
+	}
+	masked, _ := mask(sql)
+	first, _ := firstKeyword(strings.TrimSpace(masked))
+	if first == "EXPLAIN" {
+		return "", ErrCountExplain
+	}
+	_, _, trailingStart := maskSQL(sql, maskKeywords)
+	if trailingStart >= 0 {
+		sql = sql[:trailingStart]
+	}
+	return strings.TrimSpace(sql), nil
 }
 
 // firstKeyword returns the first SQL keyword (uppercased), skipping any leading
@@ -197,152 +209,4 @@ func containsWord(s, word string) bool {
 
 func isWordChar(b byte) bool {
 	return b == '_' || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
-}
-
-// mask walks the SQL once, removing comments and the *contents* of string
-// literals (single-quoted and dollar-quoted) and quoted identifiers, so keyword
-// scanning can't be fooled by data. It returns the masked SQL and the number of
-// top-level statements (semicolons outside strings/comments that are followed by
-// more non-whitespace input count as additional statements).
-func mask(sql string) (string, int) {
-	return maskSQL(sql, maskKeywords)
-}
-
-func relationMask(sql string) string {
-	masked, _ := maskSQL(sql, maskRelations)
-	return masked
-}
-
-func maskSQL(sql string, mode maskMode) (string, int) {
-	var b strings.Builder
-	statements := 1
-	sawCodeAfterSemicolon := true // start: first statement counts when code appears
-	pendingSemicolon := false
-
-	n := len(sql)
-	for i := 0; i < n; i++ {
-		c := sql[i]
-
-		// line comment
-		if c == '-' && i+1 < n && sql[i+1] == '-' {
-			for i < n && sql[i] != '\n' {
-				i++
-			}
-			b.WriteByte('\n')
-			continue
-		}
-		// block comment (PostgreSQL allows nesting)
-		if c == '/' && i+1 < n && sql[i+1] == '*' {
-			depth := 1
-			i += 2
-			for i < n && depth > 0 {
-				if sql[i] == '/' && i+1 < n && sql[i+1] == '*' {
-					depth++
-					i += 2
-				} else if sql[i] == '*' && i+1 < n && sql[i+1] == '/' {
-					depth--
-					i += 2
-				} else {
-					i++
-				}
-			}
-			i--
-			b.WriteByte(' ')
-			continue
-		}
-		// single-quoted string
-		if c == '\'' {
-			i++
-			for i < n {
-				if sql[i] == '\'' {
-					if i+1 < n && sql[i+1] == '\'' { // escaped quote
-						i += 2
-						continue
-					}
-					break
-				}
-				i++
-			}
-			b.WriteString("''")
-			continue
-		}
-		// double-quoted identifier
-		if c == '"' {
-			i++
-			if mode == maskRelations {
-				b.WriteByte(' ')
-			}
-			for i < n {
-				if sql[i] == '"' {
-					if i+1 < n && sql[i+1] == '"' {
-						if mode == maskRelations {
-							b.WriteByte('"')
-						}
-						i += 2
-						continue
-					}
-					break
-				}
-				if mode == maskRelations {
-					b.WriteByte(sql[i])
-				}
-				i++
-			}
-			if mode == maskRelations {
-				b.WriteByte(' ')
-			} else {
-				b.WriteString(`"x"`)
-			}
-			continue
-		}
-		// dollar-quoted string: $tag$ ... $tag$
-		if c == '$' {
-			if tag, ok := dollarTag(sql, i); ok {
-				end := strings.Index(sql[i+len(tag):], tag)
-				if end < 0 {
-					i = n
-				} else {
-					i = i + len(tag) + end + len(tag) - 1
-				}
-				b.WriteByte(' ')
-				continue
-			}
-		}
-
-		if c == ';' {
-			if sawCodeAfterSemicolon {
-				pendingSemicolon = true
-			}
-			sawCodeAfterSemicolon = false
-			b.WriteByte(' ')
-			continue
-		}
-
-		if !unicode.IsSpace(rune(c)) {
-			if pendingSemicolon {
-				statements++
-				pendingSemicolon = false
-			}
-			sawCodeAfterSemicolon = true
-		}
-		b.WriteByte(c)
-	}
-	return b.String(), statements
-}
-
-// dollarTag returns the dollar-quote tag (e.g. "$$" or "$foo$") starting at i.
-// The caller guarantees sql[i] == '$'.
-func dollarTag(sql string, i int) (string, bool) {
-	j := i + 1
-	for j < len(sql) {
-		c := sql[j]
-		if c == '$' {
-			return sql[i : j+1], true
-		}
-		if !isWordChar(c) {
-			return "", false
-		}
-		j++
-	}
-	return "", false
 }

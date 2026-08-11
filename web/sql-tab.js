@@ -1,10 +1,11 @@
+// allow: SIZE_OK — one editor action-generation state machine prevents stale async results.
 import { html, useState, useEffect, useRef, useCallback } from "./vendor/preact-htm.js";
 import { dbUrl, getJSON, tablePath } from "./api.js";
 import { interceptRun, runEasterEgg, EXPLAIN_JOKE } from "./easter-eggs.js";
+import { countQuery, exportQuery } from "./sql-actions.js";
 import { DEFAULT_SQL, queryStatusText, responseError, SqlResults } from "./sql-results.js";
 
 const RUNNING_TIME_DELAY_SECONDS = 10;
-const EXPORT_CSRF_COOKIE = "pgpeek_export_csrf";
 
 export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, initialSQL, onStateChange }) {
   const wrapRef = useRef();
@@ -184,13 +185,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
     runningLabelRef.current = "Counting"; runningRef.current = true; setRunning(true); setError("");
     setStatus({ text: "Counting…", cls: "ok" });
     try {
-      const response = await fetch(dbUrl("/api/query/count", dbId), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sql }),
-      });
-      if (!response.ok) throw new Error(await responseError(response, "count failed"));
-      const data = await response.json();
+      const data = await countQuery(sql, dbId);
       if (action !== actionRef.current) return;
       const rows = data.rowCount.toLocaleString();
       setStatus({ text: `✓ ${rows} row${data.rowCount === 1 ? "" : "s"} in ${data.elapsedMs} ms`, cls: "ok" });
@@ -207,13 +202,14 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
   const exportCSV = () => {
     const sql = getSQL();
     if (!sql) return;
-    const csrf = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
-    document.cookie = `${EXPORT_CSRF_COOKIE}=${csrf}; Path=/; SameSite=Strict${location.protocol === "https:" ? "; Secure" : ""}`;
-    const form = document.createElement("form");
-    form.method = "POST"; form.action = dbUrl("/api/export", dbId); form.target = "_blank";
-    const input = document.createElement("input"); input.type = "hidden"; input.name = "sql"; input.value = sql;
-    const token = document.createElement("input"); token.type = "hidden"; token.name = "csrf"; token.value = csrf;
-    form.append(input, token); document.body.append(form); form.submit(); form.remove();
+    const action = actionRef.current + 1;
+    actionRef.current = action;
+    setError("");
+    exportQuery(sql, dbId, (message) => {
+      if (action !== actionRef.current) return;
+      setError(message);
+      setStatus({ text: "✗ " + message, cls: "error" });
+    });
   };
 
   const onPick = (e) => {
@@ -226,6 +222,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
   const selectedQ = saved.find((x) => String(x.id) === selected);
 
   const onSave = async () => {
+    if (runningRef.current) return;
     const sql = getSQL();
     if (!sql) return;
     const name = prompt("Name for this saved query:");
@@ -251,6 +248,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
   };
 
   const onDelete = async () => {
+    if (runningRef.current) return;
     if (!selectedQ) return;
     if (!confirm("Delete saved query \u201c" + selectedQ.name + "\u201d?")) return;
     const action = actionRef.current + 1;
@@ -285,9 +283,9 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
         ${mine.length ? html`<optgroup label="Saved">${mine.map((q) =>
           html`<option key=${q.id} value=${q.id}>${q.name}</option>`)}</optgroup>` : ""}
       </select>
-      <button class="ghost" id="save-btn" onClick=${onSave}>Save</button>
+      <button class="ghost" id="save-btn" disabled=${running} onClick=${onSave}>Save</button>
       <button class="ghost" id="delete-btn"
-        disabled=${!(selectedQ && !selectedQ.isPreset)} onClick=${onDelete}>Delete</button>
+        disabled=${running || !(selectedQ && !selectedQ.isPreset)} onClick=${onDelete}>Delete</button>
       <span class="hint">Ctrl/Cmd\u00a0+\u00a0Enter to preview · single SELECT/WITH only · ${EXPLAIN_JOKE}</span>
     </div>
     ${error ? html`<div class="query-error" role="alert" aria-live="assertive">${error}</div>` : ""}

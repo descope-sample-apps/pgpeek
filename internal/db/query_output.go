@@ -5,13 +5,18 @@ import (
 	"encoding/csv"
 	"errors"
 	"io"
-	"strings"
+
+	"github.com/descope-sample-apps/pgpeek/internal/guard"
 )
 
 var errCountUnavailable = errors.New("count query returned no rows")
 
 func (p *Pool) Count(ctx context.Context, sql string) (int64, error) {
-	sql = strings.TrimSuffix(strings.TrimSpace(sql), ";")
+	var err error
+	sql, err = guard.PrepareCount(sql)
+	if err != nil {
+		return 0, err
+	}
 	rows, err := p.pool.Query(ctx, "SELECT count(*) FROM (\n"+sql+"\n) AS pgpeek_count")
 	if err != nil {
 		return 0, err

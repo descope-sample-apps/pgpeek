@@ -2,6 +2,7 @@ package server
 
 import (
 	"compress/gzip"
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -192,6 +193,26 @@ func TestQuery_UnknownField(t *testing.T) {
 	}
 }
 
+func TestQuery_RejectsUnsupportedContentType(t *testing.T) {
+	for _, contentType := range []string{"text/plain", "application/x-www-form-urlencoded", "application/json; charset"} {
+		q := &fakeQuerier{result: okResult()}
+		ts, _ := newTestServer(t, q)
+		req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/query", strings.NewReader(`{"sql":"SELECT pg_sleep(30) --="}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", contentType)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusUnsupportedMediaType || q.called {
+			t.Fatalf("content-type=%q status=%d called=%v", contentType, resp.StatusCode, q.called)
+		}
+	}
+}
+
 func TestQuery_DBError(t *testing.T) {
 	q := &fakeQuerier{err: errors.New("postgres://secret-host/hidden: boom")}
 	ts, _ := newTestServer(t, q)
@@ -278,6 +299,9 @@ func TestExport_FormPost(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || q.lastSQL != "SELECT 1" || !q.exportCalled {
 		t.Fatalf("status=%d SQL=%q exported=%v", resp.StatusCode, q.lastSQL, q.exportCalled)
 	}
+	if resp.Header.Get("X-Frame-Options") != "SAMEORIGIN" || !strings.Contains(resp.Header.Get("Content-Security-Policy"), "frame-ancestors 'self'") {
+		t.Fatalf("frame headers=%q %q", resp.Header.Get("X-Frame-Options"), resp.Header.Get("Content-Security-Policy"))
+	}
 }
 
 func TestExport_InvalidFormPost(t *testing.T) {
@@ -342,6 +366,40 @@ func TestExport_FormOrigin(t *testing.T) {
 	}
 }
 
+func TestExport_RejectsConcurrentRequest(t *testing.T) {
+	q := &blockingExportQuerier{
+		fakeQuerier: &fakeQuerier{result: okResult()},
+		started:     make(chan struct{}),
+		release:     make(chan struct{}),
+	}
+	ts, _ := newTestServer(t, q)
+	type responseResult struct {
+		resp *http.Response
+		err  error
+	}
+	first := make(chan responseResult, 1)
+	go func() {
+		resp, err := http.Post(ts.URL+"/api/export", "application/json", strings.NewReader(`{"sql":"SELECT 1"}`))
+		first <- responseResult{resp: resp, err: err}
+	}()
+	<-q.started
+
+	second := post(t, ts, "/api/export", `{"sql":"SELECT 2"}`)
+	second.Body.Close()
+	if second.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("second status=%d, want 429", second.StatusCode)
+	}
+	close(q.release)
+	result := <-first
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	result.resp.Body.Close()
+	if result.resp.StatusCode != http.StatusOK {
+		t.Fatalf("first status=%d", result.resp.StatusCode)
+	}
+}
+
 func TestExport_CSVResolvesTruncatedCells(t *testing.T) {
 	q := &fakeQuerier{
 		result: &db.Result{
@@ -374,6 +432,22 @@ func readGZIP(t *testing.T, src io.Reader) []byte {
 		t.Fatal(err)
 	}
 	return body
+}
+
+type blockingExportQuerier struct {
+	*fakeQuerier
+	started chan struct{}
+	release chan struct{}
+}
+
+func (q *blockingExportQuerier) ExportCSV(ctx context.Context, sql string, dst io.Writer) error {
+	close(q.started)
+	select {
+	case <-q.release:
+		return q.fakeQuerier.ExportCSV(ctx, sql, dst)
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func TestExport_CSVRejectsChangedCellBeforeDownload(t *testing.T) {

@@ -210,6 +210,9 @@ func TestDatabaseSelection_uses_selected_pool_for_db_bound_endpoints(t *testing.
 			if err != nil {
 				t.Fatal(err)
 			}
+			if tt.body != "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				t.Fatal(err)

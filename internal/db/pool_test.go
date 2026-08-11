@@ -13,6 +13,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/descope-sample-apps/pgpeek/internal/guard"
 )
 
 func TestPoolMaxConns(t *testing.T) {
@@ -244,7 +246,7 @@ func TestQuery_RowsErr(t *testing.T) {
 func TestCount(t *testing.T) {
 	rows := &fakeRows{cols: []string{"count"}, data: [][]any{{int64(1_000_000)}}}
 	pool := &fakePool{rows: rows}
-	count, err := (&Pool{pool: pool}).Count(context.Background(), "SELECT * FROM events;")
+	count, err := (&Pool{pool: pool}).Count(context.Background(), "SELECT * FROM events; -- trailing")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,6 +271,16 @@ func TestCount_Errors(t *testing.T) {
 				t.Fatal("expected error")
 			}
 		})
+	}
+}
+
+func TestCount_RejectsExplain(t *testing.T) {
+	pool := &fakePool{}
+	if _, err := (&Pool{pool: pool}).Count(context.Background(), "EXPLAIN SELECT 1"); !errors.Is(err, guard.ErrCountExplain) {
+		t.Fatalf("error = %v, want ErrCountExplain", err)
+	}
+	if pool.lastSQL != "" {
+		t.Fatalf("database received %q", pool.lastSQL)
 	}
 }
 

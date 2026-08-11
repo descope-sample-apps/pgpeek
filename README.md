@@ -27,7 +27,8 @@ everywhere. Read-only by design: no row editing, schema management, or migration
   clipped cell previews, full values on demand, and mobile overflow containment.
 - **Structure** tab — column name, type, nullable, default.
 - **SQL** tab — CodeMirror editor with table/field autocomplete, capped previews,
-  exact row counts, saved/preset queries, and uncapped gzip-compressed CSV export.
+  exact row counts, saved/preset queries, and row-uncapped gzip CSV export up to
+  512 MiB before compression.
 
 Filtering is safe by construction: column names are validated against the
 relation's real columns and emitted via `pgx.Identifier`, operators come from a
@@ -164,7 +165,7 @@ supplied from mounted files so they do not live in manifests.
 | `PGPEEK_DATABASES_FILE`      | —                    | Path to a mounted JSON config file with database entries.             |
 | `PGPEEK_DEFAULT_DATABASE`    | first configured DB  | Default database ID when the URL has no `db=` parameter.              |
 | `PGPEEK_LISTEN`              | `:8080`              | Listen address.                                                       |
-| `PGPEEK_ROW_CAP`             | `1000`               | Max rows returned to the browser per query. Direct CSV exports are uncapped. |
+| `PGPEEK_ROW_CAP`             | `1000`               | Max rows returned to the browser per query. Direct exports are row-uncapped with a 512 MiB raw CSV limit. |
 | `PGPEEK_CATALOG_LIMIT_BYTES` | `4194304` (4 MiB)    | Max encoded size of a table/column/foreign-key catalog listing. Raise this if a schema has enough tables to overflow the default and the UI reports "table catalog exceeds response limit". |
 | `PGPEEK_STATEMENT_TIMEOUT`   | `30s`                | Per-query DB statement timeout.                                       |
 | `PGPEEK_IDLE_TX_TIMEOUT`     | `30s`                | `idle_in_transaction_session_timeout`.                                |

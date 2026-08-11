@@ -260,7 +260,9 @@ describe("API db params — POST requests", () => {
     $("sql-export-btn").click();
     const form = HTMLFormElement.prototype.submit.mock.instances.at(-1);
     expect(form.isConnected).toBe(true);
-    await flush();
+    await Promise.resolve();
+    expect(form.isConnected).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(form.isConnected).toBe(false);
   });
 

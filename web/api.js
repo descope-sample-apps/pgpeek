@@ -4,8 +4,8 @@ export function dbUrl(path, dbId) {
   return path + sep + "db=" + encodeURIComponent(dbId);
 }
 
-export async function getJSON(url, dbId) {
-  const r = await fetch(dbUrl(url, dbId));
+export async function getJSON(url, dbId, init) {
+  const r = await fetch(dbUrl(url, dbId), init);
   if (!r.ok) {
     const body = await r.json().catch(() => ({}));
     throw new Error(body.error || r.statusText);

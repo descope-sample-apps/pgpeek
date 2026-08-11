@@ -91,6 +91,16 @@ type fakePool struct {
 	lastArgs []any
 }
 
+type fakeSessionResetter struct {
+	deallocateErr error
+	execErr       error
+}
+
+func (f fakeSessionResetter) DeallocateAll(context.Context) error { return f.deallocateErr }
+func (f fakeSessionResetter) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, f.execErr
+}
+
 func (p *fakePool) Query(_ context.Context, sql string, args ...any) (pgx.Rows, error) {
 	if p.queryErr != nil {
 		return nil, p.queryErr
@@ -378,11 +388,26 @@ func TestBuildConfig_Success(t *testing.T) {
 	if rp["application_name"] != "pgpeek" {
 		t.Errorf("application_name = %q", rp["application_name"])
 	}
+	if cfg.AfterRelease == nil {
+		t.Fatal("AfterRelease must reset pooled session state")
+	}
 }
 
 func TestBuildConfig_BadDSN(t *testing.T) {
 	if _, err := buildConfig(Config{DSN: "://not a dsn"}); err == nil {
 		t.Fatal("expected parse error")
+	}
+}
+
+func TestResetSession(t *testing.T) {
+	if !resetSession(context.Background(), fakeSessionResetter{}) {
+		t.Fatal("expected reset success")
+	}
+	if resetSession(context.Background(), fakeSessionResetter{deallocateErr: errors.New("deallocate")}) {
+		t.Fatal("expected deallocate failure")
+	}
+	if resetSession(context.Background(), fakeSessionResetter{execErr: errors.New("discard")}) {
+		t.Fatal("expected discard failure")
 	}
 }
 

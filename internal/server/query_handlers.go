@@ -52,6 +52,10 @@ func (s *Server) handleQueryCount(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	started := time.Now()
 	count, err := pool.Count(ctx, sql)
+	if errors.Is(err, guard.ErrCountExplain) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err != nil {
 		s.log.Error("count query", "err", err)
 		writeError(w, http.StatusBadRequest, queryErrorMessage(err))

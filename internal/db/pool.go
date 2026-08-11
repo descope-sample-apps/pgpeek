@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -52,6 +53,11 @@ type pgxPool interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	Ping(ctx context.Context) error
 	Close()
+}
+
+type sessionResetter interface {
+	DeallocateAll(context.Context) error
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 }
 
 // newPool is a seam: production uses pgxpool.NewWithConfig; tests substitute a
@@ -116,7 +122,20 @@ func buildConfig(c Config) (*pgxpool.Config, error) {
 		conn.PgConn().Frontend().SetMaxBodyLen(maxDBMessageBytes)
 		return nil
 	}
+	cfg.AfterRelease = func(conn *pgx.Conn) bool {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return resetSession(ctx, conn)
+	}
 	return cfg, nil
+}
+
+func resetSession(ctx context.Context, conn sessionResetter) bool {
+	if err := conn.DeallocateAll(ctx); err != nil {
+		return false
+	}
+	_, err := conn.Exec(ctx, "DISCARD ALL")
+	return err == nil
 }
 
 // New builds and verifies the pool. The DSN is never logged.

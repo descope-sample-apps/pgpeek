@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/descope-sample-apps/pgpeek/internal/db"
+	"github.com/descope-sample-apps/pgpeek/internal/guard"
 )
 
 func TestQuery_OK(t *testing.T) {
@@ -53,6 +54,18 @@ func TestQueryCount_Error(t *testing.T) {
 		t.Fatalf("status = %d", resp.StatusCode)
 	}
 	if got := decode[map[string]string](t, resp)["error"]; got != "query failed" {
+		t.Fatalf("error = %q", got)
+	}
+}
+
+func TestQueryCount_RejectsExplainWithActionableError(t *testing.T) {
+	q := &fakeQuerier{countErr: guard.ErrCountExplain}
+	ts, _ := newTestServer(t, q)
+	resp := post(t, ts, "/api/query/count", `{"sql":"EXPLAIN SELECT 1"}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	if got := decode[map[string]string](t, resp)["error"]; got != guard.ErrCountExplain.Error() {
 		t.Fatalf("error = %q", got)
 	}
 }

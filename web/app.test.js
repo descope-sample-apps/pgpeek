@@ -968,10 +968,13 @@ describe("SQL CSV export", () => {
   it("marks the export CSRF cookie secure on HTTPS", async () => {
     const cookie = vi.spyOn(Document.prototype, "cookie", "set");
     vi.stubGlobal("location", new URL("https://pgpeek.example/"));
-    await openSqlWithText("select secure");
-    await dispatchClick("sql-export-btn");
-    expect(cookie).toHaveBeenCalledWith(expect.stringContaining("; Secure"));
-    vi.unstubAllGlobals();
+    try {
+      await openSqlWithText("select secure");
+      await dispatchClick("sql-export-btn");
+      expect(cookie).toHaveBeenCalledWith(expect.stringContaining("; Secure"));
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("guards empty exports", async () => {

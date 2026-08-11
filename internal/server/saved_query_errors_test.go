@@ -116,7 +116,7 @@ func TestExport_WriteFailureLogged(t *testing.T) {
 	fw := &failingWriter{}
 	srv.handleExport(fw, req)
 	// Header is set before the failing body write.
-	if ct := fw.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/csv") {
+	if ct := fw.Header().Get("Content-Type"); ct != "application/gzip" {
 		t.Errorf("content-type = %q", ct)
 	}
 }

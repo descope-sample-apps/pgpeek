@@ -73,6 +73,7 @@ function mount(parent, doc, onRun, onChange) {
       sqlLang.of(sql({ dialect: PostgreSQL })),
       completion.of([]),
       EditorView.lineWrapping,
+      EditorView.contentAttributes.of({ "aria-label": "SQL query" }),
       EditorView.updateListener.of((update) => {
         if (update.docChanged && reportChanges) onChange(update.state.doc.toString());
       }),

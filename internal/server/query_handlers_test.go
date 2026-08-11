@@ -1,6 +1,7 @@
 package server
 
 import (
+	"compress/gzip"
 	"errors"
 	"io"
 	"net/http"
@@ -26,6 +27,42 @@ func TestQuery_OK(t *testing.T) {
 	}
 	if q.lastSQL != "SELECT 1" {
 		t.Errorf("SQL not trimmed before exec: %q", q.lastSQL)
+	}
+}
+
+func TestQueryCount_OK(t *testing.T) {
+	q := &fakeQuerier{count: 1_000_000}
+	ts, _ := newTestServer(t, q)
+	resp := post(t, ts, "/api/query/count", `{"sql":" SELECT * FROM events; "}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	got := decode[struct {
+		RowCount int64 `json:"rowCount"`
+	}](t, resp)
+	if got.RowCount != 1_000_000 || q.lastSQL != "SELECT * FROM events;" || !q.countCalled {
+		t.Fatalf("result=%+v SQL=%q counted=%v", got, q.lastSQL, q.countCalled)
+	}
+}
+
+func TestQueryCount_Error(t *testing.T) {
+	ts, _ := newTestServer(t, &fakeQuerier{countErr: errors.New("secret")})
+	resp := post(t, ts, "/api/query/count", `{"sql":"SELECT 1"}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	if got := decode[map[string]string](t, resp)["error"]; got != "query failed" {
+		t.Fatalf("error = %q", got)
+	}
+}
+
+func TestQueryCount_RejectsWrite(t *testing.T) {
+	q := &fakeQuerier{}
+	ts, _ := newTestServer(t, q)
+	resp := post(t, ts, "/api/query/count", `{"sql":"DELETE FROM events"}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest || q.countCalled {
+		t.Fatalf("status=%d counted=%v", resp.StatusCode, q.countCalled)
 	}
 }
 
@@ -204,13 +241,13 @@ func TestExport_CSV(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d", resp.StatusCode)
 	}
-	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/csv") {
+	if ct := resp.Header.Get("Content-Type"); ct != "application/gzip" {
 		t.Errorf("content-type = %q", ct)
 	}
-	if cd := resp.Header.Get("Content-Disposition"); !strings.Contains(cd, "pgpeek-export.csv") {
+	if cd := resp.Header.Get("Content-Disposition"); !strings.Contains(cd, "pgpeek-export.csv.gz") {
 		t.Errorf("content-disposition = %q", cd)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body := readGZIP(t, resp.Body)
 	got := string(body)
 	if !strings.Contains(got, "name,n") || !strings.Contains(got, "Acme,2") {
 		t.Errorf("csv body = %q", got)
@@ -218,6 +255,90 @@ func TestExport_CSV(t *testing.T) {
 	// Field with a comma must be quoted by encoding/csv.
 	if !strings.Contains(got, `"Globex,Inc"`) {
 		t.Errorf("comma field not quoted: %q", got)
+	}
+	if !q.exportCalled {
+		t.Fatal("export did not use the uncapped CSV path")
+	}
+}
+
+func TestExport_FormPost(t *testing.T) {
+	q := &fakeQuerier{result: okResult()}
+	ts, _ := newTestServer(t, q)
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/export", strings.NewReader("sql=++SELECT+1++&csrf=token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: exportCSRFCookie, Value: "token"})
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || q.lastSQL != "SELECT 1" || !q.exportCalled {
+		t.Fatalf("status=%d SQL=%q exported=%v", resp.StatusCode, q.lastSQL, q.exportCalled)
+	}
+}
+
+func TestExport_InvalidFormPost(t *testing.T) {
+	for _, body := range []string{"sql=%&csrf=token", "sql=DROP+TABLE+x&csrf=token"} {
+		q := &fakeQuerier{result: okResult()}
+		ts, _ := newTestServer(t, q)
+		req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/export", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.AddCookie(&http.Cookie{Name: exportCSRFCookie, Value: "token"})
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest || q.exportCalled {
+			t.Fatalf("body=%q status=%d exported=%v", body, resp.StatusCode, q.exportCalled)
+		}
+	}
+}
+
+func TestExport_FormOrigin(t *testing.T) {
+	q := &fakeQuerier{result: okResult()}
+	ts, _ := newTestServer(t, q)
+	request := func(origin, fetchSite, token string) *http.Response {
+		req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/export", strings.NewReader("sql=SELECT+1&csrf="+token))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "Application/X-Www-Form-Urlencoded; Charset=UTF-8")
+		req.Header.Set("Origin", origin)
+		req.Header.Set("Sec-Fetch-Site", fetchSite)
+		if token != "" {
+			req.AddCookie(&http.Cookie{Name: exportCSRFCookie, Value: token})
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+
+	resp := request(ts.URL, "same-origin", "token")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("same origin status=%d", resp.StatusCode)
+	}
+	resp = request("null", "", "token")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("opaque same-site status=%d", resp.StatusCode)
+	}
+	for _, requestData := range [][3]string{{"https://attacker.example", "", "token"}, {"", "cross-site", "token"}, {"%", "", "token"}, {"", "", ""}} {
+		q.exportCalled = false
+		resp = request(requestData[0], requestData[1], requestData[2])
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusForbidden || q.exportCalled {
+			t.Fatalf("origin=%q fetch-site=%q token=%q status=%d exported=%v", requestData[0], requestData[1], requestData[2], resp.StatusCode, q.exportCalled)
+		}
 	}
 }
 
@@ -235,10 +356,24 @@ func TestExport_CSVResolvesTruncatedCells(t *testing.T) {
 	ts, _ := newTestServer(t, q)
 	resp := post(t, ts, "/api/export", `{"sql":"SELECT payload"}`)
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body := readGZIP(t, resp.Body)
 	if !strings.Contains(string(body), "full value") || strings.Contains(string(body), "preview") {
 		t.Fatalf("csv = %q", body)
 	}
+}
+
+func readGZIP(t *testing.T, src io.Reader) []byte {
+	t.Helper()
+	reader, err := gzip.NewReader(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reader.Close() }()
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
 }
 
 func TestExport_CSVRejectsChangedCellBeforeDownload(t *testing.T) {
@@ -287,7 +422,7 @@ func TestExport_DBError(t *testing.T) {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
 	got := decode[map[string]string](t, resp)
-	if got["error"] != "query failed" {
-		t.Fatalf("error = %q, want sanitized query failed", got["error"])
+	if got["error"] != "Failed to export the data" {
+		t.Fatalf("error = %q, want sanitized export failure", got["error"])
 	}
 }

@@ -38,8 +38,11 @@ func TestValidate_Rejects(t *testing.T) {
 		"DELETE FROM users",
 		"DROP TABLE users",
 		"TRUNCATE users",
-		"SELECT 1; DROP TABLE users",         // two statements
-		"SELECT 1; SELECT 2",                 // two statements
+		"SELECT 1; DROP TABLE users", // two statements
+		"SELECT 1; SELECT 2",         // two statements
+		`SELECT 1; "second"`,
+		`SELECT foo$bar$; DROP TABLE users`,
+		`SELECT E'foo\' '; DROP TABLE users`,
 		"WITH t AS (SELECT 1) DELETE FROM t", // CTE then DML
 		"SET statement_timeout = 0",          // session tampering
 		"COPY users TO '/tmp/x'",             // exfil
@@ -121,6 +124,28 @@ func TestPrepareCount(t *testing.T) {
 	}
 	if _, err := PrepareCount("DELETE FROM users"); err == nil {
 		t.Fatal("expected guard error")
+	}
+}
+
+func TestDollarTagBoundaries(t *testing.T) {
+	tests := []struct {
+		sql  string
+		at   int
+		tag  string
+		okay bool
+	}{
+		{sql: "foo$bar$", at: 3},
+		{sql: "$", at: 0},
+		{sql: "$$", at: 0, tag: "$$", okay: true},
+		{sql: "$1$", at: 0},
+		{sql: "$_tag$", at: 0, tag: "$_tag$", okay: true},
+		{sql: "$bad-tag$", at: 0},
+	}
+	for _, test := range tests {
+		tag, okay := dollarTag(test.sql, test.at)
+		if tag != test.tag || okay != test.okay {
+			t.Fatalf("dollarTag(%q, %d) = %q, %v", test.sql, test.at, tag, okay)
+		}
 	}
 }
 

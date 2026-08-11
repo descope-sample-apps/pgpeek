@@ -40,9 +40,9 @@ func TestQueryCount_OK(t *testing.T) {
 		t.Fatalf("status = %d", resp.StatusCode)
 	}
 	got := decode[struct {
-		RowCount int64 `json:"rowCount"`
+		RowCount string `json:"rowCount"`
 	}](t, resp)
-	if got.RowCount != 1_000_000 || q.lastSQL != "SELECT * FROM events;" || !q.countCalled {
+	if got.RowCount != "1000000" || q.lastSQL != "SELECT * FROM events;" || !q.countCalled {
 		t.Fatalf("result=%+v SQL=%q counted=%v", got, q.lastSQL, q.countCalled)
 	}
 }
@@ -303,6 +303,7 @@ func TestExport_FormPost(t *testing.T) {
 		t.Fatal(err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Forwarded-Proto", "https")
 	req.AddCookie(&http.Cookie{Name: exportCSRFCookie, Value: "token"})
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -314,6 +315,9 @@ func TestExport_FormPost(t *testing.T) {
 	}
 	if resp.Header.Get("X-Frame-Options") != "SAMEORIGIN" || !strings.Contains(resp.Header.Get("Content-Security-Policy"), "frame-ancestors 'self'") {
 		t.Fatalf("frame headers=%q %q", resp.Header.Get("X-Frame-Options"), resp.Header.Get("Content-Security-Policy"))
+	}
+	if cookie := resp.Cookies(); len(cookie) == 0 || cookie[0].Name != exportDoneCookie || cookie[0].Value != "token" || !cookie[0].Secure {
+		t.Fatalf("completion cookie = %#v", cookie)
 	}
 }
 

@@ -65,7 +65,7 @@ describe("API db params — POST requests", () => {
   });
 
   it("sends db as URL param on POST /api/query/count", async () => {
-    setRoute("POST /api/query/count", makeResp({ json: { rowCount: 4, elapsedMs: 1 } }));
+    setRoute("POST /api/query/count", makeResp({ json: { rowCount: "4", elapsedMs: 1 } }));
     await loadApp();
     await click("tab-sql");
     $("sql").value = "select 1";
@@ -242,12 +242,15 @@ describe("API db params — POST requests", () => {
     expect(HTMLFormElement.prototype.submit).toHaveBeenCalledOnce();
   });
 
-  it("keeps a newer successful query status after export submission", async () => {
+  it("allows a newer query after export preparation completes", async () => {
     setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
     await loadApp();
     await click("tab-sql");
     $("sql").value = "select 1";
     await click("sql-export-btn");
+    const form = HTMLFormElement.prototype.submit.mock.instances.at(-1);
+    document.cookie = `pgpeek_export_done=${new FormData(form).get("csrf")}; Path=/; SameSite=Strict`;
+    await new Promise((resolve) => setTimeout(resolve, 120));
     await click("run-btn");
     expect(document.querySelector(".query-error")).toBeFalsy();
     expect($("status").textContent).toContain("✓ 1 row in 1 ms");

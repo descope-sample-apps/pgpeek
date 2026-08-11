@@ -727,7 +727,7 @@ describe("SQL tab textarea mode", () => {
   });
 
   it("counts the current query without rendering rows", async () => {
-    setRoute("POST /api/query/count", makeResp({ json: { rowCount: 1_000_000, elapsedMs: 12 } }));
+    setRoute("POST /api/query/count", makeResp({ json: { rowCount: "1000000", elapsedMs: 12 } }));
     await openSql();
     $("sql").value = "select * from events";
     await click("count-btn");
@@ -761,7 +761,7 @@ describe("SQL tab textarea mode", () => {
     expect(callsTo("/api/query/count")).toHaveLength(1);
     $("sql").value = "select 2";
     $("sql").dispatchEvent(new Event("input", { bubbles: true }));
-    pending.resolve(makeResp({ json: { rowCount: 1, elapsedMs: 2 } }));
+    pending.resolve(makeResp({ json: { rowCount: "1", elapsedMs: 2 } }));
     await flush();
     expect($("status").textContent).not.toContain("1 row");
   });
@@ -779,11 +779,19 @@ describe("SQL tab textarea mode", () => {
   });
 
   it("uses singular row copy for a count of one", async () => {
-    setRoute("POST /api/query/count", makeResp({ json: { rowCount: 1, elapsedMs: 1 } }));
+    setRoute("POST /api/query/count", makeResp({ json: { rowCount: "1", elapsedMs: 1 } }));
     await openSql();
     $("sql").value = "select 1";
     await click("count-btn");
     expect($("status").textContent).toBe("✓ 1 row in 1 ms");
+  });
+
+  it("preserves count precision beyond Number.MAX_SAFE_INTEGER", async () => {
+    setRoute("POST /api/query/count", makeResp({ json: { rowCount: "9007199254740993", elapsedMs: 1 } }));
+    await openSql();
+    $("sql").value = "select huge";
+    await click("count-btn");
+    expect($("status").textContent).toBe("✓ 9,007,199,254,740,993 rows in 1 ms");
   });
 
   it("disables run and export during in-flight runs and prevents overlap", async () => {
@@ -806,16 +814,16 @@ describe("SQL tab textarea mode", () => {
     await flush();
     expect(callsTo("/api/query")).toHaveLength(2);
     expect($("run-btn").disabled).toBe(true);
-	expect($("count-btn").disabled).toBe(true);
+    expect($("count-btn").disabled).toBe(true);
     expect($("sql-export-btn").disabled).toBe(true);
-	expect($("save-btn").disabled).toBe(true);
+    expect($("save-btn").disabled).toBe(true);
 
     pending.resolve(makeResp({ json: { columns: ["n"], rows: [[2]], rowCount: 1, elapsedMs: 2 } }));
     await flush();
     expect($("run-btn").disabled).toBe(false);
-	expect($("count-btn").disabled).toBe(false);
+    expect($("count-btn").disabled).toBe(false);
     expect($("sql-export-btn").disabled).toBe(false);
-	expect($("save-btn").disabled).toBe(false);
+    expect($("save-btn").disabled).toBe(false);
   });
 
   it("guards saved-query actions while a query is running", async () => {
@@ -957,8 +965,8 @@ describe("SQL CSV export", () => {
     const form = HTMLFormElement.prototype.submit.mock.instances.at(-1);
     expect(form.method).toBe("post");
     expect(form.action).toContain("/api/export");
-	expect(form.target).toMatch(/^pgpeek-export-/);
-	expect(document.querySelector(`iframe[name="${form.target}"]`)).toBeTruthy();
+    expect(form.target).toMatch(/^pgpeek-export-/);
+    expect(document.querySelector(`iframe[name="${form.target}"]`)).toBeTruthy();
     expect(new FormData(form).get("sql")).toBe("select fresh");
     expect(new FormData(form).get("csrf")).toMatch(/^[0-9a-f]{32}$/);
     expect(document.cookie).toContain("pgpeek_export_csrf=");
@@ -985,15 +993,17 @@ describe("SQL CSV export", () => {
   });
 
   it("shows export failures inline", async () => {
-	await openSqlWithText("select denied");
-	await dispatchClick("sql-export-btn");
-	const frame = document.querySelector("iframe[name^='pgpeek-export-']");
-	frame.contentDocument.body.textContent = JSON.stringify({ error: "export denied" });
-	frame.dispatchEvent(new Event("load"));
-	await flush();
-	expect(document.querySelector(".query-error").textContent).toBe("export denied");
-	expect($("status").textContent).toContain("export denied");
-	expect(frame.isConnected).toBe(false);
+    await openSqlWithText("select denied");
+    await dispatchClick("sql-export-btn");
+    const frame = document.querySelector("iframe[name^='pgpeek-export-']");
+    frame.contentDocument.body.textContent = JSON.stringify({ error: "export denied" });
+    frame.dispatchEvent(new Event("load"));
+    frame.dispatchEvent(new Event("load"));
+    await flush();
+    expect(document.querySelector(".query-error").textContent).toBe("export denied");
+    expect($("status").textContent).toContain("export denied");
+    expect($("sql-export-btn").disabled).toBe(false);
+    expect(frame.isConnected).toBe(false);
   });
 
   it("ignores stale export failures after editing", async () => {
@@ -1007,21 +1017,55 @@ describe("SQL CSV export", () => {
     expect(document.querySelector(".query-error")).toBeFalsy();
   });
 
-  it("ignores non-JSON export frames and cleans them up", async () => {
-	const realSetTimeout = globalThis.setTimeout;
-	let cleanup;
-	vi.spyOn(globalThis, "setTimeout").mockImplementation((callback, delay, ...args) => {
-		if (delay === 60_000) { cleanup = callback; return 321; }
-		return realSetTimeout(callback, delay, ...args);
-	});
-	await openSqlWithText("select download");
-	await dispatchClick("sql-export-btn");
-	const frame = document.querySelector("iframe[name^='pgpeek-export-']");
-	frame.contentDocument.body.textContent = "download response";
-	frame.dispatchEvent(new Event("load"));
-	expect(document.querySelector(".query-error")).toBeFalsy();
-	expect(frame.isConnected).toBe(false);
-	cleanup();
+  it("reports non-JSON export failures and cleans them up", async () => {
+    await openSqlWithText("select download");
+    await dispatchClick("sql-export-btn");
+    const frame = document.querySelector("iframe[name^='pgpeek-export-']");
+    frame.contentDocument.body.textContent = "download response";
+    frame.dispatchEvent(new Event("load"));
+    await flush();
+    expect(document.querySelector(".query-error").textContent).toBe("export failed");
+    expect(frame.isConnected).toBe(false);
+  });
+
+  it("accepts an empty JSON export response", async () => {
+    await openSqlWithText("select download");
+    await dispatchClick("sql-export-btn");
+    const frame = document.querySelector("iframe[name^='pgpeek-export-']");
+    frame.contentDocument.body.textContent = "{}";
+    frame.dispatchEvent(new Event("load"));
+    await flush();
+    expect($("status").textContent).toBe("✓ Download started.");
+  });
+
+  it("stops polling when the export frame is removed", async () => {
+    await openSqlWithText("select removed");
+    await dispatchClick("sql-export-btn");
+    document.querySelector("iframe[name^='pgpeek-export-']").remove();
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect($("status").textContent).toBe("Preparing export…");
+  });
+
+  it("keeps polling while an export is still preparing", async () => {
+    await openSqlWithText("select preparing");
+    await dispatchClick("sql-export-btn");
+    const frame = document.querySelector("iframe[name^='pgpeek-export-']");
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(frame.isConnected).toBe(true);
+    frame.remove();
+  });
+
+  it("finishes exports when the server completion cookie arrives", async () => {
+    await openSqlWithText("select download");
+    await dispatchClick("sql-export-btn");
+    const form = HTMLFormElement.prototype.submit.mock.instances.at(-1);
+    const csrf = new FormData(form).get("csrf");
+    const frame = document.querySelector("iframe[name^='pgpeek-export-']");
+    document.cookie = `pgpeek_export_done=${csrf}; Path=/; SameSite=Strict`;
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect($("status").textContent).toBe("✓ Download started.");
+    expect($("sql-export-btn").disabled).toBe(false);
+    expect(frame.isConnected).toBe(false);
   });
 });
 

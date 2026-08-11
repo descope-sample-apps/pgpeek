@@ -28,6 +28,14 @@ func maskSQL(sql string, mode maskMode) (string, int, int) {
 	sawCodeAfterSemicolon := true
 	pendingSemicolon := false
 	trailingStart := -1
+	markCode := func() {
+		if pendingSemicolon {
+			statements++
+			pendingSemicolon = false
+			trailingStart = -1
+		}
+		sawCodeAfterSemicolon = true
+	}
 
 	for i := 0; i < len(sql); i++ {
 		c := sql[i]
@@ -57,8 +65,14 @@ func maskSQL(sql string, mode maskMode) (string, int, int) {
 			continue
 		}
 		if c == '\'' {
+			markCode()
+			escapeString := i > 0 && (sql[i-1] == 'E' || sql[i-1] == 'e') && (i == 1 || !isWordChar(sql[i-2]))
 			i++
 			for i < len(sql) {
+				if escapeString && sql[i] == '\\' && i+1 < len(sql) {
+					i += 2
+					continue
+				}
 				if sql[i] == '\'' {
 					if i+1 < len(sql) && sql[i+1] == '\'' {
 						i += 2
@@ -72,6 +86,7 @@ func maskSQL(sql string, mode maskMode) (string, int, int) {
 			continue
 		}
 		if c == '"' {
+			markCode()
 			i++
 			if mode == maskRelations {
 				b.WriteByte(' ')
@@ -101,6 +116,7 @@ func maskSQL(sql string, mode maskMode) (string, int, int) {
 		}
 		if c == '$' {
 			if tag, ok := dollarTag(sql, i); ok {
+				markCode()
 				end := strings.Index(sql[i+len(tag):], tag)
 				if end < 0 {
 					i = len(sql)
@@ -121,12 +137,7 @@ func maskSQL(sql string, mode maskMode) (string, int, int) {
 			continue
 		}
 		if !unicode.IsSpace(rune(c)) {
-			if pendingSemicolon {
-				statements++
-				pendingSemicolon = false
-				trailingStart = -1
-			}
-			sawCodeAfterSemicolon = true
+			markCode()
 		}
 		b.WriteByte(c)
 	}
@@ -134,7 +145,19 @@ func maskSQL(sql string, mode maskMode) (string, int, int) {
 }
 
 func dollarTag(sql string, i int) (string, bool) {
-	for j := i + 1; j < len(sql); j++ {
+	if i > 0 && (isWordChar(sql[i-1]) || sql[i-1] == '$') {
+		return "", false
+	}
+	if i+1 >= len(sql) {
+		return "", false
+	}
+	if sql[i+1] == '$' {
+		return "$$", true
+	}
+	if !isIdentifierStart(sql[i+1]) {
+		return "", false
+	}
+	for j := i + 2; j < len(sql); j++ {
 		if sql[j] == '$' {
 			return sql[i : j+1], true
 		}
@@ -143,4 +166,8 @@ func dollarTag(sql string, i int) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func isIdentifierStart(b byte) bool {
+	return b == '_' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
 }

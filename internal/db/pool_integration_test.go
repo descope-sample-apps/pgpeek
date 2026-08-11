@@ -101,11 +101,11 @@ func TestIntegrationSessionStateResetOnRelease(t *testing.T) {
 	if _, err := p.Query(context.Background(), "SELECT set_config('work_mem', '64MB', false), pg_advisory_lock(987654321)"); err != nil {
 		t.Fatal(err)
 	}
-	result, err := p.Query(context.Background(), "SELECT current_setting('work_mem'), pg_try_advisory_lock(987654321)")
+	result, err := p.Query(context.Background(), "SELECT current_setting('work_mem'), pg_try_advisory_lock(987654321), current_setting('default_transaction_read_only'), current_setting('statement_timeout')")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Rows[0][0] == "64MB" || result.Rows[0][1] != true {
+	if result.Rows[0][0] == "64MB" || result.Rows[0][1] != true || result.Rows[0][2] != "on" || result.Rows[0][3] != "5s" {
 		t.Fatalf("session state leaked: %#v", result.Rows[0])
 	}
 }

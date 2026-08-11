@@ -187,8 +187,9 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
     try {
       const data = await countQuery(sql, dbId);
       if (action !== actionRef.current) return;
-      const rows = data.rowCount.toLocaleString();
-      setStatus({ text: `✓ ${rows} row${data.rowCount === 1 ? "" : "s"} in ${data.elapsedMs} ms`, cls: "ok" });
+      const rowCount = BigInt(data.rowCount);
+      const rows = rowCount.toLocaleString();
+      setStatus({ text: `✓ ${rows} row${rowCount === 1n ? "" : "s"} in ${data.elapsedMs} ms`, cls: "ok" });
     } catch (e) {
       if (action === actionRef.current) {
         setError(e.message);
@@ -204,11 +205,18 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
     if (!sql) return;
     const action = actionRef.current + 1;
     actionRef.current = action;
+    runningLabelRef.current = "Exporting"; runningRef.current = true; setRunning(true);
     setError("");
+    setStatus({ text: "Preparing export…", cls: "ok" });
     exportQuery(sql, dbId, (message) => {
       if (action !== actionRef.current) return;
-      setError(message);
-      setStatus({ text: "✗ " + message, cls: "error" });
+      runningRef.current = false; setRunning(false);
+      if (message) {
+        setError(message);
+        setStatus({ text: "✗ " + message, cls: "error" });
+      } else {
+        setStatus({ text: "✓ Download started.", cls: "ok" });
+      }
     });
   };
 

@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +24,7 @@ type queryRequest struct {
 }
 
 const exportCSRFCookie = "pgpeek_export_csrf"
+const exportDoneCookie = "pgpeek_export_done"
 
 type queryCellRequest struct {
 	SQL    string `json:"sql"`
@@ -61,7 +63,7 @@ func (s *Server) handleQueryCount(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, queryErrorMessage(err))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"rowCount": count, "elapsedMs": time.Since(started).Milliseconds()})
+	writeJSON(w, http.StatusOK, map[string]any{"rowCount": strconv.FormatInt(count, 10), "elapsedMs": time.Since(started).Milliseconds()})
 }
 
 func (s *Server) handleQueryCell(w http.ResponseWriter, r *http.Request) {
@@ -113,6 +115,11 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	sql, ok := decodeReadOnlyQuery(w, r)
 	if !ok {
 		return
+	}
+	if r.Form.Has("csrf") {
+		secure := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+		//nolint:gosec // JavaScript polls this short-lived Strict cookie; HTTP Tailscale previews cannot use Secure.
+		http.SetCookie(w, &http.Cookie{Name: exportDoneCookie, Value: r.Form.Get("csrf"), Path: "/", MaxAge: 60, HttpOnly: false, Secure: secure, SameSite: http.SameSiteStrictMode})
 	}
 	select {
 	case s.exportSlots <- struct{}{}:

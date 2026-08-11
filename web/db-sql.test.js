@@ -92,6 +92,20 @@ describe("API db params — POST requests", () => {
     expect($("run-btn").disabled).toBe(false);
   });
 
+  it("keeps export controls locked when the database changes", async () => {
+    await loadApp();
+    await click("tab-sql");
+    $("sql").value = "select export";
+    await click("sql-export-btn");
+    const form = HTMLFormElement.prototype.submit.mock.instances.at(-1);
+    const csrf = new FormData(form).get("csrf");
+    await changeSelect($("database-select"), "pg2");
+    expect($("sql-export-btn").disabled).toBe(true);
+    document.cookie = `pgpeek_export_done_${csrf}=1; Path=/; SameSite=Strict`;
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect($("sql-export-btn").disabled).toBe(false);
+  });
+
   it("discards an in-flight query result when SQL is edited", async () => {
     let resolveQuery;
     setRoute("POST /api/query", () => new Promise((resolve) => { resolveQuery = resolve; }));
@@ -249,7 +263,8 @@ describe("API db params — POST requests", () => {
     $("sql").value = "select 1";
     await click("sql-export-btn");
     const form = HTMLFormElement.prototype.submit.mock.instances.at(-1);
-    document.cookie = `pgpeek_export_done=${new FormData(form).get("csrf")}; Path=/; SameSite=Strict`;
+    const csrf = new FormData(form).get("csrf");
+    document.cookie = `pgpeek_export_done_${csrf}=1; Path=/; SameSite=Strict`;
     await new Promise((resolve) => setTimeout(resolve, 120));
     await click("run-btn");
     expect(document.querySelector(".query-error")).toBeFalsy();
@@ -261,6 +276,7 @@ describe("API db params — POST requests", () => {
     await click("tab-sql");
     $("sql").value = "select 1";
     $("sql-export-btn").click();
+    document.querySelector("iframe[name^='pgpeek-export-']").dispatchEvent(new Event("load"));
     const form = HTMLFormElement.prototype.submit.mock.instances.at(-1);
     expect(form.isConnected).toBe(true);
     await Promise.resolve();

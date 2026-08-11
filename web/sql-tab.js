@@ -18,17 +18,22 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const runningRef = useRef(false);
+  const exportingRef = useRef(false);
   const runningLabelRef = useRef("Previewing");
   const actionRef = useRef(0);
   const initialSQLRef = useRef(initialSQL);
   const dbRef = useRef(dbId);
 
   const invalidate = () => {
-    actionRef.current += 1; runningRef.current = false; setRunning(false);
+    actionRef.current += 1;
+    if (!exportingRef.current) { runningRef.current = false; setRunning(false); }
     setResult(null); setLastSQL(""); setError("");
   };
   const onEdit = (value) => { invalidate(); onStateChange(value); };
-  if (dbRef.current !== dbId) { dbRef.current = dbId; actionRef.current += 1; runningRef.current = false; }
+  if (dbRef.current !== dbId) {
+    dbRef.current = dbId; actionRef.current += 1;
+    if (!exportingRef.current) runningRef.current = false;
+  }
 
   const getSQL = () => (editorRef.current ? editorRef.current.getValue() : taRef.current.value).trim();
   const setSQL = (v) => {
@@ -202,14 +207,13 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
 
   const exportCSV = () => {
     const sql = getSQL();
-    if (!sql) return;
-    const action = actionRef.current + 1;
-    actionRef.current = action;
+    if (!sql || runningRef.current) return;
+    exportingRef.current = true;
     runningLabelRef.current = "Exporting"; runningRef.current = true; setRunning(true);
     setError("");
     setStatus({ text: "Preparing export…", cls: "ok" });
     exportQuery(sql, dbId, (message) => {
-      if (action !== actionRef.current) return;
+      exportingRef.current = false;
       runningRef.current = false; setRunning(false);
       if (message) {
         setError(message);

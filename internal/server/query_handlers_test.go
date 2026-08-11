@@ -316,8 +316,29 @@ func TestExport_FormPost(t *testing.T) {
 	if resp.Header.Get("X-Frame-Options") != "SAMEORIGIN" || !strings.Contains(resp.Header.Get("Content-Security-Policy"), "frame-ancestors 'self'") {
 		t.Fatalf("frame headers=%q %q", resp.Header.Get("X-Frame-Options"), resp.Header.Get("Content-Security-Policy"))
 	}
-	if cookie := resp.Cookies(); len(cookie) == 0 || cookie[0].Name != exportDoneCookie || cookie[0].Value != "token" || !cookie[0].Secure {
+	if cookie := resp.Cookies(); len(cookie) == 0 || cookie[0].Name != exportDoneCookiePrefix+"token" || cookie[0].Value != "1" || !cookie[0].Secure {
 		t.Fatalf("completion cookie = %#v", cookie)
+	}
+}
+
+func TestExport_DoesNotSignalCompletionOnFailure(t *testing.T) {
+	q := &fakeQuerier{err: errors.New("export failed")}
+	ts, _ := newTestServer(t, q)
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/export", strings.NewReader("sql=SELECT+1&csrf=token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: exportCSRFCookie, Value: "token"})
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == exportDoneCookiePrefix+"token" {
+			t.Fatal("failed export signaled completion")
+		}
 	}
 }
 

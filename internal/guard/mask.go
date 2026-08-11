@@ -145,7 +145,7 @@ func maskSQL(sql string, mode maskMode) (string, int, int) {
 }
 
 func dollarTag(sql string, i int) (string, bool) {
-	if i > 0 && (isWordChar(sql[i-1]) || sql[i-1] == '$') {
+	if i > 0 && (sql[i-1] >= 0x80 || isWordChar(sql[i-1]) || sql[i-1] == '$') {
 		return "", false
 	}
 	if i+1 >= len(sql) {

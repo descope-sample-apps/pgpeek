@@ -24,7 +24,7 @@ type queryRequest struct {
 }
 
 const exportCSRFCookie = "pgpeek_export_csrf"
-const exportDoneCookie = "pgpeek_export_done"
+const exportDoneCookiePrefix = "pgpeek_export_done_"
 
 type queryCellRequest struct {
 	SQL    string `json:"sql"`
@@ -116,11 +116,6 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if r.Form.Has("csrf") {
-		secure := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
-		//nolint:gosec // JavaScript polls this short-lived Strict cookie; HTTP Tailscale previews cannot use Secure.
-		http.SetCookie(w, &http.Cookie{Name: exportDoneCookie, Value: r.Form.Get("csrf"), Path: "/", MaxAge: 60, HttpOnly: false, Secure: secure, SameSite: http.SameSiteStrictMode})
-	}
 	select {
 	case s.exportSlots <- struct{}{}:
 		defer func() { <-s.exportSlots }()
@@ -130,7 +125,14 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
 	defer cancel()
-	if err := writeGZIPResponse(w, "pgpeek-export.csv.gz", func(dst io.Writer) error {
+	if err := writeGZIPResponse(w, "pgpeek-export.csv.gz", func() {
+		if !r.Form.Has("csrf") {
+			return
+		}
+		secure := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+		//nolint:gosec // JavaScript polls this short-lived Strict cookie; HTTP Tailscale previews cannot use Secure.
+		http.SetCookie(w, &http.Cookie{Name: exportDoneCookiePrefix + r.Form.Get("csrf"), Value: "1", Path: "/", MaxAge: 60, HttpOnly: false, Secure: secure, SameSite: http.SameSiteStrictMode})
+	}, func(dst io.Writer) error {
 		return pool.ExportCSV(ctx, sql, dst)
 	}); err != nil {
 		s.log.Error("csv export", "err", err)

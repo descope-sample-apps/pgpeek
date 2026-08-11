@@ -42,6 +42,7 @@ func TestValidate_Rejects(t *testing.T) {
 		"SELECT 1; SELECT 2",         // two statements
 		`SELECT 1; "second"`,
 		`SELECT foo$bar$; DROP TABLE users`,
+		`SELECT ü$tag$; DROP TABLE users`,
 		`SELECT E'foo\' '; DROP TABLE users`,
 		"WITH t AS (SELECT 1) DELETE FROM t", // CTE then DML
 		"SET statement_timeout = 0",          // session tampering

@@ -1006,7 +1006,7 @@ describe("SQL CSV export", () => {
     expect(frame.isConnected).toBe(false);
   });
 
-  it("ignores stale export failures after editing", async () => {
+  it("reports export failures after editing", async () => {
     await openSqlWithText("select stale");
     await dispatchClick("sql-export-btn");
     const frame = document.querySelector("iframe[name^='pgpeek-export-']");
@@ -1014,7 +1014,8 @@ describe("SQL CSV export", () => {
     frame.contentDocument.body.textContent = JSON.stringify({ error: "stale export error" });
     frame.dispatchEvent(new Event("load"));
     await flush();
-    expect(document.querySelector(".query-error")).toBeFalsy();
+    expect(document.querySelector(".query-error").textContent).toBe("stale export error");
+    expect($("sql-export-btn").disabled).toBe(false);
   });
 
   it("reports non-JSON export failures and cleans them up", async () => {
@@ -1061,7 +1062,7 @@ describe("SQL CSV export", () => {
     const form = HTMLFormElement.prototype.submit.mock.instances.at(-1);
     const csrf = new FormData(form).get("csrf");
     const frame = document.querySelector("iframe[name^='pgpeek-export-']");
-    document.cookie = `pgpeek_export_done=${csrf}; Path=/; SameSite=Strict`;
+    document.cookie = `pgpeek_export_done_${csrf}=1; Path=/; SameSite=Strict`;
     await new Promise((resolve) => setTimeout(resolve, 120));
     expect($("status").textContent).toBe("✓ Download started.");
     expect($("sql-export-btn").disabled).toBe(false);

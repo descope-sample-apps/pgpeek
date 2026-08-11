@@ -39,7 +39,7 @@ func writeCSVResponse(w http.ResponseWriter, filename string, render func(io.Wri
 	})
 }
 
-func writeGZIPResponse(w http.ResponseWriter, filename string, render func(io.Writer) error) error {
+func writeGZIPResponse(w http.ResponseWriter, filename string, ready func(), render func(io.Writer) error) error {
 	return writeSpoolResponse(w, filename, "application/gzip", func(dst io.Writer) error {
 		gz := gzip.NewWriter(dst)
 		if err := render(&limitedCSVWriter{dst: gz, remaining: maxCSVExportBytes}); err != nil {
@@ -47,10 +47,10 @@ func writeGZIPResponse(w http.ResponseWriter, filename string, render func(io.Wr
 			return err
 		}
 		return gz.Close()
-	})
+	}, ready)
 }
 
-func writeSpoolResponse(w http.ResponseWriter, filename, contentType string, render func(io.Writer) error) error {
+func writeSpoolResponse(w http.ResponseWriter, filename, contentType string, render func(io.Writer) error, ready ...func()) error {
 	spool, err := os.CreateTemp("", "pgpeek-export-*.csv")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to prepare the CSV export")
@@ -75,6 +75,9 @@ func writeSpoolResponse(w http.ResponseWriter, filename, contentType string, ren
 			writeError(w, http.StatusBadRequest, "Failed to export the data")
 		}
 		return err
+	}
+	for _, notify := range ready {
+		notify()
 	}
 
 	w.Header().Set("Content-Type", contentType)

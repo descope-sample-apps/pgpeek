@@ -15,6 +15,10 @@ import (
 	"github.com/descope-sample-apps/pgpeek/internal/guard"
 )
 
+// wantAuditEvents is how many rows seed.sql's generate_series(0, 359) insert
+// puts into public.audit_events. Keep it in step with the seed.
+const wantAuditEvents = 360
+
 // seedTx applies seed.sql inside a transaction that is rolled back when the
 // test ends, so the sample data never outlives it. tz, when set, is applied
 // before the seed runs.
@@ -61,8 +65,8 @@ func TestSeedSupportsWestOfUTCSession(t *testing.T) {
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM public.audit_events`).Scan(&rows); err != nil {
 		t.Fatalf("count audit events: %v", err)
 	}
-	if rows != 360 {
-		t.Fatalf("audit event rows = %d, want 360", rows)
+	if rows != wantAuditEvents {
+		t.Fatalf("audit event rows = %d, want %d", rows, wantAuditEvents)
 	}
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM public.visual_edge_cases`).Scan(&rows); err != nil {
 		t.Fatalf("count visual edge cases: %v", err)
@@ -121,7 +125,7 @@ func TestSeedSupportsExplainAnalyze(t *testing.T) {
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM public.audit_events`).Scan(&count); err != nil {
 		t.Fatalf("count audit events: %v", err)
 	}
-	if count != 360 {
-		t.Errorf("audit event rows = %d, want 360 (EXPLAIN ANALYZE must not change data)", count)
+	if count != wantAuditEvents {
+		t.Errorf("audit event rows = %d, want %d (EXPLAIN ANALYZE must not change data)", count, wantAuditEvents)
 	}
 }

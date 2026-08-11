@@ -748,6 +748,49 @@ describe("SQL tab textarea mode", () => {
     expect($("sql-export-btn").disabled).toBe(false);
   });
 
+  it("shows elapsed seconds after a query runs for ten seconds", async () => {
+    const pending = deferred();
+    setRoute("POST /api/query", () => pending.promise);
+    await openSql();
+    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    const realSetTimeout = globalThis.setTimeout;
+    let startTimer;
+    let tick;
+    vi.spyOn(globalThis, "setTimeout").mockImplementation((callback, delay, ...args) => {
+      if (delay === 10_000) { startTimer = callback; return 122; }
+      return realSetTimeout(callback, delay, ...args);
+    });
+    const interval = vi.spyOn(globalThis, "setInterval").mockImplementation((callback) => { tick = callback; return 123; });
+    const clearDelay = vi.spyOn(globalThis, "clearTimeout");
+    const clearInterval = vi.spyOn(globalThis, "clearInterval");
+
+    $("sql").value = "select pg_sleep(12)";
+    $("run-btn").click();
+    await flush();
+    expect($("status").textContent).toBe("Running…");
+    expect(interval).not.toHaveBeenCalled();
+
+    now.mockReturnValue(10_000);
+    startTimer();
+    await flush();
+    expect($("status").textContent).toBe("Running… (10s)");
+    expect(interval).toHaveBeenCalledWith(tick, 1000);
+
+    now.mockReturnValue(12_000);
+    tick();
+    await flush();
+    expect($("status").textContent).toBe("Running… (12s)");
+
+    pending.resolve(makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 12_000 } }));
+    await flush();
+    expect($("status").textContent).toContain("✓ 1 row");
+    tick();
+    await flush();
+    expect($("status").textContent).toContain("✓ 1 row");
+    expect(clearDelay).toHaveBeenCalledWith(122);
+    expect(clearInterval).toHaveBeenCalledWith(123);
+  });
+
   it("clears running after failed in-flight runs", async () => {
     for (const failure of [makeResp({ ok: false, status: 500, json: { error: "nope" } }), new Error("query offline")]) {
       document.body.innerHTML = '<div id="app"></div>';

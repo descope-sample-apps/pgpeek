@@ -1,7 +1,8 @@
-// SqlTab — CodeMirror SQL editor with run, export, and saved-query CRUD.
+// allow: SIZE_OK — one editor action-generation state machine prevents stale async results.
 import { html, useState, useEffect, useRef, useCallback } from "./vendor/preact-htm.js";
 import { dbUrl, getJSON, tablePath } from "./api.js";
-import { interceptRun, runEasterEgg, EXPLAIN_JOKE, LLAMA_DELAY_MS } from "./easter-eggs.js";
+import { interceptRun, runEasterEgg, EXPLAIN_JOKE } from "./easter-eggs.js";
+import { countQuery, exportQuery } from "./sql-actions.js";
 import { DEFAULT_SQL, queryStatusText, responseError, SqlResults } from "./sql-results.js";
 
 const RUNNING_TIME_DELAY_SECONDS = 10;
@@ -16,18 +17,25 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
   const [selected, setSelected] = useState("");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
-  const [showLlama, setShowLlama] = useState(false);
   const runningRef = useRef(false);
+  const exportingRef = useRef(false);
+  const requestRef = useRef(null);
+  const runningLabelRef = useRef("Previewing");
   const actionRef = useRef(0);
   const initialSQLRef = useRef(initialSQL);
   const dbRef = useRef(dbId);
 
   const invalidate = () => {
-    actionRef.current += 1; runningRef.current = false; setRunning(false);
+    requestRef.current?.abort(); requestRef.current = null;
+    actionRef.current += 1;
+    if (!exportingRef.current) { runningRef.current = false; setRunning(false); }
     setResult(null); setLastSQL(""); setError("");
   };
   const onEdit = (value) => { invalidate(); onStateChange(value); };
-  if (dbRef.current !== dbId) { dbRef.current = dbId; actionRef.current += 1; runningRef.current = false; }
+  if (dbRef.current !== dbId) {
+    dbRef.current = dbId; actionRef.current += 1;
+    if (!exportingRef.current) runningRef.current = false;
+  }
 
   const getSQL = () => (editorRef.current ? editorRef.current.getValue() : taRef.current.value).trim();
   const setSQL = (v) => {
@@ -47,14 +55,16 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
     }
     const action = actionRef.current + 1;
     actionRef.current = action;
-    runningRef.current = true; setRunning(true);
+    const controller = new AbortController(); requestRef.current = controller;
+    runningLabelRef.current = "Previewing"; runningRef.current = true; setRunning(true);
     setError("");
-    setStatus({ text: "Running…", cls: "ok" });
+    setStatus({ text: "Previewing…", cls: "ok" });
     try {
       const r = await fetch(dbUrl("/api/query", dbId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sql }),
+        signal: controller.signal,
       });
       if (!r.ok) {
         const message = await responseError(r, "query failed");
@@ -73,18 +83,20 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
       if (d.cellsTruncated) warnings.push("· large cells shortened; expand to load full value");
       setStatus(warnings.length ? { text: base, cls: "ok", warn: warnings.join(" ") } : { text: base, cls: "ok" });
     } catch (e) {
+      if (e.name === "AbortError") return;
       if (action === actionRef.current) {
         setError(e.message);
         setStatus({ text: "✗ " + e.message, cls: "error" });
       }
     } finally {
+      if (requestRef.current === controller) requestRef.current = null;
       if (action === actionRef.current) { runningRef.current = false; setRunning(false); }
     }
   }, [dbId]);
 
   const runRef = useRef(run);
   useEffect(() => { runRef.current = run; }, [run]);
-  useEffect(invalidate, [dbId]);
+  useEffect(() => { invalidate(); return () => requestRef.current?.abort(); }, [dbId]);
 
   useEffect(() => {
     if (!running) return;
@@ -93,7 +105,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
     const update = () => {
       const seconds = Math.floor((Date.now() - startedAt) / 1000);
       if (runningRef.current) {
-        setStatus({ text: `Running… (${seconds}s)`, cls: "ok" });
+        setStatus({ text: `${runningLabelRef.current}… (${seconds}s)`, cls: "ok" });
       }
     };
     const delay = setTimeout(() => {
@@ -103,14 +115,6 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
     return () => { clearTimeout(delay); clearInterval(timer); };
   }, [running, setStatus]);
 
-  // Easter egg: only show the loading llama once a query has been running for
-  // LLAMA_DELAY_MS, so quick queries never make it flicker in and out.
-  useEffect(() => {
-    if (!running) { setShowLlama(false); return; }
-    const timer = setTimeout(() => setShowLlama(true), LLAMA_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [running]);
-
   // Init CodeMirror once into a Preact-stable wrapper it fully owns.
   useEffect(() => {
     if (window.cm6) {
@@ -119,6 +123,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
     }
     const ta = document.createElement("textarea");
     ta.id = "sql";
+    ta.setAttribute("aria-label", "SQL query");
     ta.value = initialSQL ?? DEFAULT_SQL;
     wrapRef.current.appendChild(ta);
     taRef.current = ta;
@@ -183,48 +188,62 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
   // CodeMirror was created while hidden (zero size); refresh when shown.
   useEffect(() => { if (active && editorRef.current) editorRef.current.refresh(); }, [active]);
 
-  const exportCSV = async () => {
-    const sql = lastSQL || getSQL();
-    if (!sql) return;
+  const countRows = async () => {
+    const sql = getSQL();
+    if (!sql || runningRef.current) return;
     const action = actionRef.current + 1;
     actionRef.current = action;
-    setError("");
+    const controller = new AbortController(); requestRef.current = controller;
+    runningLabelRef.current = "Counting"; runningRef.current = true; setRunning(true); setError("");
+    setStatus({ text: "Counting…", cls: "ok" });
     try {
-      const r = await fetch(dbUrl("/api/export", dbId), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sql }),
-      });
-      if (!r.ok) {
-        const message = await responseError(r, "export failed");
-        if (action !== actionRef.current) return;
-        setError(message);
-        setStatus({ text: "✗ " + message, cls: "error" });
-        return;
-      }
-      const blob = await r.blob();
+      const data = await countQuery(sql, dbId, controller.signal);
       if (action !== actionRef.current) return;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = url; a.download = "pgpeek-export.csv"; a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 0);
+      const rowCount = BigInt(data.rowCount);
+      const rows = rowCount.toLocaleString();
+      setStatus({ text: `✓ ${rows} row${rowCount === 1n ? "" : "s"} in ${data.elapsedMs} ms`, cls: "ok" });
     } catch (e) {
+      if (e.name === "AbortError") return;
       if (action === actionRef.current) {
         setError(e.message);
         setStatus({ text: "✗ " + e.message, cls: "error" });
       }
+    } finally {
+      if (requestRef.current === controller) requestRef.current = null;
+      if (action === actionRef.current) { runningRef.current = false; setRunning(false); }
     }
+  };
+
+  const exportCSV = () => {
+    const sql = getSQL();
+    if (!sql || runningRef.current) return;
+    exportingRef.current = true;
+    runningLabelRef.current = "Exporting"; runningRef.current = true; setRunning(true);
+    setError("");
+    setStatus({ text: "Preparing export…", cls: "ok" });
+    exportQuery(sql, dbId, (message) => {
+      exportingRef.current = false;
+      runningRef.current = false; setRunning(false);
+      if (message) {
+        setError(message);
+        setStatus({ text: "✗ " + message, cls: "error" });
+      } else {
+        setStatus({ text: "✓ Download started.", cls: "ok" });
+      }
+    });
   };
 
   const onPick = (e) => {
     const id = e.target.value; setSelected(id);
     const q = saved.find((x) => String(x.id) === id);
     if (q) {
-      setSQL(q.sql); setError(""); setStatus({ text: "Loaded \u201c" + q.name + "\u201d. Press Run.", cls: "ok" });
+      setSQL(q.sql); setError(""); setStatus({ text: "Loaded \u201c" + q.name + "\u201d. Press Preview.", cls: "ok" });
     }
   };
   const selectedQ = saved.find((x) => String(x.id) === selected);
 
   const onSave = async () => {
+    if (runningRef.current) return;
     const sql = getSQL();
     if (!sql) return;
     const name = prompt("Name for this saved query:");
@@ -250,6 +269,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
   };
 
   const onDelete = async () => {
+    if (runningRef.current) return;
     if (!selectedQ) return;
     if (!confirm("Delete saved query \u201c" + selectedQ.name + "\u201d?")) return;
     const action = actionRef.current + 1;
@@ -272,10 +292,11 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
   return html`
     <div class="editor-wrap" ref=${wrapRef}></div>
     <div class="toolbar">
-      <button class="primary" id="run-btn" disabled=${running} onClick=${run}>Run ▶${showLlama ? html`<span class="egg-llama" aria-hidden="true">🦙</span>` : null}</button>
-      <button class="ghost" id="sql-export-btn"
-        disabled=${running || !result || result.rowCount === 0}
-        onClick=${exportCSV}>Export CSV</button>
+      <button class="primary" id="run-btn" disabled=${running} onClick=${run}>Preview</button>
+      <button class="ghost" id="count-btn" disabled=${running} onClick=${countRows}>Count</button>
+      <button class="action secondary" id="sql-export-btn"
+        disabled=${running}
+        onClick=${exportCSV}>Export .csv.gz</button>
       <select id="presets" title="Saved & preset queries" value=${selected} onChange=${onPick}>
         <option value="">Saved queries…</option>
         ${presets.length ? html`<optgroup label="Presets">${presets.map((q) =>
@@ -283,10 +304,10 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
         ${mine.length ? html`<optgroup label="Saved">${mine.map((q) =>
           html`<option key=${q.id} value=${q.id}>${q.name}</option>`)}</optgroup>` : ""}
       </select>
-      <button class="ghost" id="save-btn" onClick=${onSave}>Save</button>
+      <button class="ghost" id="save-btn" disabled=${running} onClick=${onSave}>Save</button>
       <button class="ghost" id="delete-btn"
-        disabled=${!(selectedQ && !selectedQ.isPreset)} onClick=${onDelete}>Delete</button>
-      <span class="hint">Ctrl/Cmd\u00a0+\u00a0Enter to run · single SELECT/WITH only · ${EXPLAIN_JOKE}</span>
+        disabled=${running || !(selectedQ && !selectedQ.isPreset)} onClick=${onDelete}>Delete</button>
+      <span class="hint">Ctrl/Cmd\u00a0+\u00a0Enter to preview · single SELECT/WITH only · ${EXPLAIN_JOKE}</span>
     </div>
     ${error ? html`<div class="query-error" role="alert" aria-live="assertive">${error}</div>` : ""}
     <div class="results" id="sql-results">

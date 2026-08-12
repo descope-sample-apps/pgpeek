@@ -2,11 +2,16 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -17,6 +22,9 @@ import (
 type queryRequest struct {
 	SQL string `json:"sql"`
 }
+
+const exportCSRFCookie = "pgpeek_export_csrf"
+const exportDoneCookiePrefix = "pgpeek_export_done_"
 
 type queryCellRequest struct {
 	SQL    string `json:"sql"`
@@ -31,6 +39,31 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) handleQueryCount(w http.ResponseWriter, r *http.Request) {
+	pool, ok := s.poolForRequest(w, r)
+	if !ok {
+		return
+	}
+	sql, ok := decodeReadOnlyQuery(w, r)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
+	defer cancel()
+	started := time.Now()
+	count, err := pool.Count(ctx, sql)
+	if errors.Is(err, guard.ErrCountExplain) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err != nil {
+		s.log.Error("count query", "err", err)
+		writeError(w, http.StatusBadRequest, queryErrorMessage(err))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"rowCount": strconv.FormatInt(count, 10), "elapsedMs": time.Since(started).Milliseconds()})
 }
 
 func (s *Server) handleQueryCell(w http.ResponseWriter, r *http.Request) {
@@ -71,6 +104,10 @@ func (s *Server) handleQueryCell(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
+	if mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mediaType == "application/x-www-form-urlencoded" {
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'self'")
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+	}
 	pool, ok := s.poolForRequest(w, r)
 	if !ok {
 		return
@@ -79,18 +116,24 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
-	defer cancel()
-	res, err := pool.Query(ctx, sql)
-	if err != nil {
-		s.log.Error("query", "err", err)
-		writeError(w, http.StatusBadRequest, queryErrorMessage(err))
+	select {
+	case s.exportSlots <- struct{}{}:
+		defer func() { <-s.exportSlots }()
+	default:
+		writeError(w, http.StatusTooManyRequests, "another export is already running")
 		return
 	}
-	if err := writeCSVResponse(w, "pgpeek-export.csv", func(dst io.Writer) error {
-		return writeCSV(dst, res, func(row, column int) (any, error) {
-			return pool.QueryCell(ctx, sql, row, column)
-		})
+	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
+	defer cancel()
+	if err := writeGZIPResponse(w, "pgpeek-export.csv.gz", func() {
+		if !r.Form.Has("csrf") {
+			return
+		}
+		secure := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+		//nolint:gosec // JavaScript polls this short-lived Strict cookie; HTTP Tailscale previews cannot use Secure.
+		http.SetCookie(w, &http.Cookie{Name: exportDoneCookiePrefix + r.Form.Get("csrf"), Value: "1", Path: "/", MaxAge: 60, HttpOnly: false, Secure: secure, SameSite: http.SameSiteStrictMode})
+	}, func(dst io.Writer) error {
+		return pool.ExportCSV(ctx, sql, dst)
 	}); err != nil {
 		s.log.Error("csv export", "err", err)
 	}
@@ -125,6 +168,36 @@ func queryErrorMessage(err error) string {
 }
 
 func decodeReadOnlyQuery(w http.ResponseWriter, r *http.Request) (string, bool) {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil {
+		writeError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+		return "", false
+	}
+	if mediaType == "application/x-www-form-urlencoded" {
+		if r.URL.Path != "/api/export" {
+			writeError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+			return "", false
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+		if err := r.ParseForm(); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return "", false
+		}
+		if crossSiteForm(r) || !validExportCSRF(r) {
+			writeError(w, http.StatusForbidden, "cross-site export blocked")
+			return "", false
+		}
+		sql := strings.TrimSpace(r.Form.Get("sql"))
+		if err := guard.Validate(sql); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return "", false
+		}
+		return sql, true
+	}
+	if mediaType != "application/json" {
+		writeError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+		return "", false
+	}
 	var req queryRequest
 	if !decodeBody(w, r, &req) {
 		return "", false
@@ -135,4 +208,22 @@ func decodeReadOnlyQuery(w http.ResponseWriter, r *http.Request) (string, bool) 
 		return "", false
 	}
 	return sql, true
+}
+
+func crossSiteForm(r *http.Request) bool {
+	if strings.EqualFold(r.Header.Get("Sec-Fetch-Site"), "cross-site") {
+		return true
+	}
+	origin := r.Header.Get("Origin")
+	if origin == "" || origin == "null" {
+		return false
+	}
+	parsed, err := url.Parse(origin)
+	return err != nil || !strings.EqualFold(parsed.Host, r.Host)
+}
+
+func validExportCSRF(r *http.Request) bool {
+	cookie, err := r.Cookie(exportCSRFCookie)
+	formToken := r.Form.Get("csrf")
+	return err == nil && formToken != "" && subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(formToken)) == 1
 }

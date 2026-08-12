@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"reflect"
 	"strings"
 	"testing"
@@ -12,6 +13,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/descope-sample-apps/pgpeek/internal/guard"
 )
 
 func TestPoolMaxConns(t *testing.T) {
@@ -88,6 +91,16 @@ type fakePool struct {
 	lastArgs []any
 }
 
+type fakeSessionResetter struct {
+	deallocateErr error
+	execErr       error
+}
+
+func (f fakeSessionResetter) DeallocateAll(context.Context) error { return f.deallocateErr }
+func (f fakeSessionResetter) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, f.execErr
+}
+
 func (p *fakePool) Query(_ context.Context, sql string, args ...any) (pgx.Rows, error) {
 	if p.queryErr != nil {
 		return nil, p.queryErr
@@ -105,6 +118,10 @@ func (p *fakePool) Query(_ context.Context, sql string, args ...any) (pgx.Rows, 
 }
 func (p *fakePool) Ping(context.Context) error { return p.pingErr }
 func (p *fakePool) Close()                     { p.closed = true }
+
+type errorWriter struct{}
+
+func (errorWriter) Write([]byte) (int, error) { return 0, errors.New("write failed") }
 
 // --- normalize / CellString ---------------------------------------------
 
@@ -236,6 +253,85 @@ func TestQuery_RowsErr(t *testing.T) {
 	}
 }
 
+func TestCount(t *testing.T) {
+	rows := &fakeRows{cols: []string{"count"}, data: [][]any{{int64(1_000_000)}}}
+	pool := &fakePool{rows: rows}
+	count, err := (&Pool{pool: pool}).Count(context.Background(), "SELECT * FROM events; -- trailing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1_000_000 || pool.lastSQL != "SELECT count(*) FROM (\nSELECT * FROM events\n) AS pgpeek_count" || !rows.closed {
+		t.Fatalf("count=%d SQL=%q closed=%v", count, pool.lastSQL, rows.closed)
+	}
+}
+
+func TestCount_Errors(t *testing.T) {
+	tests := []struct {
+		name string
+		pool pgxPool
+	}{
+		{name: "query", pool: &fakePool{queryErr: errors.New("query failed")}},
+		{name: "rows", pool: &fakePool{rows: &fakeRows{errErr: errors.New("rows failed")}}},
+		{name: "empty", pool: &fakePool{rows: &fakeRows{}}},
+		{name: "scan", pool: &fakePool{rows: &fakeRows{data: [][]any{{int64(1)}}, scanErr: errors.New("scan failed")}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := (&Pool{pool: test.pool}).Count(context.Background(), "SELECT 1"); err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
+}
+
+func TestCount_RejectsExplain(t *testing.T) {
+	pool := &fakePool{}
+	if _, err := (&Pool{pool: pool}).Count(context.Background(), "EXPLAIN SELECT 1"); !errors.Is(err, guard.ErrCountExplain) {
+		t.Fatalf("error = %v, want ErrCountExplain", err)
+	}
+	if pool.lastSQL != "" {
+		t.Fatalf("database received %q", pool.lastSQL)
+	}
+}
+
+func TestExportCSV_IgnoresRowCap(t *testing.T) {
+	rows := &fakeRows{cols: []string{"n", "payload"}, data: [][]any{{int64(1), []byte{0xde, 0xad}}, {int64(2), "x,y"}}}
+	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 1}
+	var dst strings.Builder
+	if err := p.ExportCSV(context.Background(), "SELECT n, payload", &dst); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := dst.String(), "n,payload\n1,\\xdead\n2,\"x,y\"\n"; got != want {
+		t.Fatalf("CSV = %q, want %q", got, want)
+	}
+	if !rows.closed {
+		t.Fatal("rows not closed")
+	}
+}
+
+func TestExportCSV_Errors(t *testing.T) {
+	large := strings.Repeat("x", 8<<10)
+	tests := []struct {
+		name string
+		pool pgxPool
+		dst  io.Writer
+	}{
+		{name: "query", pool: &fakePool{queryErr: errors.New("query failed")}, dst: io.Discard},
+		{name: "header write", pool: &fakePool{rows: &fakeRows{cols: []string{large}}}, dst: errorWriter{}},
+		{name: "values", pool: &fakePool{rows: &fakeRows{cols: []string{"n"}, data: [][]any{{1}}, valErr: errors.New("values failed")}}, dst: io.Discard},
+		{name: "row write", pool: &fakePool{rows: &fakeRows{cols: []string{"n"}, data: [][]any{{large}}}}, dst: errorWriter{}},
+		{name: "flush", pool: &fakePool{rows: &fakeRows{cols: []string{"n"}, data: [][]any{{1}}}}, dst: errorWriter{}},
+		{name: "rows", pool: &fakePool{rows: &fakeRows{cols: []string{"n"}, errErr: errors.New("rows failed")}}, dst: io.Discard},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := (&Pool{pool: test.pool}).ExportCSV(context.Background(), "SELECT 1", test.dst); err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
+}
+
 func TestRowCap(t *testing.T) {
 	if got := (&Pool{rowCap: 250}).RowCap(); got != 250 {
 		t.Errorf("RowCap = %d, want 250", got)
@@ -292,11 +388,26 @@ func TestBuildConfig_Success(t *testing.T) {
 	if rp["application_name"] != "pgpeek" {
 		t.Errorf("application_name = %q", rp["application_name"])
 	}
+	if cfg.AfterRelease == nil {
+		t.Fatal("AfterRelease must reset pooled session state")
+	}
 }
 
 func TestBuildConfig_BadDSN(t *testing.T) {
 	if _, err := buildConfig(Config{DSN: "://not a dsn"}); err == nil {
 		t.Fatal("expected parse error")
+	}
+}
+
+func TestResetSession(t *testing.T) {
+	if !resetSession(context.Background(), fakeSessionResetter{}) {
+		t.Fatal("expected reset success")
+	}
+	if resetSession(context.Background(), fakeSessionResetter{deallocateErr: errors.New("deallocate")}) {
+		t.Fatal("expected deallocate failure")
+	}
+	if resetSession(context.Background(), fakeSessionResetter{execErr: errors.New("discard")}) {
+		t.Fatal("expected discard failure")
 	}
 }
 

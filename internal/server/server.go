@@ -16,6 +16,7 @@ type Server struct {
 	web                     fs.FS
 	log                     *slog.Logger
 	queryWait               time.Duration
+	exportSlots             chan struct{}
 	requireCloudflareAccess bool
 	mcpAuthorization        *MCPAuthorization
 	version                 string
@@ -51,7 +52,7 @@ func New(pool Querier, st QueryStore, web fs.FS, log *slog.Logger, queryWait tim
 }
 
 func NewWithRegistry(registry DatabaseRegistry, st QueryStore, web fs.FS, log *slog.Logger, queryWait time.Duration, opts ...Option) *Server {
-	s := &Server{registry: registry, store: st, web: web, log: log, queryWait: queryWait, version: "dev"}
+	s := &Server{registry: registry, store: st, web: web, log: log, queryWait: queryWait, exportSlots: make(chan struct{}, 1), version: "dev"}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -78,6 +79,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/databases", s.handleDatabases)
 	mux.HandleFunc("GET /api/meta", s.handleMeta)
 	mux.HandleFunc("POST /api/query", s.handleQuery)
+	mux.HandleFunc("POST /api/query/count", s.handleQueryCount)
 	mux.HandleFunc("POST /api/query/cell", s.handleQueryCell)
 	mux.HandleFunc("POST /api/export", s.handleExport)
 	mux.HandleFunc("GET /api/tables", s.handleTables)

@@ -1,7 +1,8 @@
 # pgpeek
 
 > A minimal, read-only, team-shared Postgres browser. It pages through tables,
-> runs single read-only SQL statements, saves queries, and exports CSV. It ships
+> previews and counts single read-only SQL statements, saves queries, and exports
+> gzip-compressed CSV. It ships
 > as one static Go binary.
 
 status: ok
@@ -16,8 +17,9 @@ full-context: https://descope-sample-apps.github.io/pgpeek/llms-full.txt
 - 20 built-in UI themes.
 - 3 read-only enforcement layers.
 - 23 configuration rows in the website reference.
-- 24 documented HTTP routes, including MCP, OAuth metadata, both probes, and the UI.
+- 25 documented HTTP routes, including MCP, OAuth metadata, both probes, and the UI.
 - Default row cap: 1000 (`PGPEEK_ROW_CAP`).
+- Direct query exports are row-uncapped with a 512 MiB raw CSV limit.
 - Default statement timeout: 30s (`PGPEEK_STATEMENT_TIMEOUT`).
 - Saved queries use SQLite; browsed data remains in Postgres.
 - The app is intentionally auth-thin and must sit behind an authentication layer.
@@ -37,7 +39,7 @@ go run .
 # open http://localhost:8080
 ```
 
-Use a Postgres role with no write privileges. `Ctrl`/`Cmd` + `Enter` runs the
+Use a Postgres role with no write privileges. `Ctrl`/`Cmd` + `Enter` previews the
 current SQL query.
 
 Enable Descope OAuth by setting `DESCOPE_MCP_SERVER_WELL_KNOWN_URL` (or

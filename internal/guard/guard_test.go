@@ -1,6 +1,7 @@
 package guard
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -37,8 +38,12 @@ func TestValidate_Rejects(t *testing.T) {
 		"DELETE FROM users",
 		"DROP TABLE users",
 		"TRUNCATE users",
-		"SELECT 1; DROP TABLE users",         // two statements
-		"SELECT 1; SELECT 2",                 // two statements
+		"SELECT 1; DROP TABLE users", // two statements
+		"SELECT 1; SELECT 2",         // two statements
+		`SELECT 1; "second"`,
+		`SELECT foo$bar$; DROP TABLE users`,
+		`SELECT ü$tag$; DROP TABLE users`,
+		`SELECT E'foo\' '; DROP TABLE users`,
 		"WITH t AS (SELECT 1) DELETE FROM t", // CTE then DML
 		"SET statement_timeout = 0",          // session tampering
 		"COPY users TO '/tmp/x'",             // exfil
@@ -95,6 +100,52 @@ func TestValidate_TrailingSemicolon(t *testing.T) {
 	for _, q := range []string{"SELECT 1;", "SELECT 1; ", "SELECT 1;\n\n"} {
 		if err := Validate(q); err != nil {
 			t.Errorf("trailing semicolon should be allowed for %q: %v", q, err)
+		}
+	}
+}
+
+func TestPrepareCount(t *testing.T) {
+	tests := map[string]string{
+		"SELECT 1":                         "SELECT 1",
+		"SELECT 1;":                        "SELECT 1",
+		"SELECT ';' AS value; -- trailing": "SELECT ';' AS value",
+		"VALUES (1); /* trailing */":       "VALUES (1)",
+	}
+	for query, want := range tests {
+		got, err := PrepareCount(query)
+		if err != nil {
+			t.Fatalf("PrepareCount(%q): %v", query, err)
+		}
+		if got != want {
+			t.Fatalf("PrepareCount(%q) = %q, want %q", query, got, want)
+		}
+	}
+	if _, err := PrepareCount("EXPLAIN SELECT 1"); !errors.Is(err, ErrCountExplain) {
+		t.Fatalf("EXPLAIN error = %v, want ErrCountExplain", err)
+	}
+	if _, err := PrepareCount("DELETE FROM users"); err == nil {
+		t.Fatal("expected guard error")
+	}
+}
+
+func TestDollarTagBoundaries(t *testing.T) {
+	tests := []struct {
+		sql  string
+		at   int
+		tag  string
+		okay bool
+	}{
+		{sql: "foo$bar$", at: 3},
+		{sql: "$", at: 0},
+		{sql: "$$", at: 0, tag: "$$", okay: true},
+		{sql: "$1$", at: 0},
+		{sql: "$_tag$", at: 0, tag: "$_tag$", okay: true},
+		{sql: "$bad-tag$", at: 0},
+	}
+	for _, test := range tests {
+		tag, okay := dollarTag(test.sql, test.at)
+		if tag != test.tag || okay != test.okay {
+			t.Fatalf("dollarTag(%q, %d) = %q, %v", test.sql, test.at, tag, okay)
 		}
 	}
 }

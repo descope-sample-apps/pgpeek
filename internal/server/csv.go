@@ -1,6 +1,7 @@
 package server
 
 import (
+	"compress/gzip"
 	"encoding/csv"
 	"errors"
 	"io"
@@ -33,6 +34,23 @@ func (w *limitedCSVWriter) Write(p []byte) (int, error) {
 }
 
 func writeCSVResponse(w http.ResponseWriter, filename string, render func(io.Writer) error) error {
+	return writeSpoolResponse(w, filename, "text/csv; charset=utf-8", func(dst io.Writer) error {
+		return render(&limitedCSVWriter{dst: dst, remaining: maxCSVExportBytes})
+	})
+}
+
+func writeGZIPResponse(w http.ResponseWriter, filename string, ready func(), render func(io.Writer) error) error {
+	return writeSpoolResponse(w, filename, "application/gzip", func(dst io.Writer) error {
+		gz := gzip.NewWriter(dst)
+		if err := render(&limitedCSVWriter{dst: gz, remaining: maxCSVExportBytes}); err != nil {
+			_ = gz.Close()
+			return err
+		}
+		return gz.Close()
+	}, ready)
+}
+
+func writeSpoolResponse(w http.ResponseWriter, filename, contentType string, render func(io.Writer) error, ready ...func()) error {
 	spool, err := os.CreateTemp("", "pgpeek-export-*.csv")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to prepare the CSV export")
@@ -48,7 +66,7 @@ func writeCSVResponse(w http.ResponseWriter, filename string, render func(io.Wri
 		_ = spool.Close()
 	}()
 
-	if err := render(&limitedCSVWriter{dst: spool, remaining: maxCSVExportBytes}); err != nil {
+	if err := render(spool); err != nil {
 		if errors.Is(err, errCSVResultChanged) {
 			writeError(w, http.StatusConflict, "The data changed. Reload and export again.")
 		} else if errors.Is(err, errCSVTooLarge) {
@@ -58,8 +76,11 @@ func writeCSVResponse(w http.ResponseWriter, filename string, render func(io.Wri
 		}
 		return err
 	}
+	for _, notify := range ready {
+		notify()
+	}
 
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	_, err = io.Copy(w, io.NewSectionReader(spool, 0, 1<<63-1))
 	return err

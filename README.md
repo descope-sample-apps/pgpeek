@@ -26,8 +26,9 @@ everywhere. Read-only by design: no row editing, schema management, or migration
   the active search/filters/sort. Wide tables stay usable with sticky headers,
   clipped cell previews, full values on demand, and mobile overflow containment.
 - **Structure** tab — column name, type, nullable, default.
-- **SQL** tab — CodeMirror editor with table/field autocomplete, saved/preset
-  queries, CSV export.
+- **SQL** tab — CodeMirror editor with table/field autocomplete, capped previews,
+  exact row counts, saved/preset queries, and row-uncapped gzip CSV export up to
+  512 MiB before compression.
 
 Filtering is safe by construction: column names are validated against the
 relation's real columns and emitted via `pgx.Identifier`, operators come from a
@@ -164,7 +165,7 @@ supplied from mounted files so they do not live in manifests.
 | `PGPEEK_DATABASES_FILE`      | —                    | Path to a mounted JSON config file with database entries.             |
 | `PGPEEK_DEFAULT_DATABASE`    | first configured DB  | Default database ID when the URL has no `db=` parameter.              |
 | `PGPEEK_LISTEN`              | `:8080`              | Listen address.                                                       |
-| `PGPEEK_ROW_CAP`             | `1000`               | Max rows returned/exported per query.                                 |
+| `PGPEEK_ROW_CAP`             | `1000`               | Max rows returned to the browser per query. Direct exports are row-uncapped with a 512 MiB raw CSV limit. |
 | `PGPEEK_CATALOG_LIMIT_BYTES` | `4194304` (4 MiB)    | Max encoded size of a table/column/foreign-key catalog listing. Raise this if a schema has enough tables to overflow the default and the UI reports "table catalog exceeds response limit". |
 | `PGPEEK_STATEMENT_TIMEOUT`   | `30s`                | Per-query DB statement timeout.                                       |
 | `PGPEEK_IDLE_TX_TIMEOUT`     | `30s`                | `idle_in_transaction_session_timeout`.                                |
@@ -284,7 +285,7 @@ go run .
 # open http://localhost:8080
 ```
 
-Keyboard: **Ctrl/Cmd + Enter** runs the query.
+Keyboard: **Ctrl/Cmd + Enter** previews the query.
 
 ## Build
 
@@ -454,8 +455,9 @@ Two ways:
 | `GET /api/databases`                          | List configured databases with safe runtime details (version, uptime, size, workload/cache/temp/deadlock/session counters, extensions, and connection limits). Core PostgreSQL does not expose portable host CPU, RAM, or free-disk metrics. |
 | `GET /api/user`                               | Current detected user (`anonymous` or Cloudflare Access email).    |
 | `POST /api/query?db=<id>`                     | Run a query → JSON `{columns, rows, …}`.       |
+| `POST /api/query/count?db=<id>`               | Run a query as an exact `COUNT(*)` without returning its rows. |
 | `POST /api/query/cell?db=<id>`                | Re-run a query and return one full cell by row/column index. |
-| `POST /api/export?db=<id>`                    | Run a query → CSV download.                    |
+| `POST /api/export?db=<id>`                    | Run a query → gzip-compressed CSV download (`.csv.gz`). |
 | `GET /api/meta?db=<id>`                       | Server limits the UI needs (`{rowCap}`).       |
 | `GET /api/tables?db=<id>`                     | List browsable tables/views (+ row estimate).  |
 | `GET /api/tables/{schema}/{table}/columns?db=<id>` | Column structure (name, type, nullable, default). |

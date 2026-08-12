@@ -87,6 +87,7 @@ beforeEach(() => {
   globalThis.URL.createObjectURL = vi.fn(() => "blob:fake");
   globalThis.URL.revokeObjectURL = vi.fn();
   HTMLAnchorElement.prototype.click = vi.fn();
+  HTMLFormElement.prototype.submit = vi.fn();
   Element.prototype.scrollIntoView = vi.fn();
   globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
   globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
@@ -699,6 +700,11 @@ describe("SQL tab textarea mode", () => {
     await click("tab-sql");
   }
 
+  it("labels the SQL editor", async () => {
+    await openSql();
+    expect($("sql").getAttribute("aria-label")).toBe("SQL query");
+  });
+
   it("runs queries, renders rows, and shows capped warnings", async () => {
     const domainMap = { "alpha.example.test": "sso-alpha", "a-very-long-synthetic-domain.example.test": "sso-beta" };
     setRoute("POST /api/query", makeResp({ json: {
@@ -718,6 +724,85 @@ describe("SQL tab textarea mode", () => {
     expect($("status").textContent).toContain("✓ 1 row in 4 ms");
     expect($("status").querySelector(".warn").textContent).toContain("capped");
     expect($("sql-export-btn").disabled).toBe(false);
+  });
+
+  it("counts the current query without rendering rows", async () => {
+    setRoute("POST /api/query/count", makeResp({ json: { rowCount: "1000000", elapsedMs: 12 } }));
+    await openSql();
+    $("sql").value = "select * from events";
+    await click("count-btn");
+    expect(postBody("/api/query/count")).toEqual({ sql: "select * from events" });
+    expect($("status").textContent).toBe("✓ 1,000,000 rows in 12 ms");
+    expect($("sql-results").textContent).toContain("Preview a query to see results.");
+  });
+
+  it("reports count errors and ignores empty SQL", async () => {
+    await openSql();
+    $("sql").value = "   ";
+    fetch.mockClear();
+    await click("count-btn");
+    expect(fetch).not.toHaveBeenCalled();
+
+    for (const failure of [makeResp({ ok: false, status: 400, json: { error: "count denied" } }), new Error("count offline")]) {
+      setRoute("POST /api/query/count", failure);
+      $("sql").value = "select 1";
+      await click("count-btn");
+      expect($("status").className).toContain("error");
+    }
+  });
+
+  it("ignores aborted count requests", async () => {
+    const aborted = new Error("aborted"); aborted.name = "AbortError";
+    setRoute("POST /api/query/count", aborted);
+    await openSql();
+    $("sql").value = "select aborted";
+    await click("count-btn");
+    expect(document.querySelector(".query-error")).toBeFalsy();
+  });
+
+  it("prevents overlapping counts and ignores stale count results", async () => {
+    const pending = deferred();
+    let signal;
+    setRoute("POST /api/query/count", (_url, options) => { signal = options.signal; return pending.promise; });
+    await openSql();
+    $("sql").value = "select 1";
+    $("count-btn").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    $("count-btn").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(callsTo("/api/query/count")).toHaveLength(1);
+    $("sql").value = "select 2";
+    $("sql").dispatchEvent(new Event("input", { bubbles: true }));
+    expect(signal.aborted).toBe(true);
+    pending.resolve(makeResp({ json: { rowCount: "1", elapsedMs: 2 } }));
+    await flush();
+    expect($("status").textContent).not.toContain("1 row");
+  });
+
+  it("ignores stale count failures", async () => {
+    let rejectCount;
+    setRoute("POST /api/query/count", () => new Promise((_, reject) => { rejectCount = reject; }));
+    await openSql();
+    $("sql").value = "select 1";
+    $("count-btn").click();
+    $("sql").dispatchEvent(new Event("input", { bubbles: true }));
+    rejectCount(new Error("stale count"));
+    await flush();
+    expect(document.querySelector(".query-error")).toBeFalsy();
+  });
+
+  it("uses singular row copy for a count of one", async () => {
+    setRoute("POST /api/query/count", makeResp({ json: { rowCount: "1", elapsedMs: 1 } }));
+    await openSql();
+    $("sql").value = "select 1";
+    await click("count-btn");
+    expect($("status").textContent).toBe("✓ 1 row in 1 ms");
+  });
+
+  it("preserves count precision beyond Number.MAX_SAFE_INTEGER", async () => {
+    setRoute("POST /api/query/count", makeResp({ json: { rowCount: "9007199254740993", elapsedMs: 1 } }));
+    await openSql();
+    $("sql").value = "select huge";
+    await click("count-btn");
+    expect($("status").textContent).toBe("✓ 9,007,199,254,740,993 rows in 1 ms");
   });
 
   it("disables run and export during in-flight runs and prevents overlap", async () => {
@@ -740,12 +825,34 @@ describe("SQL tab textarea mode", () => {
     await flush();
     expect(callsTo("/api/query")).toHaveLength(2);
     expect($("run-btn").disabled).toBe(true);
+    expect($("count-btn").disabled).toBe(true);
     expect($("sql-export-btn").disabled).toBe(true);
+    expect($("save-btn").disabled).toBe(true);
 
     pending.resolve(makeResp({ json: { columns: ["n"], rows: [[2]], rowCount: 1, elapsedMs: 2 } }));
     await flush();
     expect($("run-btn").disabled).toBe(false);
+    expect($("count-btn").disabled).toBe(false);
     expect($("sql-export-btn").disabled).toBe(false);
+    expect($("save-btn").disabled).toBe(false);
+  });
+
+  it("guards saved-query actions while a query is running", async () => {
+    setRoute("GET /api/queries", makeResp({ json: [{ id: 2, name: "Mine", sql: "select 1", isPreset: false }] }));
+    const pending = deferred();
+    setRoute("POST /api/query", () => pending.promise);
+    await openSql();
+    await changeSelect($("presets"), "2");
+    $("run-btn").click();
+    await flush();
+    $("save-btn").disabled = false;
+    $("delete-btn").disabled = false;
+    await dispatchClick("save-btn");
+    await dispatchClick("delete-btn");
+    expect(prompt).not.toHaveBeenCalled();
+    expect(confirm).not.toHaveBeenCalled();
+    pending.resolve(makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
+    await flush();
   });
 
   it("shows elapsed seconds after a query runs for ten seconds", async () => {
@@ -767,19 +874,19 @@ describe("SQL tab textarea mode", () => {
     $("sql").value = "select pg_sleep(12)";
     $("run-btn").click();
     await flush();
-    expect($("status").textContent).toBe("Running…");
+    expect($("status").textContent).toBe("Previewing…");
     expect(interval).not.toHaveBeenCalled();
 
     now.mockReturnValue(10_000);
     startTimer();
     await flush();
-    expect($("status").textContent).toBe("Running… (10s)");
+    expect($("status").textContent).toBe("Previewing… (10s)");
     expect(interval).toHaveBeenCalledWith(tick, 1000);
 
     now.mockReturnValue(12_000);
     tick();
     await flush();
-    expect($("status").textContent).toBe("Running… (12s)");
+    expect($("status").textContent).toBe("Previewing… (12s)");
 
     pending.resolve(makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 12_000 } }));
     await flush();
@@ -809,7 +916,7 @@ describe("SQL tab textarea mode", () => {
       pending.resolve(failure);
       await flush();
       expect($("run-btn").disabled).toBe(false);
-      expect($("sql-export-btn").disabled).toBe(true);
+      expect($("sql-export-btn").disabled).toBe(false);
       expect($("status").className).toContain("error");
     }
   });
@@ -825,7 +932,7 @@ describe("SQL tab textarea mode", () => {
     $("sql").value = "select nothing";
     await click("run-btn");
     expect($("sql-results").textContent).toContain("Query ran. No columns returned.");
-    expect($("sql-export-btn").disabled).toBe(true);
+    expect($("sql-export-btn").disabled).toBe(false);
 
     setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [], rowCount: 0, elapsedMs: 2 } }));
     $("sql").value = "select n from empty";
@@ -841,6 +948,15 @@ describe("SQL tab textarea mode", () => {
       await click("run-btn");
       expect($("status").className).toContain("error");
     }
+  });
+
+  it("ignores aborted preview requests", async () => {
+    const aborted = new Error("aborted"); aborted.name = "AbortError";
+    setRoute("POST /api/query", aborted);
+    await openSql();
+    $("sql").value = "select aborted";
+    await click("run-btn");
+    expect(document.querySelector(".query-error")).toBeFalsy();
   });
 
   it("runs from Ctrl/Cmd Enter and ignores other keys", async () => {
@@ -862,39 +978,115 @@ describe("SQL CSV export", () => {
     $("sql").value = sql;
   }
 
-  it("downloads the CSV from the last run SQL or current SQL", async () => {
-    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
-    setRoute("POST /api/export", makeResp({ blob: new Blob(["n\n1"]) }));
-    await openSqlWithText("select 1");
-    await click("run-btn");
-    $("sql").value = "select changed";
-    await click("sql-export-btn");
-    expect(postBody("/api/export")).toEqual({ sql: "select 1" });
-    expect(URL.createObjectURL).toHaveBeenCalled();
-    expect(HTMLAnchorElement.prototype.click).toHaveBeenCalled();
-    await flush();
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:fake");
-
-    document.body.innerHTML = '<div id="app"></div>';
-    setRoute("POST /api/export", makeResp());
+  it("submits the current SQL directly to a browser download", async () => {
     await openSqlWithText("select fresh");
-    await dispatchClick("sql-export-btn");
-    expect(postBody("/api/export")).toEqual({ sql: "select fresh" });
-  });
-
-  it("guards empty exports and reports export errors", async () => {
-    await openSqlWithText("   ");
     fetch.mockClear();
     await dispatchClick("sql-export-btn");
+    const form = HTMLFormElement.prototype.submit.mock.instances.at(-1);
+    expect(form.method).toBe("post");
+    expect(form.action).toContain("/api/export");
+    expect(form.target).toMatch(/^pgpeek-export-/);
+    expect(document.querySelector(`iframe[name="${form.target}"]`)).toBeTruthy();
+    expect(new FormData(form).get("sql")).toBe("select fresh");
+    expect(new FormData(form).get("csrf")).toMatch(/^[0-9a-f]{32}$/);
+    expect(document.cookie).toContain("pgpeek_export_csrf=");
     expect(fetch).not.toHaveBeenCalled();
+  });
 
-    for (const err of [makeResp({ ok: false, status: 500, json: { error: "export denied" } }), makeResp({ ok: false, status: 500, json: () => { throw new Error("bad json"); } })]) {
-      setRoute("POST /api/export", err);
-      $("sql").value = "select export";
+  it("marks the export CSRF cookie secure on HTTPS", async () => {
+    const cookie = vi.spyOn(Document.prototype, "cookie", "set");
+    vi.stubGlobal("location", new URL("https://pgpeek.example/"));
+    try {
+      await openSqlWithText("select secure");
       await dispatchClick("sql-export-btn");
-      expect($("status").className).toContain("error");
+      expect(cookie).toHaveBeenCalledWith(expect.stringContaining("; Secure"));
+    } finally {
+      vi.unstubAllGlobals();
     }
-    expect($("status").textContent).toContain("export failed");
+  });
+
+  it("guards empty exports", async () => {
+    await openSqlWithText("   ");
+    HTMLFormElement.prototype.submit.mockClear();
+    await dispatchClick("sql-export-btn");
+    expect(HTMLFormElement.prototype.submit).not.toHaveBeenCalled();
+  });
+
+  it("shows export failures inline", async () => {
+    await openSqlWithText("select denied");
+    await dispatchClick("sql-export-btn");
+    const frame = document.querySelector("iframe[name^='pgpeek-export-']");
+    frame.contentDocument.body.textContent = JSON.stringify({ error: "export denied" });
+    frame.dispatchEvent(new Event("load"));
+    frame.dispatchEvent(new Event("load"));
+    await flush();
+    expect(document.querySelector(".query-error").textContent).toBe("export denied");
+    expect($("status").textContent).toContain("export denied");
+    expect($("sql-export-btn").disabled).toBe(false);
+    expect(frame.isConnected).toBe(false);
+  });
+
+  it("reports export failures after editing", async () => {
+    await openSqlWithText("select stale");
+    await dispatchClick("sql-export-btn");
+    const frame = document.querySelector("iframe[name^='pgpeek-export-']");
+    $("sql").dispatchEvent(new Event("input", { bubbles: true }));
+    frame.contentDocument.body.textContent = JSON.stringify({ error: "stale export error" });
+    frame.dispatchEvent(new Event("load"));
+    await flush();
+    expect(document.querySelector(".query-error").textContent).toBe("stale export error");
+    expect($("sql-export-btn").disabled).toBe(false);
+  });
+
+  it("reports non-JSON export failures and cleans them up", async () => {
+    await openSqlWithText("select download");
+    await dispatchClick("sql-export-btn");
+    const frame = document.querySelector("iframe[name^='pgpeek-export-']");
+    frame.contentDocument.body.textContent = "download response";
+    frame.dispatchEvent(new Event("load"));
+    await flush();
+    expect(document.querySelector(".query-error").textContent).toBe("export failed");
+    expect(frame.isConnected).toBe(false);
+  });
+
+  it("accepts an empty JSON export response", async () => {
+    await openSqlWithText("select download");
+    await dispatchClick("sql-export-btn");
+    const frame = document.querySelector("iframe[name^='pgpeek-export-']");
+    frame.contentDocument.body.textContent = "{}";
+    frame.dispatchEvent(new Event("load"));
+    await flush();
+    expect($("status").textContent).toBe("✓ Download started.");
+  });
+
+  it("stops polling when the export frame is removed", async () => {
+    await openSqlWithText("select removed");
+    await dispatchClick("sql-export-btn");
+    document.querySelector("iframe[name^='pgpeek-export-']").remove();
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect($("status").textContent).toBe("Preparing export…");
+  });
+
+  it("keeps polling while an export is still preparing", async () => {
+    await openSqlWithText("select preparing");
+    await dispatchClick("sql-export-btn");
+    const frame = document.querySelector("iframe[name^='pgpeek-export-']");
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(frame.isConnected).toBe(true);
+    frame.remove();
+  });
+
+  it("finishes exports when the server completion cookie arrives", async () => {
+    await openSqlWithText("select download");
+    await dispatchClick("sql-export-btn");
+    const form = HTMLFormElement.prototype.submit.mock.instances.at(-1);
+    const csrf = new FormData(form).get("csrf");
+    const frame = document.querySelector("iframe[name^='pgpeek-export-']");
+    document.cookie = `pgpeek_export_done_${csrf}=1; Path=/; SameSite=Strict`;
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect($("status").textContent).toBe("✓ Download started.");
+    expect($("sql-export-btn").disabled).toBe(false);
+    expect(frame.isConnected).toBe(false);
   });
 });
 
@@ -917,7 +1109,7 @@ describe("saved queries", () => {
 
     await changeSelect($("presets"), "1");
     expect($("sql").value).toBe("select preset");
-    expect($("status").textContent).toContain("Loaded “Preset one”. Press Run.");
+    expect($("status").textContent).toContain("Loaded “Preset one”. Press Preview.");
     expect($("delete-btn").disabled).toBe(true);
 
     await changeSelect($("presets"), "2");
@@ -985,7 +1177,7 @@ describe("saved queries", () => {
     const afterRefreshes = fetch.mock.calls.filter(([u]) => String(u) === "/api/queries").length;
     expect(afterRefreshes).toBeGreaterThan(beforeRefreshes);
     expect($("presets").value).toBe("1");
-    expect($("status").textContent).toContain("Loaded “Preset one”. Press Run.");
+    expect($("status").textContent).toContain("Loaded “Preset one”. Press Preview.");
   });
 
   it("ignores stale save failures", async () => {
@@ -1001,7 +1193,7 @@ describe("saved queries", () => {
     resolveSave(makeResp({ ok: false, status: 500, json: { error: "late save failed" } }));
     await flush();
 
-    expect($("status").textContent).toContain("Loaded “Preset one”. Press Run.");
+    expect($("status").textContent).toContain("Loaded “Preset one”. Press Preview.");
   });
 
   it("deletes after confirmation, aborts otherwise, and handles failures", async () => {
@@ -1057,7 +1249,7 @@ describe("saved queries", () => {
     const afterRefreshes = fetch.mock.calls.filter(([u]) => String(u) === "/api/queries").length;
     expect(afterRefreshes).toBeGreaterThan(beforeRefreshes);
     expect($("presets").value).toBe("1");
-    expect($("status").textContent).toContain("Loaded “Preset one”. Press Run.");
+    expect($("status").textContent).toContain("Loaded “Preset one”. Press Preview.");
   });
 
   it("ignores stale delete failures", async () => {
@@ -1072,7 +1264,7 @@ describe("saved queries", () => {
     resolveDelete(makeResp({ ok: false, status: 500 }));
     await flush();
 
-    expect($("status").textContent).toContain("Loaded “Preset one”. Press Run.");
+    expect($("status").textContent).toContain("Loaded “Preset one”. Press Preview.");
   });
 });
 

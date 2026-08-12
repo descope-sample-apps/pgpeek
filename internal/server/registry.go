@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -13,6 +14,8 @@ import (
 
 type Querier interface {
 	Query(ctx context.Context, sql string) (*db.Result, error)
+	Count(ctx context.Context, sql string) (int64, error)
+	ExportCSV(ctx context.Context, sql string, dst io.Writer) error
 	QueryCell(ctx context.Context, sql string, row, column int) (any, error)
 	Tables(ctx context.Context) ([]db.TableInfo, bool, error)
 	Columns(ctx context.Context, schema, table string) ([]db.ColumnInfo, bool, error)

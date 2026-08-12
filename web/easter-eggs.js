@@ -239,10 +239,5 @@ export function shuniColumns(table) {
 
 export const SHUNI_STATUS = "🦴 good girl. good code. 🦴";
 
-// ── Loading llama ───────────────────────────────────────────
-// Hold the llama back this long so fast queries don't make it pop in and
-// straight back out. Past the threshold the CSS slides it in.
-export const LLAMA_DELAY_MS = 200;
-
 // ── EXPLAIN joke (appended to the SQL hint) ─────────────────
 export const EXPLAIN_JOKE = "Need to EXPLAIN this query? So do we, every time.";

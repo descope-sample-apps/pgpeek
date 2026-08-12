@@ -81,6 +81,35 @@ func TestIntegrationReadOnlyEnforcedBySession(t *testing.T) {
 	}
 }
 
+func TestIntegrationSessionStateResetOnRelease(t *testing.T) {
+	dsn := os.Getenv("PGPEEK_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("PGPEEK_TEST_DATABASE_URL not set")
+	}
+	p, err := New(context.Background(), Config{
+		DSN:              dsn,
+		MaxConns:         1,
+		StatementTimeout: 5 * time.Second,
+		IdleTxTimeout:    5 * time.Second,
+		RowCap:           10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(p.Close)
+
+	if _, err := p.Query(context.Background(), "SELECT set_config('work_mem', '64MB', false), pg_advisory_lock(987654321)"); err != nil {
+		t.Fatal(err)
+	}
+	result, err := p.Query(context.Background(), "SELECT current_setting('work_mem'), pg_try_advisory_lock(987654321), current_setting('default_transaction_read_only'), current_setting('statement_timeout')")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Rows[0][0] == "64MB" || result.Rows[0][1] != true || result.Rows[0][2] != "on" || result.Rows[0][3] != "5s" {
+		t.Fatalf("session state leaked: %#v", result.Rows[0])
+	}
+}
+
 func TestIntegrationPing(t *testing.T) {
 	p := testPool(t, 1000)
 	if err := p.Ping(context.Background()); err != nil {

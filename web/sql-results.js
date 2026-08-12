@@ -53,7 +53,7 @@ export function LazyCell({ value, truncated, columnName, loadValue, onFullValue 
 }
 
 export function SqlResults({ result, resultKey, sql, dbId }) {
-  if (!result) return html`<div class="empty">Run a query to see results.</div>`;
+  if (!result) return html`<div class="empty">Preview a query to see results.</div>`;
   if (result.columns.length === 0) return html`<div class="empty">Query ran. No columns returned.</div>`;
   if (result.rows.length === 0) return html`<div class="empty">0 rows.</div>`;
   const truncated = new Map((result.truncatedCells || []).map((cell) => [cell.row + ":" + cell.column, cell]));

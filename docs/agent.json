@@ -13,7 +13,7 @@
     "themeCount": 20,
     "safetyLayerCount": 3,
     "documentedConfigCount": 23,
-    "httpRouteCount": 24,
+    "httpRouteCount": 25,
     "defaultRowCap": 1000,
     "defaultStatementTimeout": "30s"
   },
@@ -73,7 +73,7 @@
     ]
   },
   "httpRoutes": {
-    "count": 24,
+    "count": 25,
     "items": [
       {
         "method": "GET",
@@ -103,7 +103,12 @@
       {
         "method": "POST",
         "path": "/api/query",
-        "description": "Run one read-only SQL statement and return JSON rows."
+        "description": "Preview one read-only SQL statement and return capped JSON rows."
+      },
+      {
+        "method": "POST",
+        "path": "/api/query/count",
+        "description": "Return the exact row count for one read-only SQL statement without returning its rows."
       },
       {
         "method": "POST",
@@ -113,7 +118,7 @@
       {
         "method": "POST",
         "path": "/api/export",
-        "description": "Run one read-only SQL statement and download CSV."
+        "description": "Run one read-only SQL statement and download row-uncapped gzip CSV up to 512 MiB before compression."
       },
       {
         "method": "GET",

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.13.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.12.0...v0.13.0) (2026-08-12)
+
+
+### Features
+
+* add query preview, exact counts, and gzip exports ([07f3627](https://github.com/descope-sample-apps/pgpeek/commit/07f3627069937d511414b34cc99d2047787f59a0))
+* **web:** show elapsed time for running queries ([#83](https://github.com/descope-sample-apps/pgpeek/issues/83)) ([1231cc3](https://github.com/descope-sample-apps/pgpeek/commit/1231cc30f5b4cbe88cb70a602117eed6455f0b90))
+
+
+### Bug Fixes
+
+* **web:** bound SQL autocomplete metadata loading ([#84](https://github.com/descope-sample-apps/pgpeek/issues/84)) ([06b0ee8](https://github.com/descope-sample-apps/pgpeek/commit/06b0ee8315c4d94590b043c7d48aba6cba8ab339))
+
 ## [0.12.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.11.4...v0.12.0) (2026-08-11)
 
 

@@ -389,7 +389,7 @@ describe("API db params — POST requests", () => {
   });
 });
 
-describe("SQL tab null and object cell rendering", () => {
+describe("SQL result rendering and metadata", () => {
   it("renders NULL span and JSON-serialises objects in SQL results", async () => {
     // Covers sql-tab.js: v === null AND typeof v === 'object' branches.
     setRoute("POST /api/query", makeResp({

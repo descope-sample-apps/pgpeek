@@ -1,12 +1,17 @@
 package db
 
 import (
+	"encoding/json"
 	"errors"
 	"strconv"
 	"unicode/utf8"
 )
 
 var ErrResultMetadataTooLarge = errors.New("query result metadata exceeds response limit")
+var invalidUTF8JSONBytes = func() int {
+	encoded, _ := json.Marshal(string([]byte{0xff}))
+	return len(encoded) - 2
+}()
 
 func resultEnvelopeBytes(columns []string, rowCap int) int {
 	size := len(`{"columns":[],"rows":[],"rowCount":,"truncated":false,"cellsTruncated":true,"truncatedCells":[],"elapsedMs":}`)
@@ -23,7 +28,7 @@ func jsonStringBytes(value string) int {
 		r, width := utf8.DecodeRuneInString(value)
 		value = value[width:]
 		if r == utf8.RuneError && width == 1 {
-			size += utf8.RuneLen(utf8.RuneError)
+			size += invalidUTF8JSONBytes
 			continue
 		}
 		switch r {

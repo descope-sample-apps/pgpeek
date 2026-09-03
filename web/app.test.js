@@ -248,6 +248,7 @@ describe("sidebar and tabs", () => {
 
     expect($("tab-title").textContent).toBe("Pick a table");
     expect($("tables").textContent).toContain("No tables.");
+    expect($("status").hidden).toBe(true);
     expect($("panel-data").textContent).toContain("Select a table to browse its rows.");
     await click("tab-structure");
     expect($("panel-structure").hidden).toBe(false);
@@ -723,6 +724,8 @@ describe("SQL tab textarea mode", () => {
     expect(Array.from($("sql-results").querySelectorAll("td")).every((cell) => cell.classList.contains("cell"))).toBe(true);
     expect($("status").textContent).toContain("✓ 1 row in 4 ms");
     expect($("status").querySelector(".warn").textContent).toContain("capped");
+    expect($("status").hidden).toBe(true);
+    expect($("sql-status")).toBeNull();
     expect($("sql-export-btn").disabled).toBe(false);
   });
 
@@ -733,7 +736,9 @@ describe("SQL tab textarea mode", () => {
     await click("count-btn");
     expect(postBody("/api/query/count")).toEqual({ sql: "select * from events" });
     expect($("status").textContent).toBe("✓ 1,000,000 rows in 12 ms");
-    expect($("sql-results").textContent).toContain("Preview a query to see results.");
+    expect($("status").hidden).toBe(true);
+    expect($("sql-status").textContent).toBe("✓ 1,000,000 rows in 12 ms");
+    expect($("sql-results").textContent).toContain("Run a query to see results.");
   });
 
   it("reports count errors and ignores empty SQL", async () => {
@@ -805,7 +810,7 @@ describe("SQL tab textarea mode", () => {
     expect($("status").textContent).toBe("✓ 9,007,199,254,740,993 rows in 1 ms");
   });
 
-  it("disables run and export during in-flight runs and prevents overlap", async () => {
+  it("cancels an in-flight run and keeps other actions locked", async () => {
     const pending = deferred();
     let queryCount = 0;
     setRoute("POST /api/query", () => {
@@ -821,20 +826,25 @@ describe("SQL tab textarea mode", () => {
 
     $("sql").value = "select 2";
     $("run-btn").click();
-    $("run-btn").click();
     await flush();
     expect(callsTo("/api/query")).toHaveLength(2);
-    expect($("run-btn").disabled).toBe(true);
+    expect($("run-btn").disabled).toBe(false);
+    expect($("run-btn").textContent).toBe("Cancel");
     expect($("count-btn").disabled).toBe(true);
     expect($("sql-export-btn").disabled).toBe(true);
     expect($("save-btn").disabled).toBe(true);
 
-    pending.resolve(makeResp({ json: { columns: ["n"], rows: [[2]], rowCount: 1, elapsedMs: 2 } }));
+    $("run-btn").click();
     await flush();
-    expect($("run-btn").disabled).toBe(false);
+    expect($("run-btn").textContent).toBe("Run");
     expect($("count-btn").disabled).toBe(false);
     expect($("sql-export-btn").disabled).toBe(false);
     expect($("save-btn").disabled).toBe(false);
+    expect($("status").textContent).toBe("Cancelled.");
+
+    pending.resolve(makeResp({ json: { columns: ["n"], rows: [[2]], rowCount: 1, elapsedMs: 2 } }));
+    await flush();
+    expect($("sql-results").textContent).not.toContain("2");
   });
 
   it("guards saved-query actions while a query is running", async () => {
@@ -874,19 +884,19 @@ describe("SQL tab textarea mode", () => {
     $("sql").value = "select pg_sleep(12)";
     $("run-btn").click();
     await flush();
-    expect($("status").textContent).toBe("Previewing…");
+    expect($("status").textContent).toBe("Running…");
     expect(interval).not.toHaveBeenCalled();
 
     now.mockReturnValue(10_000);
     startTimer();
     await flush();
-    expect($("status").textContent).toBe("Previewing… (10s)");
+    expect($("status").textContent).toBe("Running… (10s)");
     expect(interval).toHaveBeenCalledWith(tick, 1000);
 
     now.mockReturnValue(12_000);
     tick();
     await flush();
-    expect($("status").textContent).toBe("Previewing… (12s)");
+    expect($("status").textContent).toBe("Running… (12s)");
 
     pending.resolve(makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 12_000 } }));
     await flush();
@@ -910,12 +920,12 @@ describe("SQL tab textarea mode", () => {
       $("sql").value = "select fail";
       $("run-btn").click();
       await flush();
-      expect($("run-btn").disabled).toBe(true);
+      expect($("run-btn").textContent).toBe("Cancel");
       expect($("sql-export-btn").disabled).toBe(true);
 
       pending.resolve(failure);
       await flush();
-      expect($("run-btn").disabled).toBe(false);
+      expect($("run-btn").textContent).toBe("Run");
       expect($("sql-export-btn").disabled).toBe(false);
       expect($("status").className).toContain("error");
     }
@@ -938,11 +948,15 @@ describe("SQL tab textarea mode", () => {
     $("sql").value = "select n from empty";
     await click("run-btn");
     expect($("sql-results").textContent).toContain("0 rows.");
+    const jsonButton = [...document.querySelectorAll(".view-btn")].find((button) => button.textContent === "JSON");
+    expect(jsonButton).toBeTruthy();
+    await click(jsonButton);
+    expect(JSON.parse(document.querySelector(".result-json").textContent)).toEqual({ columns: ["n"], rows: [] });
   });
 
   it("reports query server and network errors", async () => {
     await openSql();
-    for (const err of [makeResp({ ok: false, status: 400, json: { error: "read only" } }), makeResp({ ok: false, status: 500, statusText: "SQL Error", json: {} }), new Error("query offline")]) {
+    for (const err of [makeResp({ ok: false, status: 400, json: { error: "read only" } }), makeResp({ ok: false, status: 400, json: { error: "positioned", position: 1 } }), makeResp({ ok: false, status: 500, statusText: "SQL Error", json: {} }), makeResp({ ok: false, status: 500, json: {} }), new Error("query offline")]) {
       setRoute("POST /api/query", err);
       $("sql").value = "select bad";
       await click("run-btn");
@@ -969,6 +983,74 @@ describe("SQL tab textarea mode", () => {
     await keydown("sql", "Enter", { metaKey: true });
     expect(fetch.mock.calls.filter(([u]) => String(u) === "/api/query")).toHaveLength(2);
   });
+  it("runs a textarea selection and keeps completed results while edits make them stale", async () => {
+    setRoute("POST /api/query", makeResp({ json: { columns: ["id", "id"], rows: [[1, 2]], rowCount: 1, elapsedMs: 3 } }));
+    await openSql();
+    const textarea = $("sql");
+    textarea.value = "  select 1";
+    textarea.selectionStart = 0;
+    textarea.selectionEnd = 2;
+    fetch.mockClear();
+    await click("run-btn");
+    expect(callsTo("/api/query")).toHaveLength(0);
+
+    textarea.value = "select 1; select 2";
+    textarea.selectionStart = 10;
+    textarea.selectionEnd = 18;
+
+    await click("run-btn");
+    expect(postBody("/api/query")).toEqual({ sql: "select 2" });
+
+    const jsonButton = [...document.querySelectorAll(".view-btn")].find((button) => button.textContent === "JSON");
+    await click(jsonButton);
+    expect(JSON.parse(document.querySelector(".result-json").textContent)).toEqual({ columns: ["id", "id"], rows: [[1, 2]] });
+    expect(document.querySelector(".result-scroll").tabIndex).toBe(0);
+    expect(document.querySelector(".result-scroll").getAttribute("aria-label")).toBe("Query results");
+    expect(document.querySelector(".result-scroll").getAttribute("role")).toBe("region");
+    expect(document.querySelector(".result-toolbar .result-views")).toBeTruthy();
+
+    await input("sql", "select 3");
+    expect($("sql-results").textContent).toContain("Showing results from the previous run.");
+    expect(document.querySelector(".result-json")).toBeTruthy();
+  });
+
+  it("resizes the editor split with keyboard and pointer input", async () => {
+    const values = new Map([["pgpeek.sql.split", "35"]]);
+    const storage = {
+      getItem: vi.fn((key) => values.get(key) ?? null),
+      setItem: vi.fn((key, value) => values.set(key, String(value))),
+    };
+    vi.stubGlobal("localStorage", storage);
+    try {
+      await openSql();
+      const splitter = $("sql-splitter");
+      expect(splitter.getAttribute("aria-valuenow")).toBe("35");
+
+      await keydown(splitter, "ArrowDown");
+      expect(splitter.getAttribute("aria-valuenow")).toBe("40");
+      await keydown(splitter, "ArrowUp");
+      expect(splitter.getAttribute("aria-valuenow")).toBe("35");
+      await keydown(splitter, "Home");
+      expect(splitter.getAttribute("aria-valuenow")).toBe("50");
+      await keydown(splitter, "Escape");
+
+      const pane = document.querySelector(".sql-pane");
+      vi.spyOn(pane, "getBoundingClientRect").mockReturnValue({ top: 0, height: 1000 });
+      splitter.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 1, clientY: 500 }));
+      window.dispatchEvent(new MouseEvent("pointermove", { clientY: 700 }));
+      expect(splitter.getAttribute("aria-valuenow")).toBe("50");
+
+      splitter.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0, clientY: 500 }));
+      window.dispatchEvent(new MouseEvent("pointermove", { clientY: 800 }));
+      window.dispatchEvent(new MouseEvent("pointerup"));
+      await flush();
+      expect(splitter.getAttribute("aria-valuenow")).toBe("80");
+      expect(storage.setItem).toHaveBeenCalledWith("pgpeek.sql.split", "80");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
 });
 
 describe("SQL CSV export", () => {
@@ -1057,6 +1139,7 @@ describe("SQL CSV export", () => {
     frame.dispatchEvent(new Event("load"));
     await flush();
     expect($("status").textContent).toBe("✓ Download started.");
+    expect($("sql-status").textContent).toBe("✓ Download started.");
   });
 
   it("stops polling when the export frame is removed", async () => {
@@ -1109,7 +1192,9 @@ describe("saved queries", () => {
 
     await changeSelect($("presets"), "1");
     expect($("sql").value).toBe("select preset");
-    expect($("status").textContent).toContain("Loaded “Preset one”. Press Preview.");
+    expect($("status").textContent).toContain("Loaded “Preset one”. Press Run.");
+    expect($("status").hidden).toBe(true);
+    expect($("sql-status").textContent).toContain("Loaded “Preset one”. Press Run.");
     expect($("delete-btn").disabled).toBe(true);
 
     await changeSelect($("presets"), "2");
@@ -1126,6 +1211,24 @@ describe("saved queries", () => {
     setRoute("GET /api/queries", makeResp({ ok: false, status: 500, json: { error: "store down" } }));
     await loadApp();
     expect($("status").textContent).toContain("failed to load saved queries: store down");
+  });
+
+  it("keeps background reload errors visible beside an existing SQL error", async () => {
+    await openWithSaved([]);
+    setRoute("POST /api/query", makeResp({ ok: false, status: 400, json: { error: "bad query" } }));
+    $("sql").value = "select broken";
+    await click("run-btn");
+    expect(document.querySelector(".query-error")).toBeTruthy();
+
+    prompt.mockReturnValueOnce("Broken").mockReturnValueOnce("");
+    setRoute("POST /api/queries", makeResp({ json: { id: 8, name: "Broken" } }));
+    setRoute("GET /api/queries", makeResp({ ok: false, status: 500, json: { error: "store down" } }));
+    await click("save-btn");
+
+    expect(document.querySelector(".query-error").textContent).toBe("bad query");
+    expect($("status").hidden).toBe(false);
+    expect($("status").textContent).toContain("failed to load saved queries: store down");
+    expect($("sql-status")).toBeNull();
   });
 
   it("saves new queries, handles prompt cancellation, blank SQL, and save errors", async () => {
@@ -1177,7 +1280,7 @@ describe("saved queries", () => {
     const afterRefreshes = fetch.mock.calls.filter(([u]) => String(u) === "/api/queries").length;
     expect(afterRefreshes).toBeGreaterThan(beforeRefreshes);
     expect($("presets").value).toBe("1");
-    expect($("status").textContent).toContain("Loaded “Preset one”. Press Preview.");
+    expect($("status").textContent).toContain("Loaded “Preset one”. Press Run.");
   });
 
   it("ignores stale save failures", async () => {
@@ -1193,7 +1296,7 @@ describe("saved queries", () => {
     resolveSave(makeResp({ ok: false, status: 500, json: { error: "late save failed" } }));
     await flush();
 
-    expect($("status").textContent).toContain("Loaded “Preset one”. Press Preview.");
+    expect($("status").textContent).toContain("Loaded “Preset one”. Press Run.");
   });
 
   it("deletes after confirmation, aborts otherwise, and handles failures", async () => {
@@ -1232,6 +1335,19 @@ describe("saved queries", () => {
     expect($("status").textContent).toContain("delete failed");
   });
 
+  it("reports reload failures after deleting a query", async () => {
+    await openWithSaved();
+    await changeSelect($("presets"), "2");
+    confirm.mockReturnValueOnce(true);
+    setRoute("DELETE /api/queries/:id", makeResp({ status: 204 }));
+    setRoute("GET /api/queries", makeResp({ ok: false, status: 500, json: { error: "store down" } }));
+
+    await click("delete-btn");
+
+    expect($("status").hidden).toBe(false);
+    expect($("status").textContent).toContain("failed to load saved queries: store down");
+  });
+
   it("refreshes saved queries after a stale successful delete", async () => {
     let resolveDelete;
     await openWithSaved();
@@ -1249,7 +1365,7 @@ describe("saved queries", () => {
     const afterRefreshes = fetch.mock.calls.filter(([u]) => String(u) === "/api/queries").length;
     expect(afterRefreshes).toBeGreaterThan(beforeRefreshes);
     expect($("presets").value).toBe("1");
-    expect($("status").textContent).toContain("Loaded “Preset one”. Press Preview.");
+    expect($("status").textContent).toContain("Loaded “Preset one”. Press Run.");
   });
 
   it("ignores stale delete failures", async () => {
@@ -1264,7 +1380,7 @@ describe("saved queries", () => {
     resolveDelete(makeResp({ ok: false, status: 500 }));
     await flush();
 
-    expect($("status").textContent).toContain("Loaded “Preset one”. Press Preview.");
+    expect($("status").textContent).toContain("Loaded “Preset one”. Press Run.");
   });
 });
 
@@ -1273,9 +1389,14 @@ describe("CodeMirror 6 mode", () => {
     let value = sql;
     const editor = {
       getValue: vi.fn(() => value),
+      getRunnable: vi.fn(() => ({ sql: value, from: 0, to: value.length, kind: "document" })),
       setValue: vi.fn((v) => { value = v; }),
       refresh: vi.fn(),
       setSQLConfig: vi.fn(),
+      clearDiagnostics: vi.fn(),
+      setDiagnostics: vi.fn(),
+      focusRange: vi.fn(),
+      format: vi.fn(),
     };
     const mount = vi.fn(() => editor);
     window.cm6 = { mount };
@@ -1298,7 +1419,7 @@ describe("CodeMirror 6 mode", () => {
     const onRun = mount.mock.calls[0][2];
     onRun();
     await flush();
-    expect(editor.getValue).toHaveBeenCalled();
+    expect(editor.getRunnable).toHaveBeenCalled();
     expect(postBody("/api/query")).toEqual({ sql: "select cm" });
 
     mount.mock.calls[0][3]("select linked");
@@ -1309,109 +1430,181 @@ describe("CodeMirror 6 mode", () => {
     expect(editor.setValue).toHaveBeenCalledWith("select picked");
   });
 
-  it("fetches columns and configures autocomplete schema when tables load", async () => {
+  it("loads one nested schema catalog for autocomplete", async () => {
     const { editor } = installCM6();
-    const cols = deferred();
+    const schema = deferred();
     setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
-    setRoute("GET /api/tables/*/columns", () => cols.promise);
+    setRoute("GET /api/schema", () => schema.promise);
     await loadApp();
     await click("tab-sql");
 
     expect(editor.setSQLConfig).toHaveBeenCalled();
-    let config = editor.setSQLConfig.mock.calls[editor.setSQLConfig.mock.calls.length - 1][0];
-    expect(config.schema.public).toContain("users");
-    expect(config.schema.auth).toContain("sessions");
-    expect(config.schema["public.users"]).toBeUndefined();
+    let config = editor.setSQLConfig.mock.calls.at(-1)[0];
+    expect(config.schema.public.users).toEqual([]);
+    expect(config.schema.auth.sessions).toEqual([]);
 
-    cols.resolve(makeResp({
-      json: [{ name: "id", type: "int", nullable: false, default: null }, { name: "email", type: "text", nullable: true, default: null }],
+    schema.resolve(makeResp({
+      json: { schemas: {
+        public: { users: ["id", "email"], v_active: ["id"], companies: ["id"] },
+        auth: { sessions: ["sid"] },
+      } },
     }));
     await flush();
 
-    config = editor.setSQLConfig.mock.calls[editor.setSQLConfig.mock.calls.length - 1][0];
-    // Schema groups: public → [users, v_active, companies], auth → [sessions]
-    expect(config.schema.public).toContain("users");
-    expect(config.schema.auth).toContain("sessions");
-    // Qualified entries: schema.table → column names
-    expect(config.schema["public.users"]).toContain("id");
-    expect(config.schema["public.users"]).toContain("email");
-    expect(config.columnsByRelation["public.users"]).toContain("id");
-    expect(config.columnsByRelation.users).toContain("email");
+    config = editor.setSQLConfig.mock.calls.at(-1)[0];
+    expect(config.schema.public.users).toEqual(["id", "email"]);
+    expect(config.schema.auth.sessions).toEqual(["sid"]);
     expect(config.defaultSchema).toBe("public");
+    expect(callsTo("/api/schema")).toHaveLength(1);
   });
 
-  it("textarea mode does not fetch columns for autocomplete", async () => {
-    // window.cm6 is absent (deleted in beforeEach) — textarea path taken.
+  it("textarea mode does not fetch schema autocomplete metadata", async () => {
     setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
     await loadApp();
     await click("tab-sql");
-    // structure tab not opened → zero /columns calls expected
-    expect(callsTo("/columns")).toHaveLength(0);
+    expect(callsTo("/api/schema")).toHaveLength(0);
   });
 
-  it("swallows column fetch errors and still calls setSQLConfig with schema groups", async () => {
+  it("falls back to table names when schema loading fails", async () => {
     const { editor } = installCM6();
     setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
-    setRoute("GET /api/tables/*/columns", new Error("columns down"));
+    setRoute("GET /api/schema", new Error("schema down"));
     await loadApp();
     await click("tab-sql");
     await flush();
 
-    expect(editor.setSQLConfig).toHaveBeenCalled();
-    const config = editor.setSQLConfig.mock.calls[editor.setSQLConfig.mock.calls.length - 1][0];
-    expect(config.schema.public).toContain("users");       // schema group built sync
-    expect(config.schema["public.users"]).toBeUndefined(); // no column data (fetch failed)
+    const config = editor.setSQLConfig.mock.calls.at(-1)[0];
+    expect(config.schema.public.users).toEqual([]);
+    expect(config.schema.auth.sessions).toEqual([]);
   });
 
   it("uses the first schema as autocomplete default when public is absent", async () => {
     const { editor } = installCM6();
     setRoute("GET /api/tables", makeResp({ json: [{ schema: "auth", name: "sessions", type: "table", estRows: 1 }] }));
-    setRoute("GET /api/tables/*/columns", makeResp({ json: [{ name: "sid" }] }));
+    setRoute("GET /api/schema", makeResp({ json: { schemas: { auth: { sessions: ["sid"] } } } }));
     await loadApp();
     await click("tab-sql");
     await flush();
 
-    const config = editor.setSQLConfig.mock.calls[editor.setSQLConfig.mock.calls.length - 1][0];
+    const config = editor.setSQLConfig.mock.calls.at(-1)[0];
     expect(config.defaultSchema).toBe("auth");
   });
 
-  it("does not add bare column completions for duplicate table names", async () => {
+  it("keeps duplicate relation names scoped by schema", async () => {
     const { editor } = installCM6();
     setRoute("GET /api/tables", makeResp({ json: [
       { schema: "public", name: "users", type: "table", estRows: 1 },
       { schema: "auth", name: "users", type: "table", estRows: 1 },
     ] }));
-    setRoute("GET /api/tables/*/columns", makeResp({ json: [{ name: "id" }] }));
+    setRoute("GET /api/schema", makeResp({ json: { schemas: {
+      public: { users: ["id"] },
+      auth: { users: ["id"] },
+    } } }));
     await loadApp();
     await click("tab-sql");
     await flush();
 
-    const config = editor.setSQLConfig.mock.calls[editor.setSQLConfig.mock.calls.length - 1][0];
-    expect(config.columnsByRelation["public.users"]).toContain("id");
-    expect(config.columnsByRelation["auth.users"]).toContain("id");
-    expect(config.columnsByRelation.users).toBeUndefined();
+    const config = editor.setSQLConfig.mock.calls.at(-1)[0];
+    expect(config.schema.public.users).toEqual(["id"]);
+    expect(config.schema.auth.users).toEqual(["id"]);
   });
 
-  it("discards stale column fetches when db switches during in-flight requests", async () => {
+  it("discards stale schema catalogs after a database switch", async () => {
     const { editor } = installCM6();
-    const cols = deferred();
+    const firstSchema = deferred();
     setRoute("GET /api/databases", makeResp({ json: { defaultId: "db1", databases: [{ id: "db1", name: "A" }, { id: "db2", name: "B" }] } }));
     setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
-    setRoute("GET /api/tables/*/columns", () => cols.promise);
+    setRoute("GET /api/schema", (url) => String(url).includes("db=db1")
+      ? firstSchema.promise
+      : makeResp({ json: { schemas: {} } }));
     await loadApp();
     await click("tab-sql");
-    editor.setSQLConfig.mockClear();
 
-    // Switch db while column fetches are in-flight — cleanup fires → live = false.
     setRoute("GET /api/tables", makeResp({ json: [] }));
     await changeSelect($("database-select"), "db2");
+    await flush();
+    const callsAfterSwitch = editor.setSQLConfig.mock.calls.length;
 
-    // Resolve stale fetches; !live guards discard them.
-    cols.resolve(makeResp({ json: [] }));
+    firstSchema.resolve(makeResp({ json: { schemas: { public: { users: ["stale"] } } } }));
     await flush();
 
-    expect(editor.setSQLConfig).not.toHaveBeenCalled();
+    expect(editor.setSQLConfig.mock.calls).toHaveLength(callsAfterSwitch);
+    expect(editor.setSQLConfig.mock.calls.some(([config]) => config.schema?.public?.users?.includes("stale"))).toBe(false);
   });
+  it("formats through the CodeMirror adapter without running", async () => {
+    const { editor } = installCM6();
+    await loadApp();
+    await click("tab-sql");
+
+    await click("format-btn");
+
+    expect(editor.format).toHaveBeenCalledTimes(1);
+    expect(callsTo("/api/query")).toHaveLength(0);
+  });
+
+  it("maps structured PostgreSQL errors into editor diagnostics", async () => {
+    const { editor } = installCM6("select broken");
+    setRoute("POST /api/query", makeResp({ ok: false, status: 400, json: {
+      error: "syntax error",
+      sqlstate: "42601",
+      position: 3,
+    } }));
+    await loadApp();
+    await click("tab-sql");
+
+    await click("run-btn");
+
+    expect(editor.setDiagnostics).toHaveBeenCalledWith([{ from: 2, to: 3, severity: "error", message: "syntax error (SQLSTATE 42601)" }]);
+    expect(editor.focusRange).toHaveBeenCalledWith(2, 3);
+    expect(document.querySelector(".query-error").textContent).toContain("SQLSTATE 42601");
+  });
+
+  it("maps PostgreSQL character positions across non-BMP SQL", async () => {
+    const { editor } = installCM6("SELECT '😀', missing");
+    setRoute("POST /api/query", makeResp({ ok: false, status: 400, json: {
+      error: "missing column",
+      sqlstate: "42703",
+      position: 13,
+    } }));
+    await loadApp();
+    await click("tab-sql");
+
+    await click("run-btn");
+
+    expect(editor.setDiagnostics).toHaveBeenCalledWith([{ from: 13, to: 14, severity: "error", message: "missing column (SQLSTATE 42703)" }]);
+    expect(editor.focusRange).toHaveBeenCalledWith(13, 14);
+  });
+
+  it("ignores repeated keyboard runs while a CodeMirror request is active", async () => {
+    const { mount } = installCM6();
+    const pending = deferred();
+    setRoute("POST /api/query", () => pending.promise);
+    await loadApp();
+    await click("tab-sql");
+    const onRun = mount.mock.calls[0][2];
+
+    onRun();
+    onRun();
+    await flush();
+    expect(callsTo("/api/query")).toHaveLength(1);
+
+    pending.resolve(makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
+    await flush();
+  });
+
+  it("reads the full CodeMirror document when saving", async () => {
+    const { editor } = installCM6("select saved");
+    prompt.mockReturnValueOnce("Saved").mockReturnValueOnce("");
+    setRoute("POST /api/queries", makeResp({ json: { id: 12, name: "Saved" } }));
+    await loadApp();
+    await click("tab-sql");
+
+    await click("save-btn");
+
+    expect(editor.getValue).toHaveBeenCalled();
+    expect(postBody("/api/queries")).toEqual({ name: "Saved", description: "", sql: "select saved" });
+  });
+
 });
 
 describe("theme switcher", () => {

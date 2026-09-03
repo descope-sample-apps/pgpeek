@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/descope-sample-apps/pgpeek/internal/guard"
 )
 
 // TableInfo describes a browsable relation (table or view).
@@ -26,6 +28,81 @@ type ColumnInfo struct {
 	Type     string  `json:"type"`
 	Nullable bool    `json:"nullable"`
 	Default  *string `json:"default"`
+}
+
+// SchemaCatalog maps schema names to relation names and their ordered columns.
+type SchemaCatalog map[string]map[string][]string
+
+type schemaCatalogColumn struct {
+	Schema string `json:"schema"`
+	Table  string `json:"table"`
+	Column string `json:"column"`
+}
+
+// All editor completion metadata is loaded by one query. User-facing
+// relations only: skip system, temporary, and TOAST schemas. The outer join
+// preserves valid zero-column relations for table-name completion.
+const schemaCatalogSQL = `
+SELECT n.nspname, c.relname, COALESCE(a.attname, '')
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+LEFT JOIN pg_attribute a ON a.attrelid = c.oid
+  AND a.attnum > 0
+  AND NOT a.attisdropped
+WHERE c.relkind IN ('r','p','v','m')
+  AND n.nspname NOT IN ('pg_catalog','information_schema')
+  AND n.nspname NOT LIKE 'pg_toast%'
+  AND n.nspname NOT LIKE 'pg_temp_%'
+ORDER BY n.nspname, c.relname, a.attnum`
+
+// SchemaCatalog returns all browsable relation columns in a database. The
+// boolean reports that the catalog exceeded its response budget; callers must
+// reject truncated results rather than presenting incomplete completions.
+func (p *Pool) SchemaCatalog(ctx context.Context) (SchemaCatalog, bool, error) {
+	rows, err := p.pool.Query(ctx, schemaCatalogSQL)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+
+	columns := catalogCollector[schemaCatalogColumn]{items: make([]schemaCatalogColumn, 0, 128), bytes: 2, limit: p.catalogByteLimit()}
+	for rows.Next() {
+		var column schemaCatalogColumn
+		if err := rows.Scan(&column.Schema, &column.Table, &column.Column); err != nil {
+			return nil, false, err
+		}
+		if strings.HasPrefix(column.Schema, "pg_temp_") || guard.IsRestrictedRelation(column.Table) {
+			continue
+		}
+		keep, err := columns.add(column)
+		if err != nil {
+			return nil, false, err
+		}
+		if !keep {
+			break
+		}
+	}
+	if !columns.truncated {
+		if err := rows.Err(); err != nil {
+			return nil, false, err
+		}
+	}
+
+	catalog := make(SchemaCatalog)
+	for _, column := range columns.items {
+		tables := catalog[column.Schema]
+		if tables == nil {
+			tables = make(map[string][]string)
+			catalog[column.Schema] = tables
+		}
+		if _, ok := tables[column.Table]; !ok {
+			tables[column.Table] = []string{}
+		}
+		if column.Column != "" {
+			tables[column.Table] = append(tables[column.Table], column.Column)
+		}
+	}
+	return catalog, columns.truncated, nil
 }
 
 // User-facing relations only: skip system + TOAST schemas. relkind r/p = table,

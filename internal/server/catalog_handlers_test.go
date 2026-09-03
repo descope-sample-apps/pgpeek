@@ -40,6 +40,54 @@ func TestSafeFilename(t *testing.T) {
 	}
 }
 
+func TestSchema_OK(t *testing.T) {
+	q := &fakeQuerier{schema: db.SchemaCatalog{"public": {"users": {"id", "email"}}}}
+	ts, _ := newTestServer(t, q)
+	resp := mustGet(t, ts, "/api/schema")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	got := decode[struct {
+		Schemas db.SchemaCatalog `json:"schemas"`
+	}](t, resp)
+	if columns := got.Schemas["public"]["users"]; len(columns) != 2 || columns[0] != "id" || columns[1] != "email" {
+		t.Fatalf("schemas = %#v", got.Schemas)
+	}
+}
+
+func TestSchema_EmptyReturnsObject(t *testing.T) {
+	srv := serverWithStore(t, &fakeQuerier{}, &fakeStore{})
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/schema", nil))
+	if strings.TrimSpace(rec.Body.String()) != `{"schemas":{}}` {
+		t.Errorf("body = %q, want non-null schemas object", rec.Body.String())
+	}
+}
+
+func TestSchema_Error(t *testing.T) {
+	ts, _ := newTestServer(t, &fakeQuerier{catErr: errors.New("postgres://secret-host/hidden: boom")})
+	resp := mustGet(t, ts, "/api/schema")
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", resp.StatusCode)
+	}
+	got := decode[map[string]string](t, resp)
+	if got["error"] != "failed to read schema catalog" {
+		t.Fatalf("error = %q", got["error"])
+	}
+}
+
+func TestSchema_RejectsTruncatedResult(t *testing.T) {
+	ts, _ := newTestServer(t, &fakeQuerier{catTruncated: true})
+	resp := mustGet(t, ts, "/api/schema")
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", resp.StatusCode)
+	}
+	got := decode[map[string]string](t, resp)
+	if got["error"] != "schema catalog exceeds response limit" {
+		t.Fatalf("error = %q", got["error"])
+	}
+}
+
 func TestTables_OK(t *testing.T) {
 	q := &fakeQuerier{tables: []db.TableInfo{{Schema: "public", Name: "users", Type: "table", EstRows: 5}}}
 	ts, _ := newTestServer(t, q)

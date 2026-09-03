@@ -17,6 +17,33 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int{"rowCap": pool.RowCap()})
 }
 
+type schemaResponse struct {
+	Schemas db.SchemaCatalog `json:"schemas"`
+}
+
+func (s *Server) handleSchema(w http.ResponseWriter, r *http.Request) {
+	pool, ok := s.poolForRequest(w, r)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
+	defer cancel()
+	catalog, truncated, err := pool.SchemaCatalog(ctx)
+	if err != nil {
+		s.log.Error("read schema catalog", "err", err)
+		writeError(w, http.StatusInternalServerError, "failed to read schema catalog")
+		return
+	}
+	if truncated {
+		writeError(w, http.StatusInternalServerError, "schema catalog exceeds response limit")
+		return
+	}
+	if catalog == nil {
+		catalog = make(db.SchemaCatalog)
+	}
+	writeJSON(w, http.StatusOK, schemaResponse{Schemas: catalog})
+}
+
 func (s *Server) handleTables(w http.ResponseWriter, r *http.Request) {
 	pool, ok := s.poolForRequest(w, r)
 	if !ok {

@@ -277,7 +277,12 @@ describe("large schema rendering", () => {
     expect(html).toMatch(/\.partition-toggle:hover:not\(:disabled\)/s);
     expect(html).toMatch(/\.tbl\.partition:not\(\.active\)\s*\{[^}]*color:\s*var\(--muted\)/s);
     expect(html).toMatch(/\.results\s*\{[^}]*overflow:\s*auto/s);
+    expect(html).toMatch(/#sql-results\s*\{[^}]*display:\s*flex[^}]*overflow:\s*hidden/s);
+    expect(html).toMatch(/\.result-toolbar\s*\{[^}]*flex:\s*none/s);
+    expect(html).toMatch(/\.result-scroll\s*\{[^}]*overflow:\s*auto/s);
     expect(html).toMatch(/table\s*\{[^}]*min-width:\s*max-content/s);
+    expect(html).toMatch(/\.sql-results-view table\s*\{[^}]*border-collapse:\s*separate/s);
+    expect(html).toMatch(/\.sql-results-view thead th\s*\{[^}]*top:\s*-1px[^}]*box-shadow:/s);
     expect(html).toMatch(/\.cell-detail\s*>\s*summary/s);
     expect(html).toMatch(/\.cell-preview mark\s*\{[^}]*background:\s*var\(--match-bg\)/s);
     expect(html).toMatch(/@supports\s*\(background:\s*color-mix/s);

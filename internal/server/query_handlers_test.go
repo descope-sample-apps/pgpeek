@@ -240,16 +240,35 @@ func TestQuery_DBError(t *testing.T) {
 }
 
 func TestQuery_PostgresError(t *testing.T) {
-	q := &fakeQuerier{err: &pgconn.PgError{Message: `syntax error at or near "IS"`, Code: "42601"}}
+	q := &fakeQuerier{err: &pgconn.PgError{
+		Message:  `syntax error at or near "IS"`,
+		Code:     "42601",
+		Position: 35,
+		Detail:   "secret detail",
+		Where:    "internal function",
+	}}
 	ts, _ := newTestServer(t, q)
 	resp := post(t, ts, "/api/query", `{"sql":"SELECT * FROM access_keys tenants IS NULL"}`)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
-	got := decode[map[string]string](t, resp)
-	want := `syntax error at or near "IS" (SQLSTATE 42601)`
-	if got["error"] != want {
-		t.Fatalf("error = %q, want %q", got["error"], want)
+	got := decode[map[string]any](t, resp)
+	if got["error"] != `syntax error at or near "IS"` || got["sqlstate"] != "42601" || got["position"] != float64(35) {
+		t.Fatalf("response = %+v", got)
+	}
+	encoded := marshalString(t, got)
+	if strings.Contains(encoded, "secret detail") || strings.Contains(encoded, "internal function") || strings.Contains(encoded, "access_keys") {
+		t.Fatalf("response leaked unsafe PostgreSQL fields: %s", encoded)
+	}
+}
+
+func TestQuery_PostgresErrorOmitsAbsentMetadata(t *testing.T) {
+	q := &fakeQuerier{err: &pgconn.PgError{Message: "query canceled"}}
+	ts, _ := newTestServer(t, q)
+	resp := post(t, ts, "/api/query", `{"sql":"SELECT 1"}`)
+	got := decode[map[string]any](t, resp)
+	if got["error"] != "query canceled" || got["sqlstate"] != nil || got["position"] != nil {
+		t.Fatalf("response = %#v", got)
 	}
 }
 

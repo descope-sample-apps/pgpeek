@@ -152,8 +152,13 @@ function App() {
   }, []);
 
   const reloadSaved = useCallback(async () => {
-    try { setSaved(await getJSON("/api/queries")); }
-    catch (e) { setStatus({ text: "✗ failed to load saved queries: " + e.message, cls: "error" }); }
+    try {
+      setSaved(await getJSON("/api/queries"));
+      return true;
+    } catch (e) {
+      setStatus({ text: "✗ failed to load saved queries: " + e.message, cls: "error" });
+      return false;
+    }
   }, []);
 
   useEffect(() => {
@@ -379,7 +384,8 @@ function App() {
       <main id="main">
         <${Tabs} tab=${tab} setTab=${setTab} title=${title} />
         <${TableContext} table=${current} />
-        <div class=${"status " + status.cls} id="status" role="status">
+        <div class=${"status " + status.cls} id="status" role="status"
+          hidden=${status.text === "Ready." || status.scope === "sql"}>
           ${status.text}${status.warn ? html`<span class="warn"> ${status.warn}</span>` : ""}
         </div>
         <section class="panel" id="panel-data" role="tabpanel" aria-labelledby="tab-data" hidden=${tab !== "data"}>

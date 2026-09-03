@@ -13,7 +13,7 @@
     "themeCount": 20,
     "safetyLayerCount": 3,
     "documentedConfigCount": 23,
-    "httpRouteCount": 25,
+    "httpRouteCount": 26,
     "defaultRowCap": 1000,
     "defaultStatementTimeout": "30s"
   },
@@ -73,7 +73,7 @@
     ]
   },
   "httpRoutes": {
-    "count": 25,
+    "count": 26,
     "items": [
       {
         "method": "GET",
@@ -101,9 +101,14 @@
         "description": "Return server limits needed by the UI, including rowCap."
       },
       {
+        "method": "GET",
+        "path": "/api/schema",
+        "description": "Return the nested schema, relation, and column catalog used by SQL autocomplete."
+      },
+      {
         "method": "POST",
         "path": "/api/query",
-        "description": "Preview one read-only SQL statement and return capped JSON rows."
+        "description": "Run one read-only SQL statement and return capped JSON rows."
       },
       {
         "method": "POST",

@@ -92,6 +92,11 @@ func (q *selectedQuerier) Tables(context.Context) ([]db.TableInfo, bool, error) 
 	return []db.TableInfo{}, false, nil
 }
 
+func (q *selectedQuerier) SchemaCatalog(context.Context) (db.SchemaCatalog, bool, error) {
+	q.used = true
+	return db.SchemaCatalog{}, false, q.err
+}
+
 func (q *selectedQuerier) Columns(context.Context, string, string) ([]db.ColumnInfo, bool, error) {
 	q.used = true
 	return []db.ColumnInfo{}, false, nil
@@ -191,6 +196,7 @@ func TestDatabaseSelection_uses_selected_pool_for_db_bound_endpoints(t *testing.
 		{name: "query cell", method: http.MethodPost, path: "/api/query/cell?db=analytics", body: `{"sql":"SELECT 1","row":0,"column":0}`},
 		{name: "export", method: http.MethodPost, path: "/api/export?db=analytics", body: `{"sql":"SELECT 1"}`},
 		{name: "tables", method: http.MethodGet, path: "/api/tables?db=analytics"},
+		{name: "schema", method: http.MethodGet, path: "/api/schema?db=analytics"},
 		{name: "columns", method: http.MethodGet, path: "/api/tables/public/users/columns?db=analytics"},
 		{name: "fks", method: http.MethodGet, path: "/api/tables/public/users/fks?db=analytics"},
 		{name: "data", method: http.MethodGet, path: "/api/tables/public/users/data?db=analytics"},
@@ -259,14 +265,15 @@ func TestDatabaseSelection_unknown_db_returns_404(t *testing.T) {
 		pools:     map[string]Querier{"primary": primary},
 	})
 
-	resp := mustGet(t, ts, "/api/tables?db=missing")
-	got := decode[map[string]string](t, resp)
-
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", resp.StatusCode)
-	}
-	if got["error"] == "" || strings.Contains(got["error"], "postgres://") {
-		t.Fatalf("bad error body: %+v", got)
+	for _, path := range []string{"/api/tables?db=missing", "/api/schema?db=missing"} {
+		resp := mustGet(t, ts, path)
+		got := decode[map[string]string](t, resp)
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("%s status = %d, want 404", path, resp.StatusCode)
+		}
+		if got["error"] == "" || strings.Contains(got["error"], "postgres://") {
+			t.Fatalf("%s bad error body: %+v", path, got)
+		}
 	}
 	if primary.used {
 		t.Fatal("unknown db should not use default pool")

@@ -29,6 +29,7 @@ type fakeQuerier struct {
 	exportCalled bool
 	lastSQL      string
 	tables       []db.TableInfo
+	schema       db.SchemaCatalog
 	cols         []db.ColumnInfo
 	fks          []db.ForeignKey
 	catErr       error
@@ -82,6 +83,10 @@ func (f *fakeQuerier) QueryCell(_ context.Context, sql string, row, column int) 
 
 func (f *fakeQuerier) Tables(context.Context) ([]db.TableInfo, bool, error) {
 	return f.tables, f.catTruncated, f.catErr
+}
+
+func (f *fakeQuerier) SchemaCatalog(context.Context) (db.SchemaCatalog, bool, error) {
+	return f.schema, f.catTruncated, f.catErr
 }
 
 func (f *fakeQuerier) Columns(_ context.Context, schema, table string) ([]db.ColumnInfo, bool, error) {

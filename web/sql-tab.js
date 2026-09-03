@@ -1,52 +1,108 @@
 // allow: SIZE_OK — one editor action-generation state machine prevents stale async results.
 import { html, useState, useEffect, useRef, useCallback } from "./vendor/preact-htm.js";
-import { dbUrl, getJSON, tablePath } from "./api.js";
-import { interceptRun, runEasterEgg, EXPLAIN_JOKE } from "./easter-eggs.js";
+import { dbUrl, getJSON } from "./api.js";
+import { interceptRun, runEasterEgg } from "./easter-eggs.js";
 import { countQuery, exportQuery } from "./sql-actions.js";
-import { DEFAULT_SQL, queryStatusText, responseError, SqlResults } from "./sql-results.js";
+import { DEFAULT_SQL, queryStatusText, SqlResults, ResultMeta, ResultViews } from "./sql-results.js";
 
 const RUNNING_TIME_DELAY_SECONDS = 10;
+const SPLIT_MIN_EDITOR = 120;
+const SPLIT_STORAGE_KEY = "pgpeek.sql.split";
 
-export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, initialSQL, onStateChange }) {
+/** One-based `position` from the server maps back into the editor via the runnable offset. */
+function editorOffset(runnable, position) {
+  const relative = Array.from(runnable.sql).slice(0, position - 1).join("").length;
+  return Math.min(runnable.to, runnable.from + relative);
+}
+
+function readSplitPreference() {
+  try {
+    const raw = Number.parseFloat(globalThis.localStorage?.getItem(SPLIT_STORAGE_KEY));
+    return Number.isFinite(raw) ? Math.max(12, Math.min(88, raw)) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function SqlTab({ active, saved, reloadSaved, dbId, status = { text: "Ready.", cls: "ok" }, setStatus, tables, initialSQL, onStateChange }) {
   const wrapRef = useRef();
   const taRef = useRef();
   const editorRef = useRef();
   const [result, setResult] = useState(null);
   const [resultKey, setResultKey] = useState(0);
   const [lastSQL, setLastSQL] = useState("");
+  const [stale, setStale] = useState(false);
   const [selected, setSelected] = useState("");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [view, setView] = useState("table");
+  const [editorPx, setEditorPx] = useState(() => readSplitPreference() ?? 40);
   const runningRef = useRef(false);
   const exportingRef = useRef(false);
   const requestRef = useRef(null);
-  const runningLabelRef = useRef("Previewing");
+  const runningLabelRef = useRef("Running");
   const actionRef = useRef(0);
   const initialSQLRef = useRef(initialSQL);
-  const dbRef = useRef(dbId);
+  const splitRef = useRef(null);
+  const resultRef = useRef(null);
+  const schemaVersionRef = useRef(0);
+  const schemaCacheRef = useRef(new Map());
+  resultRef.current = result;
 
   const invalidate = () => {
     requestRef.current?.abort(); requestRef.current = null;
     actionRef.current += 1;
     if (!exportingRef.current) { runningRef.current = false; setRunning(false); }
-    setResult(null); setLastSQL(""); setError("");
+    setError("");
+    // Editing clears in-flight work and marks completed results stale, but does
+    // not clear completed rows. lastSQL attribution is preserved.
+    setStale(Boolean(resultRef.current));
   };
-  const onEdit = (value) => { invalidate(); onStateChange(value); };
-  if (dbRef.current !== dbId) {
-    dbRef.current = dbId; actionRef.current += 1;
-    if (!exportingRef.current) runningRef.current = false;
-  }
+
+  const clearResults = () => {
+    requestRef.current?.abort(); requestRef.current = null;
+    actionRef.current += 1;
+    if (!exportingRef.current) { runningRef.current = false; setRunning(false); }
+    setResult(null); setLastSQL(""); setError(""); setStale(false);
+  };
+
+  const onEdit = (value) => {
+    if (editorRef.current) {
+      editorRef.current.clearDiagnostics?.();
+    }
+    invalidate();
+    onStateChange(value);
+  };
+
 
   const getSQL = () => (editorRef.current ? editorRef.current.getValue() : taRef.current.value).trim();
   const setSQL = (v) => {
-    if (editorRef.current) editorRef.current.setValue(v);
+    if (editorRef.current) { editorRef.current.setValue(v); editorRef.current.clearDiagnostics?.(); }
     else { taRef.current.value = v; onEdit(v); }
   };
 
+  const runnableSQL = () => {
+    if (editorRef.current) return editorRef.current.getRunnable();
+
+    const ta = taRef.current;
+    if (ta.selectionStart !== ta.selectionEnd) {
+      const selected = ta.value.slice(ta.selectionStart, ta.selectionEnd);
+      const leading = selected.length - selected.trimStart().length;
+      const sql = selected.trim();
+      if (!sql) return null;
+      return { sql, from: ta.selectionStart + leading, to: ta.selectionEnd - (selected.length - selected.trimEnd().length), kind: "selection" };
+    }
+    const leading = ta.value.length - ta.value.trimStart().length;
+    const sql = ta.value.trim();
+    return sql ? { sql, from: leading, to: leading + sql.length, kind: "document" } : null;
+  };
+
   const run = useCallback(async () => {
-    const sql = getSQL();
-    if (!sql) return;
     if (runningRef.current) return;
+    const runnable = runnableSQL();
+    const sql = runnable ? runnable.sql.trim() : "";
+    if (!sql) return;
     // Easter eggs: magic queries, DROP rewrite, VACUUM/ANALYZE whisper.
     const eg = interceptRun(sql);
     if (eg) {
@@ -56,9 +112,11 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
     const action = actionRef.current + 1;
     actionRef.current = action;
     const controller = new AbortController(); requestRef.current = controller;
-    runningLabelRef.current = "Previewing"; runningRef.current = true; setRunning(true);
+    runningLabelRef.current = "Running"; runningRef.current = true; setRunning(true);
     setError("");
-    setStatus({ text: "Previewing…", cls: "ok" });
+    if (resultRef.current) setStale(true);
+    setResultKey(action);
+    setStatus({ text: "Running…", cls: "ok" });
     try {
       const r = await fetch(dbUrl("/api/query", dbId), {
         method: "POST",
@@ -67,16 +125,25 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
         signal: controller.signal,
       });
       if (!r.ok) {
-        const message = await responseError(r, "query failed");
+        const body = await r.json().catch(() => null);
+        const message = (body && body.error) || r.statusText || "query failed";
+        const displayMessage = body?.sqlstate ? `${message} (SQLSTATE ${body.sqlstate})` : message;
         if (action !== actionRef.current) return;
-        setError(message);
+        setError(displayMessage);
+        if (body && typeof body.position === "number" && runnable) {
+          const offset = editorOffset(runnable, body.position);
+          if (editorRef.current?.setDiagnostics) {
+            editorRef.current.setDiagnostics([{ from: offset, to: Math.min(runnable.to, offset + 1), severity: "error", message: displayMessage }]);
+            editorRef.current.focusRange?.(offset, Math.min(runnable.to, offset + 1));
+          }
+        }
         setStatus({ text: "✗ " + message, cls: "error" });
-        setResult(null);
+        setResult(null); setLastSQL(""); setStale(false);
         return;
       }
       const d = await r.json();
       if (action !== actionRef.current) return;
-      setLastSQL(sql); setResult(d); setResultKey(action);
+      setLastSQL(sql); setResult(d); setResultKey(action); setStale(false); setView("table");
       const base = queryStatusText(d.rowCount, d.elapsedMs);
       const warnings = [];
       if (d.truncated) warnings.push("· capped (more rows available; add LIMIT or refine)");
@@ -86,6 +153,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
       if (e.name === "AbortError") return;
       if (action === actionRef.current) {
         setError(e.message);
+        setResult(null); setLastSQL(""); setStale(false);
         setStatus({ text: "✗ " + e.message, cls: "error" });
       }
     } finally {
@@ -94,9 +162,20 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
     }
   }, [dbId]);
 
+  const cancel = useCallback(() => {
+    requestRef.current?.abort();
+    requestRef.current = null;
+    actionRef.current += 1;
+    runningRef.current = false; setRunning(false);
+    setStatus({ text: "Cancelled.", cls: "ok" });
+  }, []);
+
   const runRef = useRef(run);
   useEffect(() => { runRef.current = run; }, [run]);
-  useEffect(() => { invalidate(); return () => requestRef.current?.abort(); }, [dbId]);
+  useEffect(() => {
+    clearResults();
+    return () => requestRef.current?.abort();
+  }, [dbId]);
 
   useEffect(() => {
     if (!running) return;
@@ -139,57 +218,62 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
     const value = initialSQL ?? DEFAULT_SQL;
     const current = editorRef.current ? editorRef.current.getValue() : taRef.current.value;
     if (current === value) return;
-    invalidate();
-    if (editorRef.current && editorRef.current.getValue() !== value) editorRef.current.setValue(value, false);
+    // URL-restored SQL replacement fully clears results.
+    clearResults();
+    if (editorRef.current && editorRef.current.getValue() !== value) { editorRef.current.setValue(value, false); editorRef.current.clearDiagnostics?.(); }
     if (taRef.current && taRef.current.value !== value) taRef.current.value = value;
   }, [initialSQL]);
 
-  // CM6 autocomplete: fetch columns for each table and wire up schema config.
-  // Textarea mode skips this entirely (no window.cm6 → no column fetches).
+  // Schema fetch lifecycle: once per database activation, abort on switch.
+  // No per-table column fan-out. On failure degrade to table-name-only nested schema.
   useEffect(() => {
-    if (!active) return;
-    if (!window.cm6) return;
-    if (!editorRef.current?.setSQLConfig) return;
-    if (!tables || tables.length === 0) {
-      editorRef.current.setSQLConfig({ schema: {} });
+    if (!active || !editorRef.current?.setSQLConfig) return;
+
+    const fallback = {};
+    for (const table of tables) {
+      if (!fallback[table.schema]) fallback[table.schema] = {};
+      fallback[table.schema][table.name] = [];
+    }
+    const defaultSchema = fallback.public ? "public" : Object.keys(fallback)[0];
+    editorRef.current.setSQLConfig({ schema: fallback, defaultSchema });
+
+    const cacheKey = dbId || "";
+    const cached = schemaCacheRef.current.get(cacheKey);
+    if (cached) {
+      editorRef.current.setSQLConfig(cached);
       return;
     }
-    let live = true; const controller = new AbortController(), queue = tables.values();
-    // Build schema → table-names entries up front (sync).
-    const schema = {}, tableNameCounts = {};
-    for (const tbl of tables) {
-      if (!schema[tbl.schema]) schema[tbl.schema] = [];
-      schema[tbl.schema].push(tbl.name);
-      tableNameCounts[tbl.name] = (tableNameCounts[tbl.name] || 0) + 1;
-    }
-    const columnsByRelation = {}, baseConfig = { schema, columnsByRelation, defaultSchema: schema.public ? "public" : tables[0].schema };
-    editorRef.current.setSQLConfig(baseConfig);
-    // Fetch columns async; populate qualified-table → column-names entries.
-    (async () => {
-      await Promise.all(Array.from({ length: Math.min(6, tables.length) }, async () => {
-        for (const tbl of queue) {
-          if (!live) return;
-          try {
-            const cols = await getJSON(tablePath(tbl) + "/columns", dbId, { signal: controller.signal });
-            if (!live) return;
-            const names = cols.map((c) => c.name), qualified = tbl.schema + "." + tbl.name;
-            schema[qualified] = names;
-            columnsByRelation[qualified] = names;
-            if (tableNameCounts[tbl.name] === 1) columnsByRelation[tbl.name] = names;
-          } catch { /* partial autocomplete ok */ }
+
+    let live = true;
+    const controller = new AbortController();
+    const version = ++schemaVersionRef.current;
+    getJSON("/api/schema", dbId, { signal: controller.signal })
+      .then((data) => {
+        if (!live || version !== schemaVersionRef.current) return;
+        const schema = Object.keys(data.schemas).length ? data.schemas : fallback;
+        const config = {
+          schema,
+          defaultSchema: schema.public ? "public" : Object.keys(schema)[0],
+        };
+        schemaCacheRef.current.set(cacheKey, config);
+        editorRef.current?.setSQLConfig(config);
+      })
+      .catch((error) => {
+        if (error?.name !== "AbortError" && live && version === schemaVersionRef.current) {
+          editorRef.current?.setSQLConfig({ schema: fallback, defaultSchema });
         }
-      }));
-      if (!live) return;
-      editorRef.current?.setSQLConfig(baseConfig);
-    })();
-    return () => { live = false; controller.abort(); };
+      });
+    return () => {
+      live = false;
+      controller.abort();
+    };
   }, [active, tables, dbId]);
 
   // CodeMirror was created while hidden (zero size); refresh when shown.
-  useEffect(() => { if (active && editorRef.current) editorRef.current.refresh(); }, [active]);
+  useEffect(() => { if (active && editorRef.current) editorRef.current.refresh(); }, [active, editorPx]);
 
   const countRows = async () => {
-    const sql = getSQL();
+    const sql = runnableSQL()?.sql || "";
     if (!sql || runningRef.current) return;
     const action = actionRef.current + 1;
     actionRef.current = action;
@@ -215,14 +299,15 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
   };
 
   const exportCSV = () => {
-    const sql = getSQL();
+    // Export is always bound to the SQL that produced the visible results (lastSQL).
+    const sql = lastSQL || getSQL();
     if (!sql || runningRef.current) return;
-    exportingRef.current = true;
+    exportingRef.current = true; setExporting(true);
     runningLabelRef.current = "Exporting"; runningRef.current = true; setRunning(true);
     setError("");
     setStatus({ text: "Preparing export…", cls: "ok" });
     exportQuery(sql, dbId, (message) => {
-      exportingRef.current = false;
+      exportingRef.current = false; setExporting(false);
       runningRef.current = false; setRunning(false);
       if (message) {
         setError(message);
@@ -233,11 +318,15 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
     });
   };
 
+  const formatSQL = async () => {
+    await editorRef.current?.format?.();
+  };
+
   const onPick = (e) => {
     const id = e.target.value; setSelected(id);
     const q = saved.find((x) => String(x.id) === id);
     if (q) {
-      setSQL(q.sql); setError(""); setStatus({ text: "Loaded \u201c" + q.name + "\u201d. Press Preview.", cls: "ok" });
+      setSQL(q.sql); setError(""); setStatus({ text: "Loaded \u201c" + q.name + "\u201d. Press Run.", cls: "ok" });
     }
   };
   const selectedQ = saved.find((x) => String(x.id) === selected);
@@ -289,28 +378,94 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
   const presets = saved.filter((q) => q.isPreset);
   const mine = saved.filter((q) => !q.isPreset);
 
+  // Pointer drag splitter.
+  const startDrag = (e) => {
+    if (e.type === "pointerdown" && e.button !== 0) return;
+    e.preventDefault();
+    const pane = splitRef.current;
+    const rect = pane.getBoundingClientRect();
+    const onMove = (ev) => {
+      const rel = Math.max(0, Math.min(100, ((ev.clientY - rect.top) / rect.height) * 100));
+      setEditorPx(clampSplit(rel));
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  const clampSplit = (v) => Math.max(12, Math.min(88, v));
+
+  const onSplitKey = (e) => {
+    const STEP = 5;
+    if (e.key === "ArrowUp") { e.preventDefault(); setEditorPx((p) => clampSplit(p - STEP)); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); setEditorPx((p) => clampSplit(p + STEP)); }
+    else if (e.key === "Home") { e.preventDefault(); setEditorPx(50); }
+  };
+
+  useEffect(() => {
+    try { globalThis.localStorage?.setItem(SPLIT_STORAGE_KEY, String(editorPx)); } catch {}
+  }, [editorPx]);
+
+  const editorPct = `${editorPx}%`;
+  const queryRunning = running && !exporting;
+  const showResultViews = Boolean(result?.columns.length && result?.rows.length);
+  const resultStatus = result ? queryStatusText(result.rowCount, result.elapsedMs) : "";
+  const showLocalStatus = Boolean(status.text !== "Ready."
+    && !error
+    && !status.text.startsWith("Running")
+    && status.text !== resultStatus);
+  const showResultToolbar = Boolean(result || showLocalStatus);
+
   return html`
-    <div class="editor-wrap" ref=${wrapRef}></div>
-    <div class="toolbar">
-      <button class="primary" id="run-btn" disabled=${running} onClick=${run}>Preview</button>
-      <button class="ghost" id="count-btn" disabled=${running} onClick=${countRows}>Count</button>
-      <button class="action secondary" id="sql-export-btn"
-        disabled=${running}
-        onClick=${exportCSV}>Export .csv.gz</button>
-      <select id="presets" title="Saved & preset queries" value=${selected} onChange=${onPick}>
-        <option value="">Saved queries…</option>
-        ${presets.length ? html`<optgroup label="Presets">${presets.map((q) =>
-          html`<option key=${q.id} value=${q.id}>${q.name}</option>`)}</optgroup>` : ""}
-        ${mine.length ? html`<optgroup label="Saved">${mine.map((q) =>
-          html`<option key=${q.id} value=${q.id}>${q.name}</option>`)}</optgroup>` : ""}
-      </select>
-      <button class="ghost" id="save-btn" disabled=${running} onClick=${onSave}>Save</button>
-      <button class="ghost" id="delete-btn"
-        disabled=${running || !(selectedQ && !selectedQ.isPreset)} onClick=${onDelete}>Delete</button>
-      <span class="hint">Ctrl/Cmd\u00a0+\u00a0Enter to preview · single SELECT/WITH only · ${EXPLAIN_JOKE}</span>
-    </div>
-    ${error ? html`<div class="query-error" role="alert" aria-live="assertive">${error}</div>` : ""}
-    <div class="results" id="sql-results">
-      <${SqlResults} result=${result} resultKey=${resultKey} sql=${lastSQL} dbId=${dbId} />
+    <div class="sql-pane" ref=${splitRef}>
+      <div class="editor-wrap" style=${{ flexBasis: editorPct, minHeight: SPLIT_MIN_EDITOR + "px" }} ref=${wrapRef}></div>
+      <div class="splitter" id="sql-splitter" role="separator" tabindex=${"0"} aria-orientation="horizontal"
+        aria-label="Resize SQL editor and results"
+        aria-valuemin=${12} aria-valuemax=${88} aria-valuenow=${editorPx}
+        onPointerDown=${startDrag} onKeyDown=${onSplitKey}
+        title="Drag or use Arrow keys to resize">
+        <span class="splitter-grip" aria-hidden="true"></span>
+      </div>
+      <div class="toolbar">
+        <button class="primary" id="run-btn" disabled=${exporting} aria-keyshortcuts="Control+Enter Meta+Enter"
+          title=${exporting ? "Wait for the export to finish" : queryRunning ? "Cancel the running query" : "Run the selected statement or selection (Ctrl/Cmd + Enter)"}
+          onClick=${queryRunning ? cancel : run}>${queryRunning ? "Cancel" : "Run"}</button>
+        <button class="ghost" id="format-btn" disabled=${running} title="Format SQL (Shift-Alt-F)" onClick=${formatSQL}>Format</button>
+        <button class="ghost" id="count-btn" disabled=${running} onClick=${countRows}>Count</button>
+        <button class="action secondary" id="sql-export-btn"
+          disabled=${running}
+          onClick=${exportCSV}>Export .csv.gz</button>
+        <details class="saved-details" aria-label="Saved and preset queries">
+          <summary>Saved</summary>
+          <div class="saved-controls">
+            <select id="presets" title="Saved & preset queries" value=${selected} onChange=${onPick}>
+              <option value="">Saved queries…</option>
+              ${presets.length ? html`<optgroup label="Presets">${presets.map((q) =>
+                html`<option key=${q.id} value=${q.id}>${q.name}</option>`)}</optgroup>` : ""}
+              ${mine.length ? html`<optgroup label="Saved">${mine.map((q) =>
+                html`<option key=${q.id} value=${q.id}>${q.name}</option>`)}</optgroup>` : ""}
+            </select>
+            <button class="ghost" id="save-btn" disabled=${running} onClick=${onSave}>Save</button>
+            <button class="ghost" id="delete-btn"
+              disabled=${running || !(selectedQ && !selectedQ.isPreset)} onClick=${onDelete}>Delete</button>
+          </div>
+        </details>
+      </div>
+      <div class="results" id="sql-results">
+        ${error
+          ? html`<div class="query-error" role="alert" aria-live="assertive">${error}</div>`
+          : html`${showResultToolbar ? html`<div class="result-toolbar">
+                <${ResultMeta} result=${result} />
+                ${showLocalStatus ? html`<div class=${"sql-notice " + status.cls} id="sql-status" role="status">${status.text}</div>` : ""}
+                ${stale ? html`<div class="result-stale" role="status" aria-live="polite">Showing results from the previous run.</div>` : ""}
+                ${showResultViews ? html`<${ResultViews} view=${view} onView=${setView} />` : ""}
+              </div>` : ""}
+              <div class="result-scroll" role="region" tabindex="0" aria-label="Query results">
+                <${SqlResults} result=${result} resultKey=${resultKey} sql=${lastSQL} dbId=${dbId} view=${view} />
+              </div>`}
+      </div>
     </div>`;
 }

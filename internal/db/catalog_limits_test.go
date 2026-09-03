@@ -16,6 +16,11 @@ func TestCatalogQueries_ReportEncodingError(t *testing.T) {
 		name string
 		run  func() error
 	}{
+		{"schema", func() error {
+			p := &Pool{pool: &fakePool{rows: &fakeRows{data: [][]any{{"public", "users", "id"}}}}, rowCap: 10}
+			_, _, err := p.SchemaCatalog(context.Background())
+			return err
+		}},
 		{"tables", func() error {
 			p := &Pool{pool: &fakePool{rows: &fakeRows{data: [][]any{{"public", "users", "table", int64(1), false, "", ""}}}}, rowCap: 10}
 			_, _, err := p.Tables(context.Background())

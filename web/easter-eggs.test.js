@@ -9,9 +9,19 @@ import {
   SHUNI_SCHEMA, SHUNI_VIEW, SHUNI_COLUMNS, EXPLAIN_JOKE,
 } from "./easter-eggs.js";
 
+function memoryStorage() {
+  const values = new Map();
+  return {
+    clear: () => values.clear(),
+    getItem: (key) => values.has(key) ? values.get(key) : null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key),
+  };
+}
+
 beforeEach(() => {
-  localStorage.clear();
-  sessionStorage.clear();
+  vi.stubGlobal("localStorage", memoryStorage());
+  vi.stubGlobal("sessionStorage", memoryStorage());
 });
 
 describe("konami code", () => {

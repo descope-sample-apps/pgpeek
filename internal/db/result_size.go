@@ -23,7 +23,7 @@ func jsonStringBytes(value string) int {
 		r, width := utf8.DecodeRuneInString(value)
 		value = value[width:]
 		if r == utf8.RuneError && width == 1 {
-			size += 6
+			size += utf8.RuneLen(utf8.RuneError)
 			continue
 		}
 		switch r {

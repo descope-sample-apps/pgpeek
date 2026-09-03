@@ -379,7 +379,8 @@ function App() {
       <main id="main">
         <${Tabs} tab=${tab} setTab=${setTab} title=${title} />
         <${TableContext} table=${current} />
-        <div class=${"status " + status.cls} id="status" role="status">
+        <div class=${"status " + status.cls} id="status" role="status"
+          hidden=${status.text === "Ready." || tab === "sql"}>
           ${status.text}${status.warn ? html`<span class="warn"> ${status.warn}</span>` : ""}
         </div>
         <section class="panel" id="panel-data" role="tabpanel" aria-labelledby="tab-data" hidden=${tab !== "data"}>
@@ -402,7 +403,7 @@ function App() {
         </section>
         <section class="panel" id="panel-sql" role="tabpanel" aria-labelledby="tab-sql" hidden=${tab !== "sql"}>
           <${SqlTab} active=${tab === "sql"} saved=${saved} reloadSaved=${reloadSaved}
-            dbId=${currentDb} setStatus=${setStatus} tables=${tables}
+            dbId=${currentDb} status=${status} setStatus=${setStatus} tables=${tables}
             initialSQL=${sql} onStateChange=${onSqlStateChange} />
         </section>
       </main>

@@ -1,9 +1,8 @@
 # pgpeek
 
 > A minimal, read-only, team-shared Postgres browser. It pages through tables,
-> previews and counts single read-only SQL statements, saves queries, and exports
-> gzip-compressed CSV. It ships
-> as one static Go binary.
+> runs and counts single read-only SQL statements, saves queries, and exports
+> gzip-compressed CSV. It ships as one static Go binary.
 
 status: ok
 canonical: https://descope-sample-apps.github.io/pgpeek/
@@ -17,7 +16,7 @@ full-context: https://descope-sample-apps.github.io/pgpeek/llms-full.txt
 - 20 built-in UI themes.
 - 3 read-only enforcement layers.
 - 23 configuration rows in the website reference.
-- 25 documented HTTP routes, including MCP, OAuth metadata, both probes, and the UI.
+- 26 documented HTTP routes, including MCP, OAuth metadata, both probes, and the UI.
 - Default row cap: 1000 (`PGPEEK_ROW_CAP`).
 - Direct query exports are row-uncapped with a 512 MiB raw CSV limit.
 - Default statement timeout: 30s (`PGPEEK_STATEMENT_TIMEOUT`).
@@ -39,8 +38,8 @@ go run .
 # open http://localhost:8080
 ```
 
-Use a Postgres role with no write privileges. `Ctrl`/`Cmd` + `Enter` previews the
-current SQL query.
+Use a Postgres role with no write privileges. `Ctrl`/`Cmd` + `Enter` runs the
+selection or SQL statement at the cursor.
 
 Enable Descope OAuth by setting `DESCOPE_MCP_SERVER_WELL_KNOWN_URL` (or
 `DESCOPE_CONFIG_URL`), `PGPEEK_MCP_SERVER_URL`, and
@@ -60,6 +59,7 @@ Do not expose pgpeek publicly without SSO or another authentication proxy.
 
 - API errors are JSON: `{"error":"<message>"}` with an appropriate non-2xx status.
 - An empty saved-query list is the explicit JSON array `[]`.
+- `GET /api/schema` returns the nested schema/table/column catalog used by SQL autocomplete.
 - `GET /healthz` returns JSON with `status`, semantic `version`, Git `commit`,
   and `buildDate` when the process is alive.
 - `GET /readyz` returns `ready` when Postgres is reachable; otherwise it returns

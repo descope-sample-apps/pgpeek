@@ -890,10 +890,10 @@ kbd {
           <span class="feature__num">06</span>
           <h3 class="feature__title">A SQL scratchpad with memory</h3>
           <ul class="feature__bullets">
-            <li>CodeMirror editor (pgsql mode) with table/field autocomplete; gracefully degrades to a textarea.</li>
-            <li>Single <code>SELECT</code> / <code>WITH</code> only — enforced.</li>
-            <li>Saved &amp; preset queries, grouped; CSV export; capped-result warning.</li>
-            <li>Query errors appear inline under the editor, without replacing the last good result.</li>
+            <li>Resizable CodeMirror console with per-statement play controls, selection/cursor execution, and PostgreSQL formatting.</li>
+            <li>Nested schema, table, column, and alias autocomplete; gracefully degrades to a textarea.</li>
+            <li>Single read-only statement per run, with inline PostgreSQL diagnostics.</li>
+            <li>Table/JSON results, saved queries, exact counts, and gzip CSV export.</li>
             <li><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd> runs.</li>
           </ul>
         </div>
@@ -1306,6 +1306,7 @@ docker build -t pgpeek .   <span class="tok-comment"># or the hand-written Docke
           <tr><td class="td-path"><span class="method-badge method-post">POST</span> /api/query?db=&lt;id&gt;</td><td>Run a query → JSON <code>{columns, rows, …}</code>.</td></tr>
           <tr><td class="td-path"><span class="method-badge method-post">POST</span> /api/export?db=&lt;id&gt;</td><td>Run a query → CSV download.</td></tr>
           <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/meta?db=&lt;id&gt;</td><td>Server limits the UI needs (<code>{rowCap}</code>).</td></tr>
+          <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/schema?db=&lt;id&gt;</td><td>Nested schema/table/column catalog for SQL autocomplete.</td></tr>
           <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/tables?db=&lt;id&gt;</td><td>List browsable tables/views (+ row estimate).</td></tr>
           <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/tables/{schema}/{table}/columns?db=&lt;id&gt;</td><td>Column structure.</td></tr>
           <tr><td class="td-path"><span class="method-badge method-get">GET</span> /api/tables/{schema}/{table}/fks?db=&lt;id&gt;</td><td>Single-column foreign keys (for click-through).</td></tr>

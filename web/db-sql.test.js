@@ -107,9 +107,12 @@ describe("API db params — POST requests", () => {
     const csrf = new FormData(form).get("csrf");
     await changeSelect($("database-select"), "pg2");
     expect($("sql-export-btn").disabled).toBe(true);
+    expect($("run-btn").disabled).toBe(true);
+    expect($("run-btn").textContent).toBe("Run");
     document.cookie = `pgpeek_export_done_${csrf}=1; Path=/; SameSite=Strict`;
     await new Promise((resolve) => setTimeout(resolve, 120));
     expect($("sql-export-btn").disabled).toBe(false);
+    expect($("run-btn").disabled).toBe(false);
   });
 
   it("discards an in-flight query result when SQL is edited", async () => {
@@ -158,7 +161,7 @@ describe("API db params — POST requests", () => {
 
   it("runs CodeMirror shortcut against the latest selected database", async () => {
     let value = "select cm";
-    const editor = { getValue: vi.fn(() => value), setValue: vi.fn((v) => { value = v; }), refresh: vi.fn() };
+    const editor = { getValue: vi.fn(() => value), getRunnable: vi.fn(() => ({ sql: value, from: 0, to: value.length, kind: "document" })), setValue: vi.fn((v) => { value = v; }), refresh: vi.fn(), setSQLConfig: vi.fn(), clearDiagnostics: vi.fn() };
     const mount = vi.fn(() => editor);
     window.cm6 = { mount };
     globalThis.cm6 = window.cm6;
@@ -189,7 +192,9 @@ describe("API db params — POST requests", () => {
     const alert = document.querySelector(".query-error");
     expect(alert.textContent).toContain(`syntax error at or near "IS"`);
     expect($("status").textContent).toContain("SQLSTATE 42601");
-    expect($("sql-results").textContent).toContain("Preview a query to see results.");
+    expect($("status").hidden).toBe(true);
+    expect(document.querySelectorAll("#panel-sql [role=alert]")).toHaveLength(1);
+    expect($("sql-results").textContent).not.toContain("Run a query to see results.");
   });
 
   it("falls back to response status text when query error body is not JSON", async () => {
@@ -232,6 +237,22 @@ describe("API db params — POST requests", () => {
     expect($("sql-results").textContent).toContain("1");
   });
 
+  it("does not export SQL from an older successful result after a failed run", async () => {
+    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
+    await loadApp();
+    await click("tab-sql");
+    $("sql").value = "select old";
+    await click("run-btn");
+
+    setRoute("POST /api/query", makeResp({ ok: false, status: 400, json: { error: "failed" } }));
+    $("sql").value = "select current";
+    await click("run-btn");
+    await click("sql-export-btn");
+
+    const form = HTMLFormElement.prototype.submit.mock.instances.at(-1);
+    expect(new FormData(form).get("sql")).toBe("select current");
+  });
+
   it("clears query error after picking a saved query", async () => {
     setRoute("GET /api/queries", makeResp({ json: [{ id: 7, name: "Recent keys", sql: "select 1", isPreset: false }] }));
     setRoute("POST /api/query", makeResp({ ok: false, status: 400, json: { error: "query failed" } }));
@@ -244,7 +265,7 @@ describe("API db params — POST requests", () => {
     await changeSelect($("presets"), "7");
 
     expect(document.querySelector(".query-error")).toBeFalsy();
-    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Preview.");
+    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Run.");
   });
 
   it("does not route direct exports through fetch", async () => {
@@ -319,7 +340,7 @@ describe("API db params — POST requests", () => {
     await flush();
 
     expect(document.querySelector(".query-error")).toBeFalsy();
-    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Preview.");
+    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Run.");
   });
 
   it("ignores stale query network errors after picking a saved query", async () => {
@@ -336,7 +357,7 @@ describe("API db params — POST requests", () => {
     await flush();
 
     expect(document.querySelector(".query-error")).toBeFalsy();
-    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Preview.");
+    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Run.");
   });
 
   it("ignores stale successful queries after picking a saved query", async () => {
@@ -352,8 +373,8 @@ describe("API db params — POST requests", () => {
     resolveQuery(makeResp({ json: { columns: ["n"], rows: [[1]], rowCount: 1, elapsedMs: 1 } }));
     await flush();
 
-    expect($("sql-results").textContent).toContain("Preview a query to see results.");
-    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Preview.");
+    expect($("sql-results").textContent).toContain("Run a query to see results.");
+    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Run.");
   });
 
   it("keeps a saved-query selection after export submission", async () => {
@@ -364,7 +385,7 @@ describe("API db params — POST requests", () => {
     await click("sql-export-btn");
     await changeSelect($("presets"), "7");
     expect(document.querySelector(".query-error")).toBeFalsy();
-    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Preview.");
+    expect($("status").textContent).toContain("Loaded “Recent keys”. Press Run.");
   });
 });
 

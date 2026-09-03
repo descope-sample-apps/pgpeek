@@ -9,12 +9,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
-    "vendor": "esbuild web/vendor/src/codemirror6.entry.js --bundle --outfile=web/vendor/codemirror6.js --format=esm --minify --platform=browser --target=es2020 && esbuild web/vendor/src/preact-htm.entry.js --bundle --outfile=web/vendor/preact-htm.js --format=esm --minify --platform=browser --target=es2020 && esbuild web/vendor/src/lz-string.entry.js --bundle --outfile=web/vendor/lz-string.js --format=esm --minify --platform=browser --target=es2020"
+    "vendor": "esbuild web/vendor/src/codemirror6.entry.js --bundle --outfile=web/vendor/codemirror6.js --format=esm --minify --platform=browser --target=es2020 && esbuild web/vendor/src/sql-formatter.entry.js --bundle --outfile=web/vendor/sql-formatter.js --format=esm --minify --platform=browser --target=es2020 && esbuild web/vendor/src/preact-htm.entry.js --bundle --outfile=web/vendor/preact-htm.js --format=esm --minify --platform=browser --target=es2020 && esbuild web/vendor/src/lz-string.entry.js --bundle --outfile=web/vendor/lz-string.js --format=esm --minify --platform=browser --target=es2020"
   },
   "devDependencies": {
+    "@codemirror/autocomplete": "6.20.3",
     "@codemirror/commands": "6.10.4",
     "@codemirror/lang-sql": "6.10.0",
     "@codemirror/language": "6.12.4",
+    "@codemirror/lint": "6.9.7",
     "@codemirror/state": "6.7.0",
     "@codemirror/view": "6.43.3",
     "@lezer/highlight": "1.2.3",
@@ -25,6 +27,7 @@
     "jsdom": "^29.0.0",
     "lz-string": "1.5.0",
     "preact": "10.29.3",
+    "sql-formatter": "15.6.10",
     "vitest": "^4.0.0"
   },
   "constraints": {

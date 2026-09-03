@@ -52,25 +52,63 @@ export function LazyCell({ value, truncated, columnName, loadValue, onFullValue 
   </td>`;
 }
 
-export function SqlResults({ result, resultKey, sql, dbId }) {
-  if (!result) return html`<div class="empty">Preview a query to see results.</div>`;
+/** Metadata header for the SQL result pane: counts, elapsed, truncation. */
+export function ResultMeta({ result }) {
+  if (!result) return null;
+  const parts = [`${result.rowCount ?? result.rows?.length ?? 0} row${(result.rowCount ?? 0) === 1 ? "" : "s"}`];
+  if (typeof result.elapsedMs === "number") parts.push(`${result.elapsedMs} ms`);
+  const warnings = [];
+  if (result.truncated) warnings.push("capped");
+  if (result.cellsTruncated) warnings.push("cell-truncated");
+  const label = parts.join(" · ") + (warnings.length ? " · " + warnings.join(", ") : "");
+  return html`<div class="result-meta" role="status" aria-live="polite">${label}</div>`;
+}
+
+/**
+ * Lossless JSON rendering: emit {columns, rows} so duplicate column names survive.
+ * Rows are arrays, not objects — preserves column order and duplicates exactly.
+ */
+function JsonView({ result }) {
+  if (!result) return null;
+  const payload = { columns: result.columns, rows: result.rows };
+  return html`<pre class="result-json">${JSON.stringify(payload, null, 2)}</pre>`;
+}
+
+export function ResultViews({ view, onView }) {
+  return html`<div class="result-views" role="group" aria-label="Result view">
+    <button class=${"view-btn" + (view === "table" ? " pressed" : "")} type="button"
+      aria-pressed=${view === "table"} onClick=${() => onView("table")}>Table</button>
+    <button class=${"view-btn" + (view === "json" ? " pressed" : "")} type="button"
+      aria-pressed=${view === "json"} onClick=${() => onView("json")}>JSON</button>
+  </div>`;
+}
+
+export function SqlResults({ result, resultKey, sql, dbId, view = "table" }) {
+  if (!result) return html`<div class="empty">Run a query to see results.</div>`;
   if (result.columns.length === 0) return html`<div class="empty">Query ran. No columns returned.</div>`;
   if (result.rows.length === 0) return html`<div class="empty">0 rows.</div>`;
+
+  if (view === "json") {
+    return html`<div class="sql-results-view"><${JsonView} result=${result} /></div>`;
+  }
+
   const truncated = new Map((result.truncatedCells || []).map((cell) => [cell.row + ":" + cell.column, cell]));
-  return html`<table>
-    <thead><tr>${result.columns.map((column) => html`<th key=${column}>${column}</th>`)}</tr></thead>
-    <tbody>${result.rows.map((row, rowIndex) =>
-      html`<tr key=${resultKey + ":" + rowIndex}>${row.map((value, columnIndex) =>
-        html`<${LazyCell} key=${resultKey + ":" + columnIndex} value=${value} truncated=${truncated.has(rowIndex + ":" + columnIndex)} columnName=${result.columns[columnIndex]}
-          loadValue=${async (signal) => {
-            const response = await fetch(dbUrl("/api/query/cell", dbId), {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ sql, row: rowIndex, column: columnIndex, hash: truncated.get(rowIndex + ":" + columnIndex)?.hash || "" }),
-              signal,
-            });
-            if (!response.ok) throw new Error(await responseError(response, "cell fetch failed"));
-            return response.json();
-          }} />`)}</tr>`)}</tbody>
-  </table>`;
+  return html`<div class="sql-results-view">
+    <table>
+      <thead><tr>${result.columns.map((column) => html`<th key=${column}>${column}</th>`)}</tr></thead>
+      <tbody>${result.rows.map((row, rowIndex) =>
+        html`<tr key=${resultKey + ":" + rowIndex}>${row.map((value, columnIndex) =>
+          html`<${LazyCell} key=${resultKey + ":" + columnIndex} value=${value} truncated=${truncated.has(rowIndex + ":" + columnIndex)} columnName=${result.columns[columnIndex]}
+            loadValue=${async (signal) => {
+              const response = await fetch(dbUrl("/api/query/cell", dbId), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sql, row: rowIndex, column: columnIndex, hash: truncated.get(rowIndex + ":" + columnIndex)?.hash || "" }),
+                signal,
+              });
+              if (!response.ok) throw new Error(await responseError(response, "cell fetch failed"));
+              return response.json();
+            }} />`)}</tr>`)}</tbody>
+    </table>
+  </div>`;
 }

@@ -28,7 +28,7 @@ task only needs product identity, startup, safety, or probe behavior.
 - Built-in themes: 20
 - Read-only enforcement layers: 3
 - Website configuration rows: 23
-- Documented HTTP routes: 25
+- Documented HTTP routes: 26
 
 ---
 
@@ -60,9 +60,9 @@ everywhere. Read-only by design: no row editing, schema management, or migration
   the active search/filters/sort. Wide tables stay usable with sticky headers,
   clipped cell previews, full values on demand, and mobile overflow containment.
 - **Structure** tab — column name, type, nullable, default.
-- **SQL** tab — CodeMirror editor with table/field autocomplete, capped previews,
-  exact row counts, saved/preset queries, and row-uncapped gzip CSV export up to
-  512 MiB before compression.
+- **SQL** tab — resizable CodeMirror console with per-statement play controls,
+  selection/cursor execution, nested schema autocomplete, inline diagnostics,
+  table/JSON results, exact counts, saved/preset queries, and row-uncapped gzip CSV export up to 512 MiB.
 
 Filtering is safe by construction: column names are validated against the
 relation's real columns and emitted via `pgx.Identifier`, operators come from a
@@ -90,8 +90,8 @@ browser ── HTTP ──> pgpeek (Go, single static binary)
 
 - **Backend**: Go, `jackc/pgx/v5` for Postgres, `modernc.org/sqlite` (pure Go, no
   cgo) for the saved-query store → static binary, ~25 MB distroless image.
-- **Frontend**: one `web/index.html` — CodeMirror editor (CDN, degrades to a
-  textarea), results table, saved-query dropdown, CSV button. Embedded into the
+- **Frontend**: one `web/index.html` with vendored CodeMirror and SQL formatter
+  bundles, results table/JSON views, saved queries, and CSV export. Embedded into the
   binary via `go:embed`.
 
 LLM-friendly project notes live in [`llms.txt`](llms.txt); the published docs
@@ -319,7 +319,7 @@ go run .
 # open http://localhost:8080
 ```
 
-Keyboard: **Ctrl/Cmd + Enter** previews the query.
+Keyboard: **Ctrl/Cmd + Enter** runs the selection or statement at the cursor.
 
 ## Build
 
@@ -493,6 +493,7 @@ Two ways:
 | `POST /api/query/cell?db=<id>`                | Re-run a query and return one full cell by row/column index. |
 | `POST /api/export?db=<id>`                    | Run a query → gzip-compressed CSV download (`.csv.gz`). |
 | `GET /api/meta?db=<id>`                       | Server limits the UI needs (`{rowCap}`).       |
+| `GET /api/schema?db=<id>`                     | Nested schema/table/column catalog for SQL autocomplete. |
 | `GET /api/tables?db=<id>`                     | List browsable tables/views (+ row estimate).  |
 | `GET /api/tables/{schema}/{table}/columns?db=<id>` | Column structure (name, type, nullable, default). |
 | `GET /api/tables/{schema}/{table}/fks?db=<id>` | Single-column foreign keys (for click-through).   |

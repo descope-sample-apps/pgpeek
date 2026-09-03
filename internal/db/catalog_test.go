@@ -7,6 +7,84 @@ import (
 	"testing"
 )
 
+func TestSchemaCatalog_Success(t *testing.T) {
+	rows := &fakeRows{data: [][]any{
+		{"public", "users", "id"},
+		{"public", "users", "email"},
+		{"audit", "events", "created_at"},
+		{"public", "pg_shadow", "passwd"},
+	}}
+	fp := &fakePool{rows: rows}
+	p := &Pool{pool: fp, rowCap: 10}
+
+	got, truncated, err := p.SchemaCatalog(context.Background())
+	if err != nil {
+		t.Fatalf("SchemaCatalog: %v", err)
+	}
+	if truncated {
+		t.Fatal("SchemaCatalog unexpectedly truncated")
+	}
+	if len(got) != 2 || len(got["public"]) != 1 {
+		t.Fatalf("catalog = %#v", got)
+	}
+	if columns := got["public"]["users"]; len(columns) != 2 || columns[0] != "id" || columns[1] != "email" {
+		t.Errorf("public.users = %#v", columns)
+	}
+	if columns := got["audit"]["events"]; len(columns) != 1 || columns[0] != "created_at" {
+		t.Errorf("audit.events = %#v", columns)
+	}
+	if strings.Contains(fp.lastSQL, "pg_shadow") || !strings.Contains(fp.lastSQL, "NOT LIKE 'pg_toast%'") {
+		t.Errorf("schema catalog query = %q", fp.lastSQL)
+	}
+}
+
+func TestSchemaCatalog_EmptyReturnsMap(t *testing.T) {
+	p := &Pool{pool: &fakePool{rows: &fakeRows{}}, rowCap: 10}
+	got, truncated, err := p.SchemaCatalog(context.Background())
+	if err != nil || truncated {
+		t.Fatalf("SchemaCatalog: truncated=%v err=%v", truncated, err)
+	}
+	if got == nil || len(got) != 0 {
+		t.Fatalf("catalog = %#v, want non-nil empty map", got)
+	}
+}
+
+func TestSchemaCatalog_QueryError(t *testing.T) {
+	p := &Pool{pool: &fakePool{queryErr: errors.New("boom")}, rowCap: 10}
+	if _, _, err := p.SchemaCatalog(context.Background()); err == nil {
+		t.Fatal("expected query error")
+	}
+}
+
+func TestSchemaCatalog_ScanError(t *testing.T) {
+	rows := &fakeRows{data: [][]any{{"public", "users", "id"}}, scanErr: errors.New("scan")}
+	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
+	if _, _, err := p.SchemaCatalog(context.Background()); err == nil {
+		t.Fatal("expected scan error")
+	}
+}
+
+func TestSchemaCatalog_RowsErr(t *testing.T) {
+	rows := &fakeRows{errErr: errors.New("cursor")}
+	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
+	if _, _, err := p.SchemaCatalog(context.Background()); err == nil {
+		t.Fatal("expected rows.Err")
+	}
+}
+
+func TestSchemaCatalog_ByteCap(t *testing.T) {
+	large := strings.Repeat("x", 64)
+	rows := &fakeRows{data: [][]any{{"public", "users", large}, {"public", "users", large + "2"}}}
+	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10, catalogLimitBytes: 100}
+	got, truncated, err := p.SchemaCatalog(context.Background())
+	if err != nil {
+		t.Fatalf("SchemaCatalog: %v", err)
+	}
+	if !truncated || len(got) != 0 {
+		t.Fatalf("catalog=%#v truncated=%v", got, truncated)
+	}
+}
+
 func TestTables_Success(t *testing.T) {
 	rows := &fakeRows{
 		cols: []string{"schema", "name", "type", "est", "is_partition", "parent_schema", "parent_name"},

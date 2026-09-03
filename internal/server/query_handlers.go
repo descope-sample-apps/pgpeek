@@ -153,10 +153,31 @@ func (s *Server) readOnlyResult(w http.ResponseWriter, r *http.Request) (*db.Res
 	res, err := pool.Query(ctx, sql)
 	if err != nil {
 		s.log.Error("query", "err", err)
-		writeError(w, http.StatusBadRequest, queryErrorMessage(err))
+		writeQueryError(w, err)
 		return nil, false
 	}
 	return res, true
+}
+
+type queryErrorResponse struct {
+	Error    string `json:"error"`
+	SQLState string `json:"sqlstate,omitempty"`
+	Position int32  `json:"position,omitempty"`
+}
+
+func writeQueryError(w http.ResponseWriter, err error) {
+	response := queryErrorResponse{Error: "query failed"}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		if pgErr.Message != "" {
+			response.Error = pgErr.Message
+		}
+		response.SQLState = pgErr.Code
+		if pgErr.Position > 0 {
+			response.Position = pgErr.Position
+		}
+	}
+	writeJSON(w, http.StatusBadRequest, response)
 }
 
 func queryErrorMessage(err error) string {

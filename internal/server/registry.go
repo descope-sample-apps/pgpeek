@@ -18,6 +18,7 @@ type Querier interface {
 	ExportCSV(ctx context.Context, sql string, dst io.Writer) error
 	QueryCell(ctx context.Context, sql string, row, column int) (any, error)
 	Tables(ctx context.Context) ([]db.TableInfo, bool, error)
+	SchemaCatalog(ctx context.Context) (db.SchemaCatalog, bool, error)
 	Columns(ctx context.Context, schema, table string) ([]db.ColumnInfo, bool, error)
 	ForeignKeys(ctx context.Context, schema, table string) ([]db.ForeignKey, bool, error)
 	TableRows(ctx context.Context, q db.TableQuery) (*db.Result, error)

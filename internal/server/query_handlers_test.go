@@ -266,8 +266,7 @@ func TestQuery_PostgresErrorOmitsAbsentMetadata(t *testing.T) {
 	q := &fakeQuerier{err: &pgconn.PgError{Message: "query canceled"}}
 	ts, _ := newTestServer(t, q)
 	resp := post(t, ts, "/api/query", `{"sql":"SELECT 1"}`)
-	var got map[string]any
-	got = decode[map[string]any](t, resp)
+	got := decode[map[string]any](t, resp)
 	if got["error"] != "query canceled" || got["sqlstate"] != nil || got["position"] != nil {
 		t.Fatalf("response = %#v", got)
 	}

@@ -40,17 +40,19 @@ type schemaCatalogColumn struct {
 }
 
 // All editor completion metadata is loaded by one query. User-facing
-// relations only: skip system and TOAST schemas and dropped columns.
+// relations only: skip system, temporary, and TOAST schemas. The outer join
+// preserves valid zero-column relations for table-name completion.
 const schemaCatalogSQL = `
-SELECT n.nspname, c.relname, a.attname
+SELECT n.nspname, c.relname, COALESCE(a.attname, '')
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
-JOIN pg_attribute a ON a.attrelid = c.oid
+LEFT JOIN pg_attribute a ON a.attrelid = c.oid
+  AND a.attnum > 0
+  AND NOT a.attisdropped
 WHERE c.relkind IN ('r','p','v','m')
   AND n.nspname NOT IN ('pg_catalog','information_schema')
   AND n.nspname NOT LIKE 'pg_toast%'
-  AND a.attnum > 0
-  AND NOT a.attisdropped
+  AND n.nspname NOT LIKE 'pg_temp_%'
 ORDER BY n.nspname, c.relname, a.attnum`
 
 // SchemaCatalog returns all browsable relation columns in a database. The
@@ -69,7 +71,7 @@ func (p *Pool) SchemaCatalog(ctx context.Context) (SchemaCatalog, bool, error) {
 		if err := rows.Scan(&column.Schema, &column.Table, &column.Column); err != nil {
 			return nil, false, err
 		}
-		if guard.IsRestrictedRelation(column.Table) {
+		if strings.HasPrefix(column.Schema, "pg_temp_") || guard.IsRestrictedRelation(column.Table) {
 			continue
 		}
 		keep, err := columns.add(column)
@@ -93,7 +95,12 @@ func (p *Pool) SchemaCatalog(ctx context.Context) (SchemaCatalog, bool, error) {
 			tables = make(map[string][]string)
 			catalog[column.Schema] = tables
 		}
-		tables[column.Table] = append(tables[column.Table], column.Column)
+		if _, ok := tables[column.Table]; !ok {
+			tables[column.Table] = []string{}
+		}
+		if column.Column != "" {
+			tables[column.Table] = append(tables[column.Table], column.Column)
+		}
 	}
 	return catalog, columns.truncated, nil
 }

@@ -24,7 +24,7 @@ function readSplitPreference() {
   }
 }
 
-export function SqlTab({ active, saved, reloadSaved, dbId, status = { text: "Ready.", cls: "ok" }, setStatus, tables, initialSQL, onStateChange }) {
+export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, initialSQL, onStateChange }) {
   const wrapRef = useRef();
   const taRef = useRef();
   const editorRef = useRef();
@@ -36,6 +36,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, status = { text: "Rea
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [notice, setNotice] = useState(null);
   const [view, setView] = useState("table");
   const [editorPx, setEditorPx] = useState(() => readSplitPreference() ?? 40);
   const runningRef = useRef(false);
@@ -50,11 +51,17 @@ export function SqlTab({ active, saved, reloadSaved, dbId, status = { text: "Rea
   const schemaCacheRef = useRef(new Map());
   resultRef.current = result;
 
+  const reportStatus = (next, visible = true) => {
+    setStatus({ ...next, scope: "sql" });
+    setNotice(visible ? next : null);
+  };
+
   const invalidate = () => {
     requestRef.current?.abort(); requestRef.current = null;
     actionRef.current += 1;
     if (!exportingRef.current) { runningRef.current = false; setRunning(false); }
     setError("");
+    setNotice(null);
     // Editing clears in-flight work and marks completed results stale, but does
     // not clear completed rows. lastSQL attribution is preserved.
     setStale(Boolean(resultRef.current));
@@ -64,7 +71,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, status = { text: "Rea
     requestRef.current?.abort(); requestRef.current = null;
     actionRef.current += 1;
     if (!exportingRef.current) { runningRef.current = false; setRunning(false); }
-    setResult(null); setLastSQL(""); setError(""); setStale(false);
+    setResult(null); setLastSQL(""); setError(""); setStale(false); setNotice(null);
   };
 
   const onEdit = (value) => {
@@ -106,7 +113,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, status = { text: "Rea
     // Easter eggs: magic queries, DROP rewrite, VACUUM/ANALYZE whisper.
     const eg = interceptRun(sql);
     if (eg) {
-      runEasterEgg(eg, { sql, setLastSQL, setResult, setError, setSQL, setStatus, wrapRef });
+      runEasterEgg(eg, { sql, setLastSQL, setResult, setError, setSQL, setStatus: reportStatus, wrapRef });
       return;
     }
     const action = actionRef.current + 1;
@@ -116,7 +123,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, status = { text: "Rea
     setError("");
     if (resultRef.current) setStale(true);
     setResultKey(action);
-    setStatus({ text: "Running…", cls: "ok" });
+    reportStatus({ text: "Running…", cls: "ok" }, false);
     try {
       const r = await fetch(dbUrl("/api/query", dbId), {
         method: "POST",
@@ -137,7 +144,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, status = { text: "Rea
             editorRef.current.focusRange?.(offset, Math.min(runnable.to, offset + 1));
           }
         }
-        setStatus({ text: "✗ " + message, cls: "error" });
+        reportStatus({ text: "✗ " + message, cls: "error" }, false);
         setResult(null); setLastSQL(""); setStale(false);
         return;
       }
@@ -148,13 +155,13 @@ export function SqlTab({ active, saved, reloadSaved, dbId, status = { text: "Rea
       const warnings = [];
       if (d.truncated) warnings.push("· capped (more rows available; add LIMIT or refine)");
       if (d.cellsTruncated) warnings.push("· large cells shortened; expand to load full value");
-      setStatus(warnings.length ? { text: base, cls: "ok", warn: warnings.join(" ") } : { text: base, cls: "ok" });
+      reportStatus(warnings.length ? { text: base, cls: "ok", warn: warnings.join(" ") } : { text: base, cls: "ok" }, false);
     } catch (e) {
       if (e.name === "AbortError") return;
       if (action === actionRef.current) {
         setError(e.message);
         setResult(null); setLastSQL(""); setStale(false);
-        setStatus({ text: "✗ " + e.message, cls: "error" });
+        reportStatus({ text: "✗ " + e.message, cls: "error" }, false);
       }
     } finally {
       if (requestRef.current === controller) requestRef.current = null;
@@ -167,7 +174,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, status = { text: "Rea
     requestRef.current = null;
     actionRef.current += 1;
     runningRef.current = false; setRunning(false);
-    setStatus({ text: "Cancelled.", cls: "ok" });
+    reportStatus({ text: "Cancelled.", cls: "ok" });
   }, []);
 
   const runRef = useRef(run);
@@ -184,7 +191,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, status = { text: "Rea
     const update = () => {
       const seconds = Math.floor((Date.now() - startedAt) / 1000);
       if (runningRef.current) {
-        setStatus({ text: `${runningLabelRef.current}… (${seconds}s)`, cls: "ok" });
+        reportStatus({ text: `${runningLabelRef.current}… (${seconds}s)`, cls: "ok" }, false);
       }
     };
     const delay = setTimeout(() => {
@@ -279,18 +286,18 @@ export function SqlTab({ active, saved, reloadSaved, dbId, status = { text: "Rea
     actionRef.current = action;
     const controller = new AbortController(); requestRef.current = controller;
     runningLabelRef.current = "Counting"; runningRef.current = true; setRunning(true); setError("");
-    setStatus({ text: "Counting…", cls: "ok" });
+    reportStatus({ text: "Counting…", cls: "ok" });
     try {
       const data = await countQuery(sql, dbId, controller.signal);
       if (action !== actionRef.current) return;
       const rowCount = BigInt(data.rowCount);
       const rows = rowCount.toLocaleString();
-      setStatus({ text: `✓ ${rows} row${rowCount === 1n ? "" : "s"} in ${data.elapsedMs} ms`, cls: "ok" });
+      reportStatus({ text: `✓ ${rows} row${rowCount === 1n ? "" : "s"} in ${data.elapsedMs} ms`, cls: "ok" });
     } catch (e) {
       if (e.name === "AbortError") return;
       if (action === actionRef.current) {
         setError(e.message);
-        setStatus({ text: "✗ " + e.message, cls: "error" });
+        reportStatus({ text: "✗ " + e.message, cls: "error" }, false);
       }
     } finally {
       if (requestRef.current === controller) requestRef.current = null;
@@ -305,15 +312,15 @@ export function SqlTab({ active, saved, reloadSaved, dbId, status = { text: "Rea
     exportingRef.current = true; setExporting(true);
     runningLabelRef.current = "Exporting"; runningRef.current = true; setRunning(true);
     setError("");
-    setStatus({ text: "Preparing export…", cls: "ok" });
+    reportStatus({ text: "Preparing export…", cls: "ok" });
     exportQuery(sql, dbId, (message) => {
       exportingRef.current = false; setExporting(false);
       runningRef.current = false; setRunning(false);
       if (message) {
         setError(message);
-        setStatus({ text: "✗ " + message, cls: "error" });
+        reportStatus({ text: "✗ " + message, cls: "error" }, false);
       } else {
-        setStatus({ text: "✓ Download started.", cls: "ok" });
+        reportStatus({ text: "✓ Download started.", cls: "ok" });
       }
     });
   };
@@ -326,7 +333,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, status = { text: "Rea
     const id = e.target.value; setSelected(id);
     const q = saved.find((x) => String(x.id) === id);
     if (q) {
-      setSQL(q.sql); setError(""); setStatus({ text: "Loaded \u201c" + q.name + "\u201d. Press Run.", cls: "ok" });
+      setSQL(q.sql); setError(""); reportStatus({ text: "Loaded \u201c" + q.name + "\u201d. Press Run.", cls: "ok" });
     }
   };
   const selectedQ = saved.find((x) => String(x.id) === selected);
@@ -347,14 +354,14 @@ export function SqlTab({ active, saved, reloadSaved, dbId, status = { text: "Rea
     });
     const d = await r.json();
     if (!r.ok) {
-      if (action === actionRef.current) setStatus({ text: "✗ " + (d.error || "save failed"), cls: "error" });
+      if (action === actionRef.current) reportStatus({ text: "✗ " + (d.error || "save failed"), cls: "error" });
       return;
     }
-    await reloadSaved();
+    if (!(await reloadSaved())) return;
     if (action !== actionRef.current) return;
     setSelected(String(d.id));
     setError("");
-    setStatus({ text: "\u2713 Saved \u201c" + d.name + "\u201d.", cls: "ok" });
+    reportStatus({ text: "\u2713 Saved \u201c" + d.name + "\u201d.", cls: "ok" });
   };
 
   const onDelete = async () => {
@@ -365,14 +372,14 @@ export function SqlTab({ active, saved, reloadSaved, dbId, status = { text: "Rea
     actionRef.current = action;
     const r = await fetch("/api/queries/" + selectedQ.id, { method: "DELETE" });
     if (!r.ok && r.status !== 204) {
-      if (action === actionRef.current) setStatus({ text: "✗ delete failed", cls: "error" });
+      if (action === actionRef.current) reportStatus({ text: "✗ delete failed", cls: "error" });
       return;
     }
-    await reloadSaved();
+    if (!(await reloadSaved())) return;
     if (action !== actionRef.current) return;
     setSelected("");
     setError("");
-    setStatus({ text: "✓ Deleted.", cls: "ok" });
+    reportStatus({ text: "✓ Deleted.", cls: "ok" });
   };
 
   const presets = saved.filter((q) => q.isPreset);
@@ -411,13 +418,8 @@ export function SqlTab({ active, saved, reloadSaved, dbId, status = { text: "Rea
 
   const editorPct = `${editorPx}%`;
   const queryRunning = running && !exporting;
-  const showResultViews = Boolean(result?.columns.length && result?.rows.length);
-  const resultStatus = result ? queryStatusText(result.rowCount, result.elapsedMs) : "";
-  const showLocalStatus = Boolean(status.text !== "Ready."
-    && !error
-    && !status.text.startsWith("Running")
-    && status.text !== resultStatus);
-  const showResultToolbar = Boolean(result || showLocalStatus);
+  const showResultViews = Boolean(result?.columns.length);
+  const showResultToolbar = Boolean(result || notice);
 
   return html`
     <div class="sql-pane" ref=${splitRef}>
@@ -459,12 +461,12 @@ export function SqlTab({ active, saved, reloadSaved, dbId, status = { text: "Rea
           ? html`<div class="query-error" role="alert" aria-live="assertive">${error}</div>`
           : html`${showResultToolbar ? html`<div class="result-toolbar">
                 <${ResultMeta} result=${result} />
-                ${showLocalStatus ? html`<div class=${"sql-notice " + status.cls} id="sql-status" role="status">${status.text}</div>` : ""}
+                ${notice ? html`<div class=${"sql-notice " + notice.cls} id="sql-status" role="status">${notice.text}</div>` : ""}
                 ${stale ? html`<div class="result-stale" role="status" aria-live="polite">Showing results from the previous run.</div>` : ""}
                 ${showResultViews ? html`<${ResultViews} view=${view} onView=${setView} />` : ""}
               </div>` : ""}
               <div class="result-scroll" role="region" tabindex="0" aria-label="Query results">
-                <${SqlResults} result=${result} resultKey=${resultKey} sql=${lastSQL} dbId=${dbId} view=${view} />
+                <${SqlResults} result=${result} resultKey=${resultKey} sql=${lastSQL} dbId=${dbId} view=${view} onView=${setView} />
               </div>`}
       </div>
     </div>`;

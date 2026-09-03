@@ -271,7 +271,8 @@
   .saved-details > summary { list-style: none; cursor: pointer; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-1); background: var(--elev); }
   .saved-details > summary::-webkit-details-marker { display: none; }
   .saved-controls { position: absolute; z-index: 8; top: calc(100% + var(--space-2)); right: 0; display: grid; grid-template-columns: minmax(12rem, 1fr) auto auto; gap: var(--space-2); min-width: min(32rem, calc(100vw - 2 * var(--space-3))); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-2); background: var(--elev); box-shadow: 0 12px 32px rgb(0 0 0 / .35); }
-  .results { flex: 1 1 auto; min-height: 120px; display: flex; flex-direction: column; overflow: hidden; background: var(--panel); }
+  .results { flex: 1 1 auto; min-height: 120px; overflow: auto; scrollbar-gutter: stable both-edges; background: var(--panel); }
+  #sql-results { display: flex; flex-direction: column; overflow: hidden; scrollbar-gutter: auto; }
   .result-toolbar { flex: none; min-height: 51px; display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); background: var(--elev2); }
   .result-meta, .result-stale, .sql-notice { color: var(--muted); font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   .result-stale { color: var(--warn); }
@@ -283,6 +284,8 @@
   .result-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; scrollbar-gutter: stable both-edges; }
   .sql-results-view { min-width: max-content; }
   .result-json { min-width: 100%; margin: 0; padding: var(--space-4); color: var(--text); background: var(--panel); font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; }
+  .json-truncation { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); background: var(--elev2); color: var(--warn); font-size: 12px; }
+  .json-truncation button { margin-left: auto; padding: 3px var(--space-2); }
   table { border-collapse: collapse; width: 100%; min-width: max-content; font-size: 13px; }
   th, td { border: 1px solid var(--border); padding: 5px 9px; text-align: left; vertical-align: top; max-width: min(34rem, 72vw); min-width: 10rem; }
   th { position: sticky; top: 0; background: var(--elev); z-index: 2; white-space: nowrap; }

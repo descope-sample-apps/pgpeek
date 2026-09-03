@@ -25,6 +25,8 @@
         "@codemirror/state",
         "@codemirror/view",
         "@codemirror/commands",
+        "@codemirror/autocomplete",
+        "@codemirror/lint",
         "@codemirror/language",
         "@codemirror/lang-sql",
         "@lezer/highlight"

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   installKonamiCode, KONAMI_BANNER, KONAMI_TOAST,
   interceptMagicQuery, interceptRun, runEasterEgg,
@@ -22,6 +22,10 @@ function memoryStorage() {
 beforeEach(() => {
   vi.stubGlobal("localStorage", memoryStorage());
   vi.stubGlobal("sessionStorage", memoryStorage());
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("konami code", () => {

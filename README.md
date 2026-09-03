@@ -28,7 +28,8 @@ everywhere. Read-only by design: no row editing, schema management, or migration
 - **Structure** tab — column name, type, nullable, default.
 - **SQL** tab — resizable CodeMirror console with per-statement play controls,
   selection/cursor execution, nested schema autocomplete, inline diagnostics,
-  table/JSON results, exact counts, saved/preset queries, and row-uncapped gzip CSV export up to 512 MiB.
+  table/JSON results, exact counts, saved/preset queries, and row-uncapped gzip
+  CSV export up to 512 MiB.
 
 Filtering is safe by construction: column names are validated against the
 relation's real columns and emitted via `pgx.Identifier`, operators come from a

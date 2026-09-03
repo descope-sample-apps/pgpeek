@@ -13,6 +13,8 @@ func TestSchemaCatalog_Success(t *testing.T) {
 		{"public", "users", "email"},
 		{"audit", "events", "created_at"},
 		{"public", "pg_shadow", "passwd"},
+		{"public", "empty_relation", ""},
+		{"pg_temp_3", "session_only", "id"},
 	}}
 	fp := &fakePool{rows: rows}
 	p := &Pool{pool: fp, rowCap: 10}
@@ -24,7 +26,7 @@ func TestSchemaCatalog_Success(t *testing.T) {
 	if truncated {
 		t.Fatal("SchemaCatalog unexpectedly truncated")
 	}
-	if len(got) != 2 || len(got["public"]) != 1 {
+	if len(got) != 2 || len(got["public"]) != 2 {
 		t.Fatalf("catalog = %#v", got)
 	}
 	if columns := got["public"]["users"]; len(columns) != 2 || columns[0] != "id" || columns[1] != "email" {
@@ -33,7 +35,13 @@ func TestSchemaCatalog_Success(t *testing.T) {
 	if columns := got["audit"]["events"]; len(columns) != 1 || columns[0] != "created_at" {
 		t.Errorf("audit.events = %#v", columns)
 	}
-	if strings.Contains(fp.lastSQL, "pg_shadow") || !strings.Contains(fp.lastSQL, "NOT LIKE 'pg_toast%'") {
+	if columns := got["public"]["empty_relation"]; columns == nil || len(columns) != 0 {
+		t.Errorf("public.empty_relation = %#v, want non-nil empty columns", columns)
+	}
+	if _, ok := got["pg_temp_3"]; ok {
+		t.Errorf("temporary schema leaked into catalog: %#v", got)
+	}
+	if strings.Contains(fp.lastSQL, "pg_shadow") || !strings.Contains(fp.lastSQL, "LEFT JOIN pg_attribute") || !strings.Contains(fp.lastSQL, "NOT LIKE 'pg_toast%'") || !strings.Contains(fp.lastSQL, "NOT LIKE 'pg_temp_%'") {
 		t.Errorf("schema catalog query = %q", fp.lastSQL)
 	}
 }

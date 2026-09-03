@@ -55,7 +55,8 @@ export function LazyCell({ value, truncated, columnName, loadValue, onFullValue 
 /** Metadata header for the SQL result pane: counts, elapsed, truncation. */
 export function ResultMeta({ result }) {
   if (!result) return null;
-  const parts = [`${result.rowCount ?? result.rows?.length ?? 0} row${(result.rowCount ?? 0) === 1 ? "" : "s"}`];
+  const count = result.rowCount ?? result.rows?.length ?? 0;
+  const parts = [`${count} row${count === 1 ? "" : "s"}`];
   if (typeof result.elapsedMs === "number") parts.push(`${result.elapsedMs} ms`);
   const warnings = [];
   if (result.truncated) warnings.push("capped");
@@ -68,10 +69,15 @@ export function ResultMeta({ result }) {
  * Lossless JSON rendering: emit {columns, rows} so duplicate column names survive.
  * Rows are arrays, not objects — preserves column order and duplicates exactly.
  */
-function JsonView({ result }) {
-  if (!result) return null;
+function JsonView({ result, onTable }) {
   const payload = { columns: result.columns, rows: result.rows };
-  return html`<pre class="result-json">${JSON.stringify(payload, null, 2)}</pre>`;
+  return html`<div class="json-result">
+    ${result.cellsTruncated ? html`<div class="json-truncation" role="note">
+      Large cells are shortened in JSON.
+      <button class="ghost" type="button" onClick=${onTable}>View full cells in Table</button>
+    </div>` : ""}
+    <pre class="result-json">${JSON.stringify(payload, null, 2)}</pre>
+  </div>`;
 }
 
 export function ResultViews({ view, onView }) {
@@ -83,14 +89,14 @@ export function ResultViews({ view, onView }) {
   </div>`;
 }
 
-export function SqlResults({ result, resultKey, sql, dbId, view = "table" }) {
+export function SqlResults({ result, resultKey, sql, dbId, view = "table", onView }) {
   if (!result) return html`<div class="empty">Run a query to see results.</div>`;
   if (result.columns.length === 0) return html`<div class="empty">Query ran. No columns returned.</div>`;
-  if (result.rows.length === 0) return html`<div class="empty">0 rows.</div>`;
 
   if (view === "json") {
-    return html`<div class="sql-results-view"><${JsonView} result=${result} /></div>`;
+    return html`<div class="sql-results-view"><${JsonView} result=${result} onTable=${() => onView("table")} /></div>`;
   }
+  if (result.rows.length === 0) return html`<div class="empty">0 rows.</div>`;
 
   const truncated = new Map((result.truncatedCells || []).map((cell) => [cell.row + ":" + cell.column, cell]));
   return html`<div class="sql-results-view">

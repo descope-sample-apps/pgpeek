@@ -948,6 +948,10 @@ describe("SQL tab textarea mode", () => {
     $("sql").value = "select n from empty";
     await click("run-btn");
     expect($("sql-results").textContent).toContain("0 rows.");
+    const jsonButton = [...document.querySelectorAll(".view-btn")].find((button) => button.textContent === "JSON");
+    expect(jsonButton).toBeTruthy();
+    await click(jsonButton);
+    expect(JSON.parse(document.querySelector(".result-json").textContent)).toEqual({ columns: ["n"], rows: [] });
   });
 
   it("reports query server and network errors", async () => {
@@ -1209,6 +1213,24 @@ describe("saved queries", () => {
     expect($("status").textContent).toContain("failed to load saved queries: store down");
   });
 
+  it("keeps background reload errors visible beside an existing SQL error", async () => {
+    await openWithSaved([]);
+    setRoute("POST /api/query", makeResp({ ok: false, status: 400, json: { error: "bad query" } }));
+    $("sql").value = "select broken";
+    await click("run-btn");
+    expect(document.querySelector(".query-error")).toBeTruthy();
+
+    prompt.mockReturnValueOnce("Broken").mockReturnValueOnce("");
+    setRoute("POST /api/queries", makeResp({ json: { id: 8, name: "Broken" } }));
+    setRoute("GET /api/queries", makeResp({ ok: false, status: 500, json: { error: "store down" } }));
+    await click("save-btn");
+
+    expect(document.querySelector(".query-error").textContent).toBe("bad query");
+    expect($("status").hidden).toBe(false);
+    expect($("status").textContent).toContain("failed to load saved queries: store down");
+    expect($("sql-status")).toBeNull();
+  });
+
   it("saves new queries, handles prompt cancellation, blank SQL, and save errors", async () => {
     await openWithSaved([]);
     $("sql").value = "   ";
@@ -1311,6 +1333,19 @@ describe("saved queries", () => {
     setRoute("DELETE /api/queries/:id", makeResp({ ok: false, status: 500 }));
     await click("delete-btn");
     expect($("status").textContent).toContain("delete failed");
+  });
+
+  it("reports reload failures after deleting a query", async () => {
+    await openWithSaved();
+    await changeSelect($("presets"), "2");
+    confirm.mockReturnValueOnce(true);
+    setRoute("DELETE /api/queries/:id", makeResp({ status: 204 }));
+    setRoute("GET /api/queries", makeResp({ ok: false, status: 500, json: { error: "store down" } }));
+
+    await click("delete-btn");
+
+    expect($("status").hidden).toBe(false);
+    expect($("status").textContent).toContain("failed to load saved queries: store down");
   });
 
   it("refreshes saved queries after a stale successful delete", async () => {

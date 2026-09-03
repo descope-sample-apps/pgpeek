@@ -252,8 +252,8 @@ func TestQuery_PostgresError(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
-	got := decode[queryErrorResponse](t, resp)
-	if got.Error != `syntax error at or near "IS"` || got.SQLState != "42601" || got.Position != 35 {
+	got := decode[map[string]any](t, resp)
+	if got["error"] != `syntax error at or near "IS"` || got["sqlstate"] != "42601" || got["position"] != float64(35) {
 		t.Fatalf("response = %+v", got)
 	}
 	encoded := marshalString(t, got)

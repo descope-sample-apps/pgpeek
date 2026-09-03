@@ -417,6 +417,16 @@ describe("SQL tab null and object cell rendering", () => {
     expect($("sql-results").querySelector("details")).toBeNull();
   });
 
+  it("uses returned row length for result metadata when rowCount is absent", async () => {
+    setRoute("POST /api/query", makeResp({ json: { columns: ["n"], rows: [[1]], elapsedMs: 1 } }));
+    await loadApp();
+    await click("tab-sql");
+    $("sql").value = "select 1";
+    await click("run-btn");
+
+    expect(document.querySelector(".result-meta").textContent).toBe("1 row · 1 ms");
+  });
+
   it("loads a server-truncated cell on demand", async () => {
     const full = "full oversized value";
     setRoute("POST /api/query", makeResp({
@@ -434,6 +444,11 @@ describe("SQL tab null and object cell rendering", () => {
     await click("tab-sql");
     $("sql").value = "select payload";
     await click("run-btn");
+
+    const jsonButton = [...document.querySelectorAll(".view-btn")].find((button) => button.textContent === "JSON");
+    await click(jsonButton);
+    expect(document.querySelector(".json-truncation").textContent).toContain("Large cells are shortened in JSON.");
+    await click(document.querySelector(".json-truncation button"));
 
     expect($("sql-results").querySelectorAll("tbody tr")).toHaveLength(2);
     const detail = $("sql-results").querySelector("details");

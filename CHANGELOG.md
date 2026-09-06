@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.13.0...v0.14.0) (2026-09-03)
+
+
+### Features
+
+* rework SQL console ([#90](https://github.com/descope-sample-apps/pgpeek/issues/90)) ([dd1d5c6](https://github.com/descope-sample-apps/pgpeek/commit/dd1d5c62afaeea19a95eba990c0425bbb22942e1))
+
 ## [0.13.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.12.0...v0.13.0) (2026-08-12)
 
 

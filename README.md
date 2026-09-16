@@ -25,7 +25,7 @@ everywhere. Read-only by design: no row editing, schema management, or migration
   **click-through links** that jump to the referenced row. CSV export respects
   the active search/filters/sort. Wide tables stay usable with sticky headers,
   clipped cell previews, full values on demand, and mobile overflow containment.
-- **Structure** tab — column name, type, nullable, default.
+- **Structure** tab — column name, type, nullable, default, plus the defining query for views.
 - **SQL** tab — resizable CodeMirror console with per-statement play controls,
   selection/cursor execution, nested schema autocomplete, inline diagnostics,
   table/JSON results, exact counts, saved/preset queries, and row-uncapped gzip
@@ -463,6 +463,7 @@ Two ways:
 | `GET /api/schema?db=<id>`                     | Nested schema/table/column catalog for SQL autocomplete. |
 | `GET /api/tables?db=<id>`                     | List browsable tables/views (+ row estimate).  |
 | `GET /api/tables/{schema}/{table}/columns?db=<id>` | Column structure (name, type, nullable, default). |
+| `GET /api/tables/{schema}/{table}/definition?db=<id>` | Query defining a view or materialized view. |
 | `GET /api/tables/{schema}/{table}/fks?db=<id>` | Single-column foreign keys (for click-through).   |
 | `GET /api/tables/{schema}/{table}/data?db=<id>` | Paged rows; `&limit=&offset=&search=&sort=&dir=&f=col:op:val` (`&format=csv`). |
 | `GET /api/tables/{schema}/{table}/data/cell?db=<id>` | Replay the current page and return one full cell by row/column index. |

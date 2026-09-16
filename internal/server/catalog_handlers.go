@@ -90,6 +90,30 @@ func (s *Server) handleColumns(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, cols)
 }
 
+type viewDefinitionResponse struct {
+	Query string `json:"query"`
+}
+
+func (s *Server) handleViewDefinition(w http.ResponseWriter, r *http.Request) {
+	pool, ok := s.poolForRequest(w, r)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
+	defer cancel()
+	query, truncated, err := pool.ViewDefinition(ctx, r.PathValue("schema"), r.PathValue("table"))
+	if err != nil {
+		s.log.Error("read view definition", "err", err)
+		writeError(w, http.StatusInternalServerError, "failed to read view definition")
+		return
+	}
+	if truncated {
+		writeError(w, http.StatusInternalServerError, "view definition exceeds response limit")
+		return
+	}
+	writeJSON(w, http.StatusOK, viewDefinitionResponse{Query: query})
+}
+
 func (s *Server) handleForeignKeys(w http.ResponseWriter, r *http.Request) {
 	pool, ok := s.poolForRequest(w, r)
 	if !ok {

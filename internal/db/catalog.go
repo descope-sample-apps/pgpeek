@@ -131,6 +131,12 @@ FROM information_schema.columns
 WHERE table_schema = $1 AND table_name = $2
 ORDER BY ordinal_position`
 
+const viewDefinitionSQL = `
+SELECT pg_get_viewdef(c.oid, true)
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind IN ('v','m')`
+
 // Single-column foreign keys for a relation, with their referenced target.
 const fksSQL = `
 SELECT kcu.column_name, ccu.table_schema, ccu.table_name, ccu.column_name
@@ -200,6 +206,36 @@ func (p *Pool) Columns(ctx context.Context, schema, table string) ([]ColumnInfo,
 		}
 	}
 	return out.items, out.truncated, nil
+}
+
+// ViewDefinition returns the query that defines a view or materialized view.
+func (p *Pool) ViewDefinition(ctx context.Context, schema, view string) (string, bool, error) {
+	rows, err := p.pool.Query(ctx, viewDefinitionSQL, schema, view)
+	if err != nil {
+		return "", false, err
+	}
+	defer rows.Close()
+
+	definition := catalogCollector[string]{items: make([]string, 0, 1), bytes: 2, limit: p.catalogByteLimit()}
+	if rows.Next() {
+		var query string
+		if err := rows.Scan(&query); err != nil {
+			return "", false, err
+		}
+		keep, _ := definition.add(query) // JSON encoding a string cannot fail.
+		if !keep {
+			return "", true, nil
+		}
+	}
+	if !definition.truncated {
+		if err := rows.Err(); err != nil {
+			return "", false, err
+		}
+	}
+	if len(definition.items) == 0 {
+		return "", definition.truncated, nil
+	}
+	return definition.items[0], definition.truncated, nil
 }
 
 // ForeignKey describes a single-column foreign key and the row it points to.

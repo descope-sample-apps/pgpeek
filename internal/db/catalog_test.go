@@ -205,6 +205,69 @@ func TestColumns_RowsErr(t *testing.T) {
 	}
 }
 
+func TestViewDefinition_Success(t *testing.T) {
+	rows := &fakeRows{data: [][]any{{" SELECT id, email\n FROM users;"}}}
+	fp := &fakePool{rows: rows}
+	p := &Pool{pool: fp, rowCap: 10}
+
+	got, truncated, err := p.ViewDefinition(context.Background(), "public", "active_users")
+	if err != nil {
+		t.Fatalf("ViewDefinition: %v", err)
+	}
+	if truncated || got != " SELECT id, email\n FROM users;" {
+		t.Fatalf("definition=%q truncated=%v", got, truncated)
+	}
+	if !strings.Contains(fp.lastSQL, "pg_get_viewdef") || !strings.Contains(fp.lastSQL, "c.relkind IN ('v','m')") {
+		t.Errorf("view definition query = %q", fp.lastSQL)
+	}
+	if len(fp.lastArgs) != 2 || fp.lastArgs[0] != "public" || fp.lastArgs[1] != "active_users" {
+		t.Errorf("view definition args = %#v", fp.lastArgs)
+	}
+}
+
+func TestViewDefinition_Empty(t *testing.T) {
+	p := &Pool{pool: &fakePool{rows: &fakeRows{}}, rowCap: 10}
+	got, truncated, err := p.ViewDefinition(context.Background(), "public", "missing")
+	if err != nil || truncated || got != "" {
+		t.Fatalf("definition=%q truncated=%v err=%v", got, truncated, err)
+	}
+}
+
+func TestViewDefinition_ByteCap(t *testing.T) {
+	p := &Pool{
+		pool:              &fakePool{rows: &fakeRows{data: [][]any{{"SELECT * FROM users"}}}},
+		rowCap:            10,
+		catalogLimitBytes: 8,
+	}
+	got, truncated, err := p.ViewDefinition(context.Background(), "public", "active_users")
+	if err != nil || !truncated || got != "" {
+		t.Fatalf("definition=%q truncated=%v err=%v", got, truncated, err)
+	}
+}
+
+func TestViewDefinition_QueryError(t *testing.T) {
+	p := &Pool{pool: &fakePool{queryErr: errors.New("boom")}, rowCap: 10}
+	if _, _, err := p.ViewDefinition(context.Background(), "public", "active_users"); err == nil {
+		t.Fatal("expected query error")
+	}
+}
+
+func TestViewDefinition_ScanError(t *testing.T) {
+	rows := &fakeRows{data: [][]any{{"SELECT 1"}}, scanErr: errors.New("scan")}
+	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
+	if _, _, err := p.ViewDefinition(context.Background(), "public", "active_users"); err == nil {
+		t.Fatal("expected scan error")
+	}
+}
+
+func TestViewDefinition_RowsError(t *testing.T) {
+	rows := &fakeRows{errErr: errors.New("cursor")}
+	p := &Pool{pool: &fakePool{rows: rows}, rowCap: 10}
+	if _, _, err := p.ViewDefinition(context.Background(), "public", "active_users"); err == nil {
+		t.Fatal("expected rows.Err")
+	}
+}
+
 // colsFor builds a fakeRows usable as the information_schema.columns validation
 // result for the given column names.
 func colsFor(cols ...string) *fakeRows {

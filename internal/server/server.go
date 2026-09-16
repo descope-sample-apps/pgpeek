@@ -85,6 +85,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/export", s.handleExport)
 	mux.HandleFunc("GET /api/tables", s.handleTables)
 	mux.HandleFunc("GET /api/tables/{schema}/{table}/columns", s.handleColumns)
+	mux.HandleFunc("GET /api/tables/{schema}/{table}/definition", s.handleViewDefinition)
 	mux.HandleFunc("GET /api/tables/{schema}/{table}/fks", s.handleForeignKeys)
 	mux.HandleFunc("GET /api/tables/{schema}/{table}/data", s.handleTableData)
 	mux.HandleFunc("GET /api/tables/{schema}/{table}/data/cell", s.handleTableCell)

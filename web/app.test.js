@@ -27,6 +27,7 @@ function setRoute(key, resp) { routes[key] = resp; }
 function routeKey(method, path) {
   if (path.endsWith("/data")) return `${method} /api/tables/*/data`;
   if (path.endsWith("/columns")) return `${method} /api/tables/*/columns`;
+  if (path.endsWith("/definition")) return `${method} /api/tables/*/definition`;
   if (path.endsWith("/fks")) return `${method} /api/tables/*/fks`;
   if (path.startsWith("/api/queries/")) return `${method} /api/queries/:id`;
   return `${method} ${path}`;
@@ -78,6 +79,7 @@ beforeEach(() => {
     "GET /api/meta": makeResp({ json: { rowCap: 1000 } }),
     "GET /api/tables": makeResp({ json: [] }),
     "GET /api/tables/*/columns": makeResp({ json: [] }),
+    "GET /api/tables/*/definition": makeResp({ json: { query: "" } }),
     "GET /api/tables/*/fks": makeResp({ json: [] }),
     "GET /api/queries": makeResp({ json: [] }),
   };
@@ -606,6 +608,40 @@ describe("structure tab", () => {
     await click("tab-structure");
     expect(callsTo("/columns")).toHaveLength(1);
     expect($("structure-results").textContent).toContain("id");
+  });
+
+  it("shows the defining query for views only", async () => {
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/columns", makeResp({ json: [{ name: "id", type: "integer", nullable: false, default: null }] }));
+    setRoute("GET /api/tables/*/definition", makeResp({ json: { query: " SELECT id\n FROM users\n WHERE active;" } }));
+    await loadApp();
+
+    const tables = $("tables").querySelectorAll(".tbl");
+    await click(tables[0]);
+    await click("tab-structure");
+    expect(callsTo("/definition")).toHaveLength(0);
+    expect(document.querySelector(".view-definition")).toBeNull();
+
+    await click($("tables").querySelector(".tbl.view"));
+    await click("tab-structure");
+
+    expect(callsTo("/definition")).toHaveLength(1);
+    expect(document.querySelector(".view-definition h2").textContent).toBe("View query");
+    expect(document.querySelector(".view-definition code").textContent).toBe(" SELECT id\n FROM users\n WHERE active;");
+  });
+
+  it("keeps columns visible when the view query cannot be loaded", async () => {
+    setRoute("GET /api/tables", makeResp({ json: SAMPLE_TABLES }));
+    setRoute("GET /api/tables/*/columns", makeResp({ json: [{ name: "id", type: "integer", nullable: false, default: null }] }));
+    setRoute("GET /api/tables/*/definition", makeResp({ ok: false, status: 500, json: { error: "view definition exceeds response limit" } }));
+    await loadApp();
+
+    await click($("tables").querySelector(".tbl.view"));
+    await click("tab-structure");
+
+    expect($("structure-results").textContent).toContain("id");
+    expect(document.querySelector(".view-definition-error").textContent).toContain("view definition exceeds response limit");
+    expect($("status").className).toContain("error");
   });
 
   it("updates status while loading structure", async () => {

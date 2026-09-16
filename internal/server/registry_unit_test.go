@@ -66,6 +66,7 @@ func TestHandlers_return_not_found_when_selected_database_missing(t *testing.T) 
 	}{
 		{name: "meta", method: http.MethodGet, path: "/api/meta?db=missing"},
 		{name: "columns", method: http.MethodGet, path: "/api/tables/public/users/columns?db=missing"},
+		{name: "view definition", method: http.MethodGet, path: "/api/tables/public/users/definition?db=missing"},
 		{name: "foreign keys", method: http.MethodGet, path: "/api/tables/public/users/fks?db=missing"},
 		{name: "table data", method: http.MethodGet, path: "/api/tables/public/users/data?db=missing"},
 		{name: "query", method: http.MethodPost, path: "/api/query?db=missing", body: `{"sql":"SELECT 1"}`},

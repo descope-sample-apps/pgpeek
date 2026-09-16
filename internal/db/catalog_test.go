@@ -225,10 +225,10 @@ func TestViewDefinition_Success(t *testing.T) {
 	}
 }
 
-func TestViewDefinition_Empty(t *testing.T) {
+func TestViewDefinition_NotFound(t *testing.T) {
 	p := &Pool{pool: &fakePool{rows: &fakeRows{}}, rowCap: 10}
 	got, truncated, err := p.ViewDefinition(context.Background(), "public", "missing")
-	if err != nil || truncated || got != "" {
+	if !errors.Is(err, ErrViewNotFound) || truncated || got != "" {
 		t.Fatalf("definition=%q truncated=%v err=%v", got, truncated, err)
 	}
 }

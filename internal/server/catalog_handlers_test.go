@@ -199,6 +199,18 @@ func TestViewDefinition_Error(t *testing.T) {
 	}
 }
 
+func TestViewDefinition_NotFound(t *testing.T) {
+	ts, _ := newTestServer(t, &fakeQuerier{catErr: db.ErrViewNotFound})
+	resp := mustGet(t, ts, "/api/tables/public/deleted_view/definition")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", resp.StatusCode)
+	}
+	got := decode[map[string]string](t, resp)
+	if got["error"] != "view not found" {
+		t.Fatalf("error = %q, want view not found", got["error"])
+	}
+}
+
 func TestForeignKeys_OK(t *testing.T) {
 	q := &fakeQuerier{fks: []db.ForeignKey{{Column: "company_id", RefSchema: "public", RefTable: "companies", RefColumn: "id"}}}
 	ts, _ := newTestServer(t, q)

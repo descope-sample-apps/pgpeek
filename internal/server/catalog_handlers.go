@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"time"
@@ -102,6 +103,10 @@ func (s *Server) handleViewDefinition(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), s.queryWait)
 	defer cancel()
 	query, truncated, err := pool.ViewDefinition(ctx, r.PathValue("schema"), r.PathValue("table"))
+	if errors.Is(err, db.ErrViewNotFound) {
+		writeError(w, http.StatusNotFound, "view not found")
+		return
+	}
 	if err != nil {
 		s.log.Error("read view definition", "err", err)
 		writeError(w, http.StatusInternalServerError, "failed to read view definition")

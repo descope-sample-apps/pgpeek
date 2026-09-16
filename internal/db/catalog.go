@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -29,6 +30,9 @@ type ColumnInfo struct {
 	Nullable bool    `json:"nullable"`
 	Default  *string `json:"default"`
 }
+
+// ErrViewNotFound reports that a relation is not a view or no longer exists.
+var ErrViewNotFound = errors.New("view not found")
 
 // SchemaCatalog maps schema names to relation names and their ordered columns.
 type SchemaCatalog map[string]map[string][]string
@@ -216,26 +220,24 @@ func (p *Pool) ViewDefinition(ctx context.Context, schema, view string) (string,
 	}
 	defer rows.Close()
 
-	definition := catalogCollector[string]{items: make([]string, 0, 1), bytes: 2, limit: p.catalogByteLimit()}
-	if rows.Next() {
-		var query string
+	var query string
+	found := false
+	for rows.Next() {
 		if err := rows.Scan(&query); err != nil {
 			return "", false, err
 		}
-		keep, _ := definition.add(query) // JSON encoding a string cannot fail.
-		if !keep {
-			return "", true, nil
-		}
+		found = true
 	}
-	if !definition.truncated {
-		if err := rows.Err(); err != nil {
-			return "", false, err
-		}
+	if err := rows.Err(); err != nil {
+		return "", false, err
 	}
-	if len(definition.items) == 0 {
-		return "", definition.truncated, nil
+	if !found {
+		return "", false, ErrViewNotFound
 	}
-	return definition.items[0], definition.truncated, nil
+	if jsonStringBytes(query)+len(`{"query":}`) > p.catalogByteLimit() {
+		return "", true, nil
+	}
+	return query, false, nil
 }
 
 // ForeignKey describes a single-column foreign key and the row it points to.

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.14.0...v0.15.0) (2026-09-17)
+
+
+### Features
+
+* **web:** show view definitions in structure tab ([#94](https://github.com/descope-sample-apps/pgpeek/issues/94)) ([0480c07](https://github.com/descope-sample-apps/pgpeek/commit/0480c07ea89d4510bae76d7027ba0cbce8170e66))
+
 ## [0.14.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.13.0...v0.14.0) (2026-09-03)
 
 

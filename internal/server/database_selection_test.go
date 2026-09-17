@@ -102,6 +102,11 @@ func (q *selectedQuerier) Columns(context.Context, string, string) ([]db.ColumnI
 	return []db.ColumnInfo{}, false, nil
 }
 
+func (q *selectedQuerier) ViewDefinition(context.Context, string, string) (string, bool, error) {
+	q.used = true
+	return "", false, q.err
+}
+
 func (q *selectedQuerier) ForeignKeys(context.Context, string, string) ([]db.ForeignKey, bool, error) {
 	q.used = true
 	return []db.ForeignKey{}, false, nil
@@ -198,6 +203,7 @@ func TestDatabaseSelection_uses_selected_pool_for_db_bound_endpoints(t *testing.
 		{name: "tables", method: http.MethodGet, path: "/api/tables?db=analytics"},
 		{name: "schema", method: http.MethodGet, path: "/api/schema?db=analytics"},
 		{name: "columns", method: http.MethodGet, path: "/api/tables/public/users/columns?db=analytics"},
+		{name: "view definition", method: http.MethodGet, path: "/api/tables/public/users/definition?db=analytics"},
 		{name: "fks", method: http.MethodGet, path: "/api/tables/public/users/fks?db=analytics"},
 		{name: "data", method: http.MethodGet, path: "/api/tables/public/users/data?db=analytics"},
 		{name: "data cell", method: http.MethodGet, path: "/api/tables/public/users/data/cell?row=0&column=0&db=analytics"},

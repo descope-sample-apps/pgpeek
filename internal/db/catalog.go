@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -29,6 +30,9 @@ type ColumnInfo struct {
 	Nullable bool    `json:"nullable"`
 	Default  *string `json:"default"`
 }
+
+// ErrViewNotFound reports that a relation is not a view or no longer exists.
+var ErrViewNotFound = errors.New("view not found")
 
 // SchemaCatalog maps schema names to relation names and their ordered columns.
 type SchemaCatalog map[string]map[string][]string
@@ -131,6 +135,12 @@ FROM information_schema.columns
 WHERE table_schema = $1 AND table_name = $2
 ORDER BY ordinal_position`
 
+const viewDefinitionSQL = `
+SELECT pg_get_viewdef(c.oid, true)
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind IN ('v','m')`
+
 // Single-column foreign keys for a relation, with their referenced target.
 const fksSQL = `
 SELECT kcu.column_name, ccu.table_schema, ccu.table_name, ccu.column_name
@@ -200,6 +210,34 @@ func (p *Pool) Columns(ctx context.Context, schema, table string) ([]ColumnInfo,
 		}
 	}
 	return out.items, out.truncated, nil
+}
+
+// ViewDefinition returns the query that defines a view or materialized view.
+func (p *Pool) ViewDefinition(ctx context.Context, schema, view string) (string, bool, error) {
+	rows, err := p.pool.Query(ctx, viewDefinitionSQL, schema, view)
+	if err != nil {
+		return "", false, err
+	}
+	defer rows.Close()
+
+	var query string
+	found := false
+	for rows.Next() {
+		if err := rows.Scan(&query); err != nil {
+			return "", false, err
+		}
+		found = true
+	}
+	if err := rows.Err(); err != nil {
+		return "", false, err
+	}
+	if !found {
+		return "", false, ErrViewNotFound
+	}
+	if jsonStringBytes(query)+len(`{"query":}`) > p.catalogByteLimit() {
+		return "", true, nil
+	}
+	return query, false, nil
 }
 
 // ForeignKey describes a single-column foreign key and the row it points to.

@@ -126,6 +126,7 @@ func TestCatalogHandlers_RejectTruncatedResults(t *testing.T) {
 	tests := []string{
 		"/api/tables",
 		"/api/tables/public/users/columns",
+		"/api/tables/public/users/definition",
 		"/api/tables/public/users/fks",
 	}
 	for _, path := range tests {
@@ -170,6 +171,43 @@ func TestColumns_Error(t *testing.T) {
 	got := decode[map[string]string](t, resp)
 	if got["error"] != "failed to read columns" {
 		t.Fatalf("error = %q, want sanitized columns error", got["error"])
+	}
+}
+
+func TestViewDefinition_OK(t *testing.T) {
+	q := &fakeQuerier{viewDefinition: " SELECT id\n FROM users;"}
+	ts, _ := newTestServer(t, q)
+	resp := mustGet(t, ts, "/api/tables/public/active_users/definition")
+	got := decode[viewDefinitionResponse](t, resp)
+	if got.Query != " SELECT id\n FROM users;" {
+		t.Errorf("query = %q", got.Query)
+	}
+	if q.lastArgs.schema != "public" || q.lastArgs.table != "active_users" {
+		t.Errorf("path values not passed: %+v", q.lastArgs)
+	}
+}
+
+func TestViewDefinition_Error(t *testing.T) {
+	ts, _ := newTestServer(t, &fakeQuerier{catErr: errors.New("postgres://secret-host/hidden: boom")})
+	resp := mustGet(t, ts, "/api/tables/public/active_users/definition")
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", resp.StatusCode)
+	}
+	got := decode[map[string]string](t, resp)
+	if got["error"] != "failed to read view definition" {
+		t.Fatalf("error = %q, want sanitized definition error", got["error"])
+	}
+}
+
+func TestViewDefinition_NotFound(t *testing.T) {
+	ts, _ := newTestServer(t, &fakeQuerier{catErr: db.ErrViewNotFound})
+	resp := mustGet(t, ts, "/api/tables/public/deleted_view/definition")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", resp.StatusCode)
+	}
+	got := decode[map[string]string](t, resp)
+	if got["error"] != "view not found" {
+		t.Fatalf("error = %q, want view not found", got["error"])
 	}
 }
 

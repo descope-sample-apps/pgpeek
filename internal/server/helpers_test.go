@@ -18,24 +18,25 @@ import (
 )
 
 type fakeQuerier struct {
-	result       *db.Result
-	count        int64
-	cellValue    any
-	err          error
-	countErr     error
-	pingErr      error
-	called       bool
-	countCalled  bool
-	exportCalled bool
-	lastSQL      string
-	tables       []db.TableInfo
-	schema       db.SchemaCatalog
-	cols         []db.ColumnInfo
-	fks          []db.ForeignKey
-	catErr       error
-	catTruncated bool
-	lastQuery    db.TableQuery
-	lastArgs     struct {
+	result         *db.Result
+	count          int64
+	cellValue      any
+	err            error
+	countErr       error
+	pingErr        error
+	called         bool
+	countCalled    bool
+	exportCalled   bool
+	lastSQL        string
+	tables         []db.TableInfo
+	schema         db.SchemaCatalog
+	cols           []db.ColumnInfo
+	viewDefinition string
+	fks            []db.ForeignKey
+	catErr         error
+	catTruncated   bool
+	lastQuery      db.TableQuery
+	lastArgs       struct {
 		schema, table string
 		limit, offset int
 	}
@@ -92,6 +93,11 @@ func (f *fakeQuerier) SchemaCatalog(context.Context) (db.SchemaCatalog, bool, er
 func (f *fakeQuerier) Columns(_ context.Context, schema, table string) ([]db.ColumnInfo, bool, error) {
 	f.lastArgs.schema, f.lastArgs.table = schema, table
 	return f.cols, f.catTruncated, f.catErr
+}
+
+func (f *fakeQuerier) ViewDefinition(_ context.Context, schema, view string) (string, bool, error) {
+	f.lastArgs.schema, f.lastArgs.table = schema, view
+	return f.viewDefinition, f.catTruncated, f.catErr
 }
 
 func (f *fakeQuerier) ForeignKeys(_ context.Context, schema, table string) ([]db.ForeignKey, bool, error) {

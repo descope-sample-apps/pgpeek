@@ -13,7 +13,7 @@
     "themeCount": 20,
     "safetyLayerCount": 3,
     "documentedConfigCount": 23,
-    "httpRouteCount": 26,
+    "httpRouteCount": 27,
     "defaultRowCap": 1000,
     "defaultStatementTimeout": "30s"
   },
@@ -73,7 +73,7 @@
     ]
   },
   "httpRoutes": {
-    "count": 26,
+    "count": 27,
     "items": [
       {
         "method": "GET",
@@ -134,6 +134,11 @@
         "method": "GET",
         "path": "/api/tables/{schema}/{table}/columns",
         "description": "Return column structure for a table or view."
+      },
+      {
+        "method": "GET",
+        "path": "/api/tables/{schema}/{table}/definition",
+        "description": "Return the query defining a view or materialized view."
       },
       {
         "method": "GET",

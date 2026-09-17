@@ -33,6 +33,7 @@ export function routeKey(method, path) {
   if (path.endsWith("/data/cell")) return `${method} /api/tables/*/data/cell`;
   if (path.endsWith("/data")) return `${method} /api/tables/*/data`;
   if (path.endsWith("/columns")) return `${method} /api/tables/*/columns`;
+  if (path.endsWith("/definition")) return `${method} /api/tables/*/definition`;
   if (path.endsWith("/fks")) return `${method} /api/tables/*/fks`;
   if (path.startsWith("/api/queries/")) return `${method} /api/queries/:id`;
   return `${method} ${path}`;

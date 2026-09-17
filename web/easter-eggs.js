@@ -204,6 +204,9 @@ export function footerText(n) {
 export const SHUNI_SCHEMA = "🐕 shuni";
 export const SHUNI_VIEW = { name: "belly_rubs", type: "view", estRows: -1 };
 export const SHUNI_COLUMNS = ["dog_name", "tail_wags", "fetched_prs", "good_girl_rating"];
+export const SHUNI_VIEW_QUERY = `SELECT dog_name, tail_wags, fetched_prs, good_girl_rating
+FROM good_dogs
+WHERE deserves_treats = true;`;
 
 // The relation is fictional, so every tab has to serve it locally — hitting the
 // API would just 500. Returns null for real relations so callers fall through.

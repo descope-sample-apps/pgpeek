@@ -736,7 +736,7 @@ describe("SQL tab textarea mode", () => {
     await loadApp();
     await click("tab-sql");
   }
-  it("copy feedback replaces query notice and dismisses without removing results", async () => {
+  it("copy feedback expires without removing query results", async () => {
     setRoute("POST /api/query", rowsResp(2));
     await openSql();
     await click("run-btn");

@@ -1,5 +1,5 @@
-import { test, expect } from "vitest";
-import { formatTSV, formatCSV, formatJSON, formatMarkdown } from "./copy-results.js";
+import { test, expect, vi } from "vitest";
+import { formatTSV, formatCSV, formatJSON, formatMarkdown, copyToClipboard } from "./copy-results.js";
 
 const mockResult = {
   columns: ["id", "name", "email"],
@@ -153,4 +153,32 @@ test("formatTSV: quotes cells containing tab, newline or quote", () => {
 
 test("formatCSV: quotes cells containing CR", () => {
   expect(formatCSV({ columns: ["t"], rows: [["a\rb"]] })).toBe('t\n"a\rb"');
+});
+
+test("formatMarkdown: a backslash before a pipe cannot swallow the pipe escape", () => {
+  const out = formatMarkdown({ columns: ["t"], rows: [["a\\|b"]] });
+  // `\` -> `\\`, `|` -> `\|`: the cell stays one cell
+  expect(out.split("\n")[2]).toBe("| a\\\\\\|b |");
+});
+
+test("formatMarkdown: bare CR, LF and CRLF all become <br>", () => {
+  const out = formatMarkdown({ columns: ["t"], rows: [["a\rb\nc\r\nd"]] });
+  expect(out.split("\n")).toHaveLength(3);
+  expect(out).toContain("| a<br>b<br>c<br>d |");
+});
+
+test("copyToClipboard fallback selects the whole text, not the first 99,999 chars", async () => {
+  vi.stubGlobal("navigator", {});
+  const text = "x".repeat(250_000);
+  let selected = -1;
+  document.execCommand = vi.fn(() => {
+    const ta = document.querySelector("textarea");
+    selected = ta.selectionEnd - ta.selectionStart;
+    return true;
+  });
+  const res = await copyToClipboard(text);
+  delete document.execCommand;
+  vi.unstubAllGlobals();
+  expect(res.success).toBe(true);
+  expect(selected).toBe(text.length);
 });

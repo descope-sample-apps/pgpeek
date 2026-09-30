@@ -736,6 +736,24 @@ describe("SQL tab textarea mode", () => {
     await loadApp();
     await click("tab-sql");
   }
+  it("copy feedback replaces query notice and dismisses without removing results", async () => {
+    setRoute("POST /api/query", rowsResp(2));
+    await openSql();
+    await click("run-btn");
+    vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn().mockResolvedValue() } });
+    try {
+      document.querySelector(".copy-primary").click();
+      await flush();
+      expect($("sql-status").textContent).toContain("Copied 2 rows");
+      await new Promise((resolve) => setTimeout(resolve, 3200));
+      await flush();
+      expect($("sql-status")).toBeNull();
+      expect($("sql-results").querySelectorAll("tbody tr")).toHaveLength(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
 
   it("labels the SQL editor", async () => {
     await openSql();

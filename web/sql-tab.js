@@ -464,7 +464,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
                 <${ResultMeta} result=${result} />
                 ${notice ? html`<div class=${"sql-notice " + notice.cls} id="sql-status" role="status">${notice.text}</div>` : ""}
                 ${stale ? html`<div class="result-stale" role="status" aria-live="polite">Showing results from the previous run.</div>` : ""}
-                <div class="result-actions">
+                <div class="result-actions" key="result-actions">
                   ${showResultViews ? html`<${ResultViews} view=${view} onView=${setView} />` : ""}
                   <${CopyResultsButton} result=${result} onStatus=${(next) => next ? reportStatus(next) : setNotice(null)} />
                 </div>

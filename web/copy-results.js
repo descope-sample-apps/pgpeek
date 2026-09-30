@@ -32,7 +32,7 @@ export function formatJSON(result) {
 /**
  * formatMarkdown: pipe table; NULL -> empty cell; `|` escaped, newlines become <br>.
  */
-const mdCell = (v) => cellToString(v).replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
+const mdCell = (v) => cellToString(v).replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r\n|\r|\n/g, "<br>");
 export function formatMarkdown(result) {
   return [
     "| " + result.columns.map(mdCell).join(" | ") + " |",
@@ -56,8 +56,8 @@ function cellToString(value) {
 }
 
 /**
- * copyToClipboard: copy formatted text using clipboard API or fallback.
- * Returns {success, rowCount, cellsShortened}.
+ * copyToClipboard: copy text via the async clipboard API, else a textarea + execCommand.
+ * Returns {success}.
  */
 export async function copyToClipboard(text) {
   // Try modern clipboard API first (may fail on HTTP origins)
@@ -81,7 +81,7 @@ export async function copyToClipboard(text) {
 
   try {
     ta.select();
-    ta.setSelectionRange(0, 99999); // For iOS
+    ta.setSelectionRange(0, ta.value.length); // iOS needs an explicit range; never cap it
     const success = document.execCommand("copy");
     return { success };
   } catch (err) {
@@ -92,8 +92,8 @@ export async function copyToClipboard(text) {
 }
 
 /**
- * CopyResultsButton: split button + dropdown menu for format selection.
- * Props: {result, dbId, onStatus}
+ * CopyResultsButton: split button + format picker (disclosure, not an ARIA menu).
+ * Props: {result, onStatus}
  * onStatus(notice): called with {text, cls} notice object or null.
  */
 export function CopyResultsButton({ result, onStatus }) {
@@ -108,16 +108,20 @@ export function CopyResultsButton({ result, onStatus }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [copying, setCopying] = useState(false);
   const menuRef = useRef();
+  const toggleRef = useRef();
+  const dismissRef = useRef(0);
   const formatters = { TSV: formatTSV, CSV: formatCSV, JSON: formatJSON, Markdown: formatMarkdown };
+
+  useEffect(() => () => clearTimeout(dismissRef.current), []);
 
   const handleCopy = async () => {
     if (!result || !result.columns.length || copying) return;
 
     setCopying(true);
     try {
-      const formatter = formatters[activeFormat];
-      const text = formatter(result);
+      const text = formatters[activeFormat](result);
       const { success } = await copyToClipboard(text);
+      clearTimeout(dismissRef.current);
 
       if (success) {
         const rowCount = result.rows.length;
@@ -132,8 +136,7 @@ export function CopyResultsButton({ result, onStatus }) {
         }
 
         onStatus({ text: message, cls: "ok" });
-        // Auto-dismiss after 3s
-        setTimeout(() => onStatus(null), 3000);
+        dismissRef.current = setTimeout(() => onStatus(null), 3000);
       } else {
         onStatus({ text: "✗ Copy failed; your browser may not support clipboard on this connection.", cls: "error" });
       }
@@ -146,13 +149,16 @@ export function CopyResultsButton({ result, onStatus }) {
     setActiveFormat(format);
     try { localStorage.setItem(STORAGE_KEY, format); } catch {}
     setMenuOpen(false);
+    toggleRef.current?.focus();
   };
 
   useEffect(() => {
     if (!menuOpen) return undefined;
     const close = (e) => { if (!menuRef.current?.contains(e.target)) setMenuOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") { setMenuOpen(false); toggleRef.current?.focus(); } };
     document.addEventListener("click", close);
-    return () => document.removeEventListener("click", close);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("click", close); document.removeEventListener("keydown", onKey); };
   }, [menuOpen]);
 
   const disabled = !result || !result.columns.length || copying;
@@ -160,12 +166,12 @@ export function CopyResultsButton({ result, onStatus }) {
     <div class="copy-split" ref=${menuRef}>
       <button class="copy-primary" disabled=${disabled} onClick=${handleCopy}
         title=${"Copy visible results as " + activeFormat}>Copy ${activeFormat}</button>
-      <button class="copy-menu-btn" disabled=${!result || !result.columns.length} onClick=${() => setMenuOpen(!menuOpen)}
-        title="Choose format" aria-label="Copy format" aria-haspopup="menu" aria-expanded=${menuOpen}>▾</button>
-      <div class=${"copy-menu" + (menuOpen ? " open" : "")} role="menu">
+      <button class="copy-menu-btn" ref=${toggleRef} disabled=${!result || !result.columns.length} onClick=${() => setMenuOpen(!menuOpen)}
+        title="Choose format" aria-label="Copy format" aria-expanded=${menuOpen}>▾</button>
+      <div class=${"copy-menu" + (menuOpen ? " open" : "")}>
         ${FORMATS.map((fmt) => html`
           <button key=${fmt} class=${"copy-menu-item" + (fmt === activeFormat ? " active" : "")}
-            role="menuitemradio" aria-checked=${fmt === activeFormat} onClick=${() => selectFormat(fmt)}>${fmt}</button>`)}
+            aria-pressed=${fmt === activeFormat} onClick=${() => selectFormat(fmt)}>${fmt}</button>`)}
       </div>
     </div>`;
 }

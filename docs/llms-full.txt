@@ -92,7 +92,8 @@ browser ── HTTP ──> pgpeek (Go, single static binary)
 - **Backend**: Go, `jackc/pgx/v5` for Postgres, `modernc.org/sqlite` (pure Go, no
   cgo) for the saved-query store → static binary, ~25 MB distroless image.
 - **Frontend**: one `web/index.html` with vendored CodeMirror and SQL formatter
-  bundles, results table/JSON views, saved queries, and CSV export. Embedded into the
+  bundles, results table/JSON views with copy as TSV/CSV/JSON/Markdown, saved queries,
+  and CSV export. Embedded into the
   binary via `go:embed`.
 
 LLM-friendly project notes live in [`llms.txt`](llms.txt); the published docs

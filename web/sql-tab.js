@@ -4,6 +4,7 @@ import { dbUrl, getJSON } from "./api.js";
 import { interceptRun, runEasterEgg } from "./easter-eggs.js";
 import { countQuery, exportQuery } from "./sql-actions.js";
 import { DEFAULT_SQL, queryStatusText, SqlResults, ResultMeta, ResultViews } from "./sql-results.js";
+import { CopyResultsButton } from "./copy-results.js";
 
 const RUNNING_TIME_DELAY_SECONDS = 10;
 const SPLIT_MIN_EDITOR = 120;
@@ -439,7 +440,7 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
         <button class="ghost" id="count-btn" disabled=${running} onClick=${countRows}>Count</button>
         <button class="action secondary" id="sql-export-btn"
           disabled=${running}
-          onClick=${exportCSV}>Export .csv.gz</button>
+          onClick=${exportCSV}>Export full result (.csv.gz)</button>
         <details class="saved-details" aria-label="Saved and preset queries">
           <summary>Saved</summary>
           <div class="saved-controls">
@@ -459,11 +460,14 @@ export function SqlTab({ active, saved, reloadSaved, dbId, setStatus, tables, in
       <div class="results" id="sql-results">
         ${error
           ? html`<div class="query-error" role="alert" aria-live="assertive">${error}</div>`
-          : html`${showResultToolbar ? html`<div class="result-toolbar">
+              : html`${showResultToolbar ? html`<div class="result-toolbar">
                 <${ResultMeta} result=${result} />
                 ${notice ? html`<div class=${"sql-notice " + notice.cls} id="sql-status" role="status">${notice.text}</div>` : ""}
                 ${stale ? html`<div class="result-stale" role="status" aria-live="polite">Showing results from the previous run.</div>` : ""}
-                ${showResultViews ? html`<${ResultViews} view=${view} onView=${setView} />` : ""}
+                <div class="result-actions" key="result-actions">
+                  ${showResultViews ? html`<${ResultViews} view=${view} onView=${setView} />` : ""}
+                  <${CopyResultsButton} result=${result} onStatus=${(next) => next ? reportStatus(next) : setNotice(null)} />
+                </div>
               </div>` : ""}
               <div class="result-scroll" role="region" tabindex="0" aria-label="Query results">
                 <${SqlResults} result=${result} resultKey=${resultKey} sql=${lastSQL} dbId=${dbId} view=${view} onView=${setView} />

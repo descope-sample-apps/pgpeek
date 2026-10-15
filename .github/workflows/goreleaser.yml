@@ -73,7 +73,7 @@ jobs:
       # goreleaser's `sboms:` block and ko's `sbom: spdx` shell out to syft,
       # which is NOT bundled with goreleaser-action. Install it explicitly or
       # the SBOM step fails with: exec: "syft": executable file not found.
-      - uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+      - uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
 
       # App token only for the real release: it lets goreleaser see/append to the
       # Release that release-please created under the App identity. Snapshot/main

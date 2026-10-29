@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.1](https://github.com/descope-sample-apps/pgpeek/compare/v0.15.0...v0.15.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/go-jose/go-jose/v4 to v4.1.6 [security] ([#100](https://github.com/descope-sample-apps/pgpeek/issues/100)) ([953718e](https://github.com/descope-sample-apps/pgpeek/commit/953718e9c07054867b6002505da7999520950ee6))
+
 ## [0.15.0](https://github.com/descope-sample-apps/pgpeek/compare/v0.14.0...v0.15.0) (2026-09-30)
 
 

@@ -1,13 +1,13 @@
 module github.com/descope-sample-apps/pgpeek
 
-go 1.26.9
+go 1.26.10
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.42.0
 	github.com/aws/aws-sdk-go-v2/config v1.32.25
 	github.com/aws/aws-sdk-go-v2/feature/rds/auth v1.6.29
 	github.com/coreos/go-oidc/v3 v3.20.0
-	github.com/go-jose/go-jose/v4 v4.1.4
+	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	modernc.org/sqlite v1.53.0

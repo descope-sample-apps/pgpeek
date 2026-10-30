@@ -24,9 +24,9 @@
     "codemirror": "6.0.2",
     "esbuild": "0.28.2",
     "htm": "3.1.1",
-    "jsdom": "^29.0.0",
+    "jsdom": "^30.0.0",
     "lz-string": "1.5.0",
-    "preact": "10.29.8",
+    "preact": "11.1.0",
     "sql-formatter": "15.9.0",
     "vitest": "^5.0.0"
   },
